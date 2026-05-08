@@ -7,40 +7,32 @@ import {
   ResponsiveContainer,
   BarChart,
   Bar,
+  PieChart,
+  Pie,
+  Cell,
   XAxis,
   YAxis,
-  Tooltip,
   CartesianGrid,
-  Cell,
+  Tooltip
 } from 'recharts'
-
-const COLORS = [
-  '#d946ef',
-  '#c026d3',
-  '#a855f7',
-  '#9333ea',
-  '#7e22ce',
-]
 
 export default function Home() {
 
-  const [rows, setRows] = useState([])
-  const [unidadeFiltro, setUnidadeFiltro] = useState('TODAS')
+  const [data, setData] = useState([])
+  const [selectedUnit, setSelectedUnit] = useState('TODAS')
 
-  const handleUpload = (e) => {
+  function handleFile(event) {
 
-    const file = e.target.files[0]
+    const file = event.target.files[0]
 
     if (!file) return
 
     const reader = new FileReader()
 
-    reader.onload = (evt) => {
+    reader.onload = (e) => {
 
-      const data = evt.target.result
-
-      const workbook = XLSX.read(data, {
-        type: 'binary',
+      const workbook = XLSX.read(e.target.result, {
+        type: 'binary'
       })
 
       const sheet =
@@ -48,362 +40,318 @@ export default function Home() {
           workbook.SheetNames[0]
         ]
 
-      const json =
-        XLSX.utils.sheet_to_json(sheet)
+      const rows = XLSX.utils.sheet_to_json(sheet, {
+        header: 1,
+        raw: true
+      })
 
-      setRows(json)
+      const headers = rows[3]
+
+      const body = rows
+        .slice(4)
+        .filter(row => row.length > 0)
+
+      const json = body.map(row => {
+
+        const obj = {}
+
+        headers.forEach((header, index) => {
+          obj[header] = row[index]
+        })
+
+        return obj
+      })
+
+      setData(json)
     }
 
     reader.readAsBinaryString(file)
   }
 
-  const unidades = useMemo(() => {
-
-    const lista = rows
-      .map(
-        (r) =>
-          r.NM_LOCAL ||
-          r.UNIDADE ||
-          ''
-      )
-      .filter(Boolean)
-
-    return [...new Set(lista)]
-
-  }, [rows])
-
-  const dadosFiltrados = useMemo(() => {
-
-    return rows.filter((r) => {
-
-      const unidade =
-        r.NM_LOCAL ||
-        r.UNIDADE ||
-        ''
-
-      if (
-        unidadeFiltro === 'TODAS'
-      )
-        return true
-
-      return unidade === unidadeFiltro
-    })
-
-  }, [rows, unidadeFiltro])
-
-  const parseTempo = (valor) => {
+  function tempoParaMinutos(valor) {
 
     if (!valor) return 0
 
-    if (typeof valor === 'number')
-      return valor
-
-    const texto =
-      valor.toString()
-
-    const numeros =
-      texto.match(/\d+/g)
-
-    if (!numeros) return 0
-
-    if (numeros.length >= 2) {
-
-      const h = parseInt(
-        numeros[0]
-      )
-
-      const m = parseInt(
-        numeros[1]
-      )
-
-      return h + m / 60
+    if (typeof valor === 'number') {
+      return valor * 24 * 60
     }
 
-    return parseFloat(
-      numeros[0]
-    )
+    const texto = String(valor)
+
+    const partes = texto.split(':')
+
+    if (partes.length >= 2) {
+
+      const horas = Number(partes[0])
+      const minutos = Number(partes[1])
+
+      return (horas * 60) + minutos
+    }
+
+    return 0
   }
 
-  const totalPacientes =
-    dadosFiltrados.length
+  const filteredData = useMemo(() => {
 
-  const totalUnidades =
-    new Set(
-      dadosFiltrados.map(
-        (r) =>
-          r.NM_LOCAL ||
-          'SEM UNIDADE'
-      )
-    ).size
+    if (selectedUnit === 'TODAS') {
+      return data
+    }
 
-  const totalMedicos =
-    new Set(
-      dadosFiltrados.map(
-        (r) =>
-          r.NM_PRESTADOR ||
-          r.MEDICO ||
-          'SEM MÉDICO'
-      )
-    ).size
-
-  const mediaEspera = useMemo(() => {
-
-    const tempos =
-      dadosFiltrados.map((r) =>
-        parseTempo(
-          r.TEMPO_ESPERA ||
-            r.TEMPO ||
-            r.ESPERA
-        )
-      )
-
-    if (!tempos.length)
-      return 0
-
-    const soma = tempos.reduce(
-      (a, b) => a + b,
-      0
+    return data.filter(item =>
+      item['NM_LOCAL'] === selectedUnit
     )
 
-    return (
-      soma / tempos.length
-    ).toFixed(1)
+  }, [data, selectedUnit])
 
-  }, [dadosFiltrados])
+  const unidades = useMemo(() => {
 
-  const rankingPacientes =
-    useMemo(() => {
+    return [
+      'TODAS',
+      ...new Set(
+        data
+          .map(item => item['NM_LOCAL'])
+          .filter(Boolean)
+      )
+    ]
 
-      const mapa = {}
+  }, [data])
 
-      dadosFiltrados.forEach(
-        (r) => {
+  const totalPacientes = filteredData.length
 
-          const unidade =
-            r.NM_LOCAL ||
-            'SEM UNIDADE'
+  const totalUnidades = new Set(
+    filteredData.map(item => item['NM_LOCAL'])
+  ).size
 
-          mapa[unidade] =
-            (mapa[unidade] || 0) +
-            1
-        }
+  const totalMedicos = new Set(
+    filteredData.map(item => item['NM_MEDICO'])
+  ).size
+
+  const tempos = filteredData.map(item =>
+    tempoParaMinutos(item['TEMPO_DE_ESPERA'])
+  )
+
+  const tempoMedio = tempos.length
+    ? tempos.reduce((a, b) => a + b, 0) / tempos.length
+    : 0
+
+  const especialidades = [...filteredData]
+
+    .reduce((acc, item) => {
+
+      const nome =
+        item['DS_ESPECIALIDADE'] ||
+        'SEM ESPECIALIDADE'
+
+      const tempo = tempoParaMinutos(
+        item['TEMPO DE ATRASO']
       )
 
-      return Object.entries(
-        mapa
-      )
-        .map(([name, value]) => ({
-          name,
-          value,
-        }))
-        .sort(
-          (a, b) =>
-            b.value - a.value
-        )
-        .slice(0, 10)
+      const existente =
+        acc.find(x => x.nome === nome)
 
-    }, [dadosFiltrados])
+      if (existente) {
 
-  const statusData = useMemo(() => {
+        existente.tempo += tempo
+        existente.total += 1
 
-    const mapa = {}
+      } else {
 
-    dadosFiltrados.forEach(
-      (r) => {
-
-        const status =
-          r.STATUS ||
-          r.STATUS_MEDICO ||
-          r.STATUS_PONTO ||
-          'OK'
-
-        mapa[status] =
-          (mapa[status] || 0) + 1
+        acc.push({
+          nome,
+          tempo,
+          total: 1
+        })
       }
-    )
 
-    return Object.entries(
-      mapa
-    ).map(([name, value]) => ({
-      name,
-      value,
+      return acc
+
+    }, [])
+
+    .map(item => ({
+      nome: item.nome,
+      media: Number(
+        (
+          (item.tempo / item.total) / 60
+        ).toFixed(1)
+      )
     }))
 
-  }, [dadosFiltrados])
+    .sort((a, b) => b.media - a.media)
 
-  const medicosAtraso =
-    useMemo(() => {
+    .slice(0, 3)
 
-      const mapa = {}
+  const rankingUnidades = [...filteredData]
 
-      dadosFiltrados.forEach(
-        (r) => {
+    .reduce((acc, item) => {
 
-          const medico =
-            r.NM_PRESTADOR ||
-            r.MEDICO ||
-            'SEM MÉDICO'
+      const unidade =
+        item['NM_LOCAL'] || 'SEM UNIDADE'
 
-          const unidade =
-            r.NM_LOCAL ||
-            'SEM UNIDADE'
+      const qtd = Number(
+        item[' QT_PACIENTES_AGUARDANDO'] || 0
+      )
 
-          const tempo =
-            parseTempo(
-              r.TEMPO_ESPERA ||
-                r.TEMPO ||
-                r.ESPERA
-            )
+      const existente =
+        acc.find(x => x.name === unidade)
 
-          if (
-            !mapa[medico]
-          ) {
+      if (existente) {
+        existente.value += qtd
+      }
 
-            mapa[medico] = {
-              medico,
-              unidade,
-              tempo,
-            }
+      else {
 
-          } else {
+        acc.push({
+          name: unidade,
+          value: qtd
+        })
+      }
 
-            if (
-              tempo >
-              mapa[medico].tempo
-            ) {
+      return acc
 
-              mapa[medico].tempo =
-                tempo
-            }
-          }
+    }, [])
+
+    .sort((a, b) => b.value - a.value)
+
+    .slice(0, 10)
+
+  const statusData = [...filteredData]
+
+    .reduce((acc, item) => {
+
+      const status =
+        item['STATUS'] || 'SEM STATUS'
+
+      const existente =
+        acc.find(x => x.name === status)
+
+      if (existente) {
+        existente.value += 1
+      }
+
+      else {
+
+        acc.push({
+          name: status,
+          value: 1
+        })
+      }
+
+      return acc
+
+    }, [])
+
+  const medicosAtraso = [...filteredData]
+
+    .reduce((acc, item) => {
+
+      const medico =
+        item['NM_MEDICO'] || 'SEM MÉDICO'
+
+      const unidade =
+        item['NM_LOCAL'] || 'SEM UNIDADE'
+
+      const tempo = tempoParaMinutos(
+        item['TEMPO DE ATRASO']
+      )
+
+      const existente =
+        acc.find(x => x.medico === medico)
+
+      if (existente) {
+
+        if (tempo > existente.tempo) {
+          existente.tempo = tempo
         }
+
+      } else {
+
+        acc.push({
+          medico,
+          unidade,
+          tempo
+        })
+      }
+
+      return acc
+
+    }, [])
+
+    .sort((a, b) => b.tempo - a.tempo)
+
+    .slice(0, 10)
+
+    .map(item => ({
+      ...item,
+      horas: Number(
+        (item.tempo / 60).toFixed(1)
+      )
+    }))
+
+  const impactoFila = [...filteredData]
+
+    .filter(item => {
+
+      const status = String(
+        item['STATUS']
+      ).toUpperCase()
+
+      return status.includes('ATRASO')
+    })
+
+    .reduce((acc, item) => {
+
+      const unidade =
+        item['NM_LOCAL'] || 'SEM UNIDADE'
+
+      const pacientes = Number(
+        item[' QT_PACIENTES_AGUARDANDO'] || 0
       )
 
-      return Object.values(
-        mapa
-      )
-        .sort(
-          (a, b) =>
-            b.tempo - a.tempo
-        )
-        .slice(0, 10)
+      const medico =
+        item['NM_MEDICO'] || 'SEM MÉDICO'
 
-    }, [dadosFiltrados])
+      const existente =
+        acc.find(x => x.unidade === unidade)
 
-  const topEspecialidades =
-    useMemo(() => {
+      if (existente) {
 
-      const mapa = {}
+        existente.pacientes += pacientes
+        existente.medicos.add(medico)
 
-      dadosFiltrados.forEach(
-        (r) => {
+      } else {
 
-          const esp =
-            r.ESPECIALIDADE ||
-            'SEM ESPECIALIDADE'
+        acc.push({
+          unidade,
+          pacientes,
+          medicos: new Set([medico])
+        })
+      }
 
-          const tempo =
-            parseTempo(
-              r.TEMPO_ESPERA ||
-                r.TEMPO ||
-                r.ESPERA
-            )
+      return acc
 
-          mapa[esp] =
-            (mapa[esp] || 0) +
-            tempo
-        }
-      )
+    }, [])
 
-      return Object.entries(
-        mapa
-      )
-        .map(([name, value]) => ({
-          name,
-          value:
-            value.toFixed(1),
-        }))
-        .sort(
-          (a, b) =>
-            b.value - a.value
-        )
-        .slice(0, 3)
+    .map(item => ({
+      unidade: item.unidade,
+      pacientes: item.pacientes,
+      qtdMedicos: item.medicos.size
+    }))
 
-    }, [dadosFiltrados])
+    .sort((a, b) => b.pacientes - a.pacientes)
 
-  const impactoFila =
-    useMemo(() => {
+    .slice(0, 10)
 
-      const mapa = {}
-
-      dadosFiltrados.forEach(
-        (r) => {
-
-          const status = (
-            r.STATUS ||
-            ''
-          ).toUpperCase()
-
-          if (
-            !status.includes(
-              'ATRASO'
-            )
-          )
-            return
-
-          const unidade =
-            r.NM_LOCAL ||
-            'SEM UNIDADE'
-
-          if (
-            !mapa[unidade]
-          ) {
-
-            mapa[unidade] = {
-              unidade,
-              medicos:
-                new Set(),
-              pacientes: 0,
-            }
-          }
-
-          mapa[
-            unidade
-          ].medicos.add(
-            r.NM_PRESTADOR ||
-              r.MEDICO ||
-              'SEM MÉDICO'
-          )
-
-          mapa[
-            unidade
-          ].pacientes += 1
-        }
-      )
-
-      return Object.values(
-        mapa
-      )
-        .map((r) => ({
-          unidade:
-            r.unidade,
-          qtdMedicos:
-            r.medicos.size,
-          pacientes:
-            r.pacientes,
-        }))
-        .sort(
-          (a, b) =>
-            b.qtdMedicos -
-            a.qtdMedicos
-        )
-        .slice(0, 10)
-
-    }, [dadosFiltrados])
+  const COLORS = [
+    '#d946ef',
+    '#a855f7',
+    '#9333ea',
+    '#7e22ce',
+    '#6d28d9'
+  ]
 
   return (
 
-    <main style={styles.page}>
+    <div style={styles.container}>
 
       <div style={styles.header}>
 
@@ -426,171 +374,101 @@ export default function Home() {
           <input
             type='file'
             accept='.xlsx,.xls'
-            onChange={handleUpload}
-            style={{
-              display: 'none',
-            }}
+            onChange={handleFile}
+            style={{ display: 'none' }}
           />
 
         </label>
 
       </div>
 
-      <div style={styles.filterRow}>
+      <div style={styles.filterArea}>
 
         <select
-          value={unidadeFiltro}
+          value={selectedUnit}
           onChange={(e) =>
-            setUnidadeFiltro(
-              e.target.value
-            )
+            setSelectedUnit(e.target.value)
           }
           style={styles.select}
         >
 
-          <option value='TODAS'>
-            TODAS
-          </option>
+          {unidades.map((item, index) => (
 
-          {unidades.map(
-            (u) => (
+            <option
+              key={index}
+              value={item}
+            >
+              {item}
+            </option>
 
-              <option
-                key={u}
-                value={u}
-              >
-
-                {u}
-
-              </option>
-            )
-          )}
+          ))}
 
         </select>
-
-        <button
-          onClick={() =>
-            setUnidadeFiltro(
-              'TODAS'
-            )
-          }
-          style={styles.resetButton}
-        >
-
-          Redefinir
-
-        </button>
 
       </div>
 
       <div style={styles.cards}>
 
         <div style={styles.card}>
-
           <h3>Total Pacientes</h3>
-
-          <h2>
-            {totalPacientes}
-          </h2>
-
+          <h1>{totalPacientes}</h1>
         </div>
 
         <div style={styles.card}>
-
           <h3>Unidades</h3>
-
-          <h2>
-            {totalUnidades}
-          </h2>
-
+          <h1>{totalUnidades}</h1>
         </div>
 
         <div style={styles.card}>
-
           <h3>Médicos</h3>
+          <h1>{totalMedicos}</h1>
+        </div>
 
-          <h2>
-            {totalMedicos}
-          </h2>
-
+        <div style={styles.card}>
+          <h3>Tempo Médio Espera</h3>
+          <h1>
+            {(tempoMedio / 60).toFixed(1)}h
+          </h1>
         </div>
 
         <div style={styles.card}>
 
-          <h3>
-            Tempo Médio Espera
-          </h3>
+          <h3>Top Especialidades Críticas</h3>
 
-          <h2>
-            {mediaEspera}h
-          </h2>
+          {especialidades.map((item, index) => (
 
-        </div>
-
-        <div style={styles.card}>
-
-          <h3>
-            Top Especialidades Críticas
-          </h3>
-
-          {topEspecialidades.map(
-            (e, i) => (
+            <div
+              key={index}
+              style={{ marginTop: '20px' }}
+            >
 
               <div
-                key={i}
                 style={{
-                  marginTop: 14,
+                  display: 'flex',
+                  justifyContent: 'space-between'
                 }}
               >
 
-                <div
-                  style={{
-                    display:
-                      'flex',
-                    justifyContent:
-                      'space-between',
-                    marginBottom: 4,
-                  }}
-                >
+                <span>{item.nome}</span>
 
-                  <span>
-                    {e.name}
-                  </span>
-
-                  <strong>
-                    {e.value}h
-                  </strong>
-
-                </div>
-
-                <div
-                  style={{
-                    width: '100%',
-                    height: 10,
-                    borderRadius: 999,
-                    background:
-                      '#312e81',
-                  }}
-                >
-
-                  <div
-                    style={{
-                      width: '80%',
-                      height:
-                        '100%',
-                      borderRadius: 999,
-                      background:
-                        COLORS[
-                          i
-                        ],
-                    }}
-                  />
-
-                </div>
+                <strong>
+                  {item.media}h
+                </strong>
 
               </div>
-            )
-          )}
+
+              <div style={styles.progress}>
+                <div
+                  style={{
+                    ...styles.progressBar,
+                    width: `${item.media * 8}%`
+                  }}
+                />
+              </div>
+
+            </div>
+
+          ))}
 
         </div>
 
@@ -606,14 +484,10 @@ export default function Home() {
 
           <ResponsiveContainer
             width='100%'
-            height={420}
+            height={400}
           >
 
-            <BarChart
-              data={
-                rankingPacientes
-              }
-            >
+            <BarChart data={rankingUnidades}>
 
               <CartesianGrid
                 strokeDasharray='3 3'
@@ -631,31 +505,9 @@ export default function Home() {
 
               <Bar
                 dataKey='value'
-                radius={[
-                  10, 10, 0, 0,
-                ]}
-              >
-
-                {rankingPacientes.map(
-                  (
-                    entry,
-                    index
-                  ) => (
-
-                    <Cell
-                      key={index}
-                      fill={
-                        COLORS[
-                          index %
-                            COLORS.length
-                        ]
-                      }
-                    />
-
-                  )
-                )}
-
-              </Bar>
+                fill='#c026d3'
+                radius={[10, 10, 0, 0]}
+              />
 
             </BarChart>
 
@@ -665,71 +517,41 @@ export default function Home() {
 
         <div style={styles.chartCard}>
 
-          <h2>
-            Status de Pontos Médicos
-          </h2>
+          <h2>Status de Pontos Médicos</h2>
 
           <ResponsiveContainer
             width='100%'
-            height={420}
+            height={400}
           >
 
-            <BarChart
-              data={statusData}
-              layout='vertical'
-              margin={{
-                left: 60,
-              }}
-            >
+            <PieChart>
 
-              <CartesianGrid
-                strokeDasharray='3 3'
-                stroke='#4c1d95'
-              />
+              <Pie
+                data={statusData}
+                dataKey='value'
+                nameKey='name'
+                outerRadius={130}
+                label
+              >
 
-              <XAxis
-                type='number'
-                stroke='#ddd6fe'
-              />
+                {statusData.map((entry, index) => (
 
-              <YAxis
-                dataKey='name'
-                type='category'
-                stroke='#ddd6fe'
-                width={160}
-              />
+                  <Cell
+                    key={index}
+                    fill={
+                      COLORS[
+                        index % COLORS.length
+                      ]
+                    }
+                  />
+
+                ))}
+
+              </Pie>
 
               <Tooltip />
 
-              <Bar
-                dataKey='value'
-                radius={[
-                  0, 12, 12, 0,
-                ]}
-              >
-
-                {statusData.map(
-                  (
-                    entry,
-                    index
-                  ) => (
-
-                    <Cell
-                      key={index}
-                      fill={
-                        COLORS[
-                          index %
-                            COLORS.length
-                        ]
-                      }
-                    />
-
-                  )
-                )}
-
-              </Bar>
-
-            </BarChart>
+            </PieChart>
 
           </ResponsiveContainer>
 
@@ -737,7 +559,7 @@ export default function Home() {
 
       </div>
 
-      <div style={styles.fullCard}>
+      <div style={styles.chartCard}>
 
         <h2>
           Médicos com Maior Tempo de Atraso
@@ -745,15 +567,13 @@ export default function Home() {
 
         <ResponsiveContainer
           width='100%'
-          height={420}
+          height={450}
         >
 
           <BarChart
             data={medicosAtraso}
             layout='vertical'
-            margin={{
-              left: 120,
-            }}
+            margin={{ left: 200 }}
           >
 
             <CartesianGrid
@@ -767,41 +587,19 @@ export default function Home() {
             />
 
             <YAxis
-              type='category'
               dataKey='medico'
+              type='category'
+              width={250}
               stroke='#ddd6fe'
-              width={220}
             />
 
             <Tooltip />
 
             <Bar
-              dataKey='tempo'
-              radius={[
-                0, 10, 10, 0,
-              ]}
-            >
-
-              {medicosAtraso.map(
-                (
-                  entry,
-                  index
-                ) => (
-
-                  <Cell
-                    key={index}
-                    fill={
-                      COLORS[
-                        index %
-                          COLORS.length
-                      ]
-                    }
-                  />
-
-                )
-              )}
-
-            </Bar>
+              dataKey='horas'
+              fill='#d946ef'
+              radius={[0, 10, 10, 0]}
+            />
 
           </BarChart>
 
@@ -809,64 +607,35 @@ export default function Home() {
 
       </div>
 
-      <div style={styles.fullCard}>
+      <div style={styles.chartCard}>
 
         <h2>
           Impacto na Fila de Espera
         </h2>
 
-        <table
-          style={styles.table}
-        >
+        <table style={styles.table}>
 
           <thead>
 
             <tr>
-
-              <th>
-                Unidade
-              </th>
-
-              <th>
-                Qtd Médicos
-              </th>
-
-              <th>
-                Pacientes
-              </th>
-
+              <th>Unidade</th>
+              <th>Qtd Médicos</th>
+              <th>Pacientes</th>
             </tr>
 
           </thead>
 
           <tbody>
 
-            {impactoFila.map(
-              (r, i) => (
+            {impactoFila.map((item, index) => (
 
-                <tr key={i}>
+              <tr key={index}>
+                <td>{item.unidade}</td>
+                <td>{item.qtdMedicos}</td>
+                <td>{item.pacientes}</td>
+              </tr>
 
-                  <td>
-                    {
-                      r.unidade
-                    }
-                  </td>
-
-                  <td>
-                    {
-                      r.qtdMedicos
-                    }
-                  </td>
-
-                  <td>
-                    {
-                      r.pacientes
-                    }
-                  </td>
-
-                </tr>
-              )
-            )}
+            ))}
 
           </tbody>
 
@@ -874,122 +643,110 @@ export default function Home() {
 
       </div>
 
-    </main>
+    </div>
   )
 }
 
 const styles = {
 
-  page: {
+  container: {
     minHeight: '100vh',
     background:
-      'linear-gradient(180deg,#070b24,#1f1b4b)',
-    padding: '28px',
+      'linear-gradient(135deg,#050816,#15153b,#221b5e)',
+    padding: '24px',
     color: '#fff',
-    fontFamily:
-      'Arial, sans-serif',
+    fontFamily: 'Arial'
   },
 
   header: {
     display: 'flex',
-    justifyContent:
-      'space-between',
+    justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: '30px',
+    flexWrap: 'wrap',
+    gap: '20px'
   },
 
   title: {
-    fontSize: '56px',
-    marginBottom: 10,
+    fontSize: '52px'
   },
 
   subtitle: {
     color: '#c4b5fd',
-    fontSize: 24,
+    marginTop: '10px',
+    fontSize: '22px'
   },
 
   uploadButton: {
     background:
-      'linear-gradient(90deg,#9333ea,#d946ef)',
-    padding:
-      '18px 28px',
-    borderRadius: 16,
+      'linear-gradient(135deg,#d946ef,#7e22ce)',
+    padding: '16px 26px',
+    borderRadius: '14px',
     cursor: 'pointer',
-    fontWeight: 'bold',
-    fontSize: 18,
+    fontWeight: 'bold'
   },
 
-  filterRow: {
-    display: 'flex',
-    gap: 16,
-    marginBottom: 30,
+  filterArea: {
+    marginBottom: '30px'
   },
 
   select: {
-    padding:
-      '14px 18px',
-    borderRadius: 12,
-    border: 'none',
-    fontSize: 16,
-    minWidth: 220,
-  },
-
-  resetButton: {
-    background:
-      '#9333ea',
-    border: 'none',
-    color: '#fff',
-    padding:
-      '14px 24px',
-    borderRadius: 12,
-    cursor: 'pointer',
-    fontWeight: 'bold',
+    padding: '14px',
+    borderRadius: '10px',
+    minWidth: '250px',
+    border: 'none'
   },
 
   cards: {
     display: 'grid',
     gridTemplateColumns:
-      'repeat(5,1fr)',
-    gap: 20,
-    marginBottom: 30,
+      'repeat(auto-fit,minmax(240px,1fr))',
+    gap: '20px',
+    marginBottom: '30px'
   },
 
   card: {
-    background:
-      'rgba(255,255,255,0.05)',
+    background: 'rgba(255,255,255,0.05)',
     border:
       '1px solid rgba(255,255,255,0.08)',
-    borderRadius: 24,
-    padding: 28,
-    minHeight: 180,
+    borderRadius: '24px',
+    padding: '30px'
+  },
+
+  progress: {
+    height: '10px',
+    background: '#312e81',
+    borderRadius: '999px',
+    marginTop: '8px'
+  },
+
+  progressBar: {
+    height: '10px',
+    background:
+      'linear-gradient(90deg,#d946ef,#9333ea)',
+    borderRadius: '999px'
   },
 
   grid: {
     display: 'grid',
     gridTemplateColumns:
-      '1fr 1fr',
-    gap: 24,
-    marginBottom: 30,
+      'repeat(auto-fit,minmax(500px,1fr))',
+    gap: '20px',
+    marginBottom: '30px'
   },
 
   chartCard: {
-    background:
-      'rgba(255,255,255,0.05)',
-    borderRadius: 24,
-    padding: 20,
-  },
-
-  fullCard: {
-    background:
-      'rgba(255,255,255,0.05)',
-    borderRadius: 24,
-    padding: 20,
-    marginBottom: 30,
+    background: 'rgba(255,255,255,0.05)',
+    border:
+      '1px solid rgba(255,255,255,0.08)',
+    borderRadius: '24px',
+    padding: '20px',
+    marginBottom: '30px'
   },
 
   table: {
     width: '100%',
-    borderCollapse:
-      'collapse',
-  },
+    borderCollapse: 'collapse',
+    marginTop: '20px'
+  }
 }
