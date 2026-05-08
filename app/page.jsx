@@ -1,106 +1,223 @@
 'use client'
 
+import { useState } from 'react'
+import * as XLSX from 'xlsx'
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell,
+} from 'recharts'
+
 export default function Home() {
-  const pacientes = [
-    {
-      unidade: 'UTI Central',
-      pacientes: 14,
-      atraso: '38h',
-      status: 'Crítico',
-    },
-    {
-      unidade: 'Emergência',
-      pacientes: 9,
-      atraso: '31h',
-      status: 'Alerta',
-    },
-    {
-      unidade: 'Clínica Médica',
-      pacientes: 6,
-      atraso: '29h',
-      status: 'Moderado',
-    },
-    {
-      unidade: 'Internação',
-      pacientes: 11,
-      atraso: '41h',
-      status: 'Crítico',
-    },
+  const [dados, setDados] = useState([])
+  const [unidadeFiltro, setUnidadeFiltro] = useState('TODAS')
+
+  const cores = ['#38bdf8', '#22c55e', '#f59e0b', '#ef4444']
+
+  const handleUpload = (e) => {
+    const arquivo = e.target.files[0]
+
+    if (!arquivo) return
+
+    const reader = new FileReader()
+
+    reader.onload = (evt) => {
+      const data = evt.target.result
+
+      const workbook = XLSX.read(data, { type: 'binary' })
+
+      const sheetName = workbook.SheetNames[0]
+
+      const worksheet = workbook.Sheets[sheetName]
+
+      const json = XLSX.utils.sheet_to_json(worksheet)
+
+      setDados(json)
+    }
+
+    reader.readAsBinaryString(arquivo)
+  }
+
+  const unidades = [
+    'TODAS',
+    ...new Set(dados.map((item) => item.NM_FILIAL).filter(Boolean)),
   ]
+
+  const dadosFiltrados =
+    unidadeFiltro === 'TODAS'
+      ? dados
+      : dados.filter((item) => item.NM_FILIAL === unidadeFiltro)
+
+  const totalPacientes = dadosFiltrados.length
+
+  const topUnidades = Object.values(
+    dadosFiltrados.reduce((acc, item) => {
+      const unidade = item.NM_FILIAL || 'Sem unidade'
+
+      if (!acc[unidade]) {
+        acc[unidade] = {
+          unidade,
+          total: 0,
+        }
+      }
+
+      acc[unidade].total += 1
+
+      return acc
+    }, {})
+  )
+
+  const statusData = Object.values(
+    dadosFiltrados.reduce((acc, item) => {
+      const status = item.STATUS || 'Sem Status'
+
+      if (!acc[status]) {
+        acc[status] = {
+          name: status,
+          value: 0,
+        }
+      }
+
+      acc[status].value += 1
+
+      return acc
+    }, {})
+  )
+
+  const redefinirFiltros = () => {
+    setUnidadeFiltro('TODAS')
+  }
 
   return (
     <div style={styles.page}>
       <div style={styles.header}>
-        <h1 style={styles.title}>Dashboard Atrasos Médicos</h1>
-        <p style={styles.subtitle}>
-          Monitoramento de pacientes com permanência acima de 30 horas
-        </p>
+        <div>
+          <h1 style={styles.title}>Dashboard Atrasos Médicos</h1>
+
+          <p style={styles.subtitle}>
+            Monitoramento operacional hospitalar
+          </p>
+        </div>
+
+        <div style={styles.uploadContainer}>
+          <input type="file" accept=".xlsx, .xls" onChange={handleUpload} />
+        </div>
+      </div>
+
+      <div style={styles.filters}>
+        <select
+          value={unidadeFiltro}
+          onChange={(e) => setUnidadeFiltro(e.target.value)}
+          style={styles.select}
+        >
+          {unidades.map((unidade, index) => (
+            <option key={index}>{unidade}</option>
+          ))}
+        </select>
+
+        <button onClick={redefinirFiltros} style={styles.button}>
+          Redefinir
+        </button>
       </div>
 
       <div style={styles.cards}>
         <div style={styles.card}>
-          <h3 style={styles.cardTitle}>Pacientes +30h</h3>
-          <p style={styles.cardValue}>40</p>
+          <h3 style={styles.cardTitle}>Total Registros</h3>
+          <p style={styles.cardValue}>{totalPacientes}</p>
         </div>
 
         <div style={styles.card}>
-          <h3 style={styles.cardTitle}>Tempo Médio</h3>
-          <p style={styles.cardValue}>34h</p>
+          <h3 style={styles.cardTitle}>Unidades</h3>
+          <p style={styles.cardValue}>{unidades.length - 1}</p>
         </div>
 
         <div style={styles.card}>
-          <h3 style={styles.cardTitle}>Unidades Críticas</h3>
-          <p style={styles.cardValue}>2</p>
+          <h3 style={styles.cardTitle}>Status Diferentes</h3>
+          <p style={styles.cardValue}>{statusData.length}</p>
         </div>
 
         <div style={styles.card}>
-          <h3 style={styles.cardTitle}>Visitas Pendentes</h3>
-          <p style={styles.cardValue}>17</p>
+          <h3 style={styles.cardTitle}>Médicos</h3>
+          <p style={styles.cardValue}>
+            {
+              new Set(
+                dadosFiltrados.map((item) => item.NM_MEDICO).filter(Boolean)
+              ).size
+            }
+          </p>
+        </div>
+      </div>
+
+      <div style={styles.grid}>
+        <div style={styles.chartBox}>
+          <h2 style={styles.chartTitle}>Top Unidades</h2>
+
+          <ResponsiveContainer width="100%" height={320}>
+            <BarChart data={topUnidades}>
+              <XAxis dataKey="unidade" stroke="#fff" />
+              <YAxis stroke="#fff" />
+              <Tooltip />
+              <Bar dataKey="total" fill="#38bdf8" radius={[8, 8, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+
+        <div style={styles.chartBox}>
+          <h2 style={styles.chartTitle}>Distribuição Status</h2>
+
+          <ResponsiveContainer width="100%" height={320}>
+            <PieChart>
+              <Pie
+                data={statusData}
+                dataKey="value"
+                nameKey="name"
+                outerRadius={120}
+                label
+              >
+                {statusData.map((entry, index) => (
+                  <Cell
+                    key={`cell-${index}`}
+                    fill={cores[index % cores.length]}
+                  />
+                ))}
+              </Pie>
+            </PieChart>
+          </ResponsiveContainer>
         </div>
       </div>
 
       <div style={styles.tableContainer}>
-        <h2 style={styles.tableTitle}>Unidades com Maior Atraso</h2>
+        <h2 style={styles.chartTitle}>Dados Operacionais</h2>
 
-        <table style={styles.table}>
-          <thead>
-            <tr>
-              <th style={styles.th}>Unidade</th>
-              <th style={styles.th}>Pacientes</th>
-              <th style={styles.th}>Maior Atraso</th>
-              <th style={styles.th}>Status</th>
-            </tr>
-          </thead>
-
-          <tbody>
-            {pacientes.map((item, index) => (
-              <tr key={index}>
-                <td style={styles.td}>{item.unidade}</td>
-                <td style={styles.td}>{item.pacientes}</td>
-                <td style={styles.td}>{item.atraso}</td>
-                <td style={styles.td}>
-                  <span
-                    style={{
-                      ...styles.status,
-                      background:
-                        item.status === 'Crítico'
-                          ? '#ff4d4f'
-                          : item.status === 'Alerta'
-                          ? '#faad14'
-                          : '#52c41a',
-                    }}
-                  >
-                    {item.status}
-                  </span>
-                </td>
+        <div style={styles.tableWrapper}>
+          <table style={styles.table}>
+            <thead>
+              <tr>
+                <th style={styles.th}>Unidade</th>
+                <th style={styles.th}>Médico</th>
+                <th style={styles.th}>Especialidade</th>
+                <th style={styles.th}>Status</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
 
-      <div style={styles.footer}>
-        Dashboard desenvolvido para monitoramento operacional hospitalar
+            <tbody>
+              {dadosFiltrados.slice(0, 20).map((item, index) => (
+                <tr key={index}>
+                  <td style={styles.td}>{item.NM_FILIAL}</td>
+                  <td style={styles.td}>{item.NM_MEDICO}</td>
+                  <td style={styles.td}>{item.DS_ESPECIALIDADE}</td>
+                  <td style={styles.td}>{item.STATUS}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   )
@@ -110,13 +227,18 @@ const styles = {
   page: {
     minHeight: '100vh',
     background: '#061529',
-    padding: '40px',
+    padding: '30px',
     color: '#fff',
     fontFamily: 'Arial',
   },
 
   header: {
-    marginBottom: '40px',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '30px',
+    flexWrap: 'wrap',
+    gap: '20px',
   },
 
   title: {
@@ -125,15 +247,45 @@ const styles = {
   },
 
   subtitle: {
-    fontSize: '18px',
     color: '#9fb3c8',
+    fontSize: '18px',
+  },
+
+  uploadContainer: {
+    background: '#0d223d',
+    padding: '20px',
+    borderRadius: '16px',
+  },
+
+  filters: {
+    display: 'flex',
+    gap: '15px',
+    marginBottom: '30px',
+    flexWrap: 'wrap',
+  },
+
+  select: {
+    padding: '12px',
+    borderRadius: '10px',
+    border: 'none',
+    minWidth: '220px',
+  },
+
+  button: {
+    padding: '12px 18px',
+    borderRadius: '10px',
+    border: 'none',
+    background: '#38bdf8',
+    color: '#fff',
+    fontWeight: 'bold',
+    cursor: 'pointer',
   },
 
   cards: {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
     gap: '20px',
-    marginBottom: '40px',
+    marginBottom: '30px',
   },
 
   card: {
@@ -144,8 +296,7 @@ const styles = {
   },
 
   cardTitle: {
-    fontSize: '16px',
-    color: '#9fb3c8',
+    color: '#8fb3d9',
     marginBottom: '15px',
   },
 
@@ -154,16 +305,33 @@ const styles = {
     fontWeight: 'bold',
   },
 
-  tableContainer: {
+  grid: {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: '20px',
+    marginBottom: '30px',
+  },
+
+  chartBox: {
     background: '#0d223d',
-    padding: '25px',
+    padding: '20px',
     borderRadius: '18px',
     border: '1px solid #16385f',
   },
 
-  tableTitle: {
+  chartTitle: {
     marginBottom: '20px',
-    fontSize: '24px',
+  },
+
+  tableContainer: {
+    background: '#0d223d',
+    padding: '20px',
+    borderRadius: '18px',
+    border: '1px solid #16385f',
+  },
+
+  tableWrapper: {
+    overflowX: 'auto',
   },
 
   table: {
@@ -172,29 +340,13 @@ const styles = {
   },
 
   th: {
-    textAlign: 'left',
-    padding: '16px',
     background: '#102944',
-    color: '#8fb3d9',
+    padding: '14px',
+    textAlign: 'left',
   },
 
   td: {
-    padding: '16px',
+    padding: '14px',
     borderBottom: '1px solid #16385f',
-  },
-
-  status: {
-    padding: '8px 14px',
-    borderRadius: '999px',
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: '14px',
-  },
-
-  footer: {
-    marginTop: '30px',
-    color: '#6f8aa6',
-    fontSize: '14px',
-    textAlign: 'center',
   },
 }
