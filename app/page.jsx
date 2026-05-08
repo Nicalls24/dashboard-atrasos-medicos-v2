@@ -7,13 +7,13 @@ import {
   ResponsiveContainer,
   BarChart,
   Bar,
-  XAxis,
-  YAxis,
- CartesianGrid,
-  Tooltip,
   PieChart,
   Pie,
-  Cell
+  Cell,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip
 } from 'recharts'
 
 export default function Home() {
@@ -40,11 +40,27 @@ export default function Home() {
           workbook.SheetNames[0]
         ]
 
-      const json =
-        XLSX.utils.sheet_to_json(sheet, {
-          raw: false,
-          defval: ''
+      const rows = XLSX.utils.sheet_to_json(sheet, {
+        header: 1,
+        raw: true
+      })
+
+      const headers = rows[3]
+
+      const body = rows
+        .slice(4)
+        .filter(row => row.length > 0)
+
+      const json = body.map(row => {
+
+        const obj = {}
+
+        headers.forEach((header, index) => {
+          obj[header] = row[index]
         })
+
+        return obj
+      })
 
       setData(json)
     }
@@ -107,11 +123,11 @@ export default function Home() {
   ).size
 
   const totalMedicos = new Set(
-    filteredData.map(item => item['NM_PRESTADOR'])
+    filteredData.map(item => item['NM_MEDICO'])
   ).size
 
   const tempos = filteredData.map(item =>
-    tempoParaMinutos(item['TEMPO DE ATRASO'])
+    tempoParaMinutos(item['TEMPO_DE_ESPERA'])
   )
 
   const tempoMedio = tempos.length
@@ -123,7 +139,7 @@ export default function Home() {
     .reduce((acc, item) => {
 
       const nome =
-        item['ESPECIALIDADE'] ||
+        item['DS_ESPECIALIDADE'] ||
         'SEM ESPECIALIDADE'
 
       const tempo = tempoParaMinutos(
@@ -172,7 +188,7 @@ export default function Home() {
         item['NM_LOCAL'] || 'SEM UNIDADE'
 
       const qtd = Number(
-        item['QT_PACIENTES_AGUARDANDO'] || 0
+        item[' QT_PACIENTES_AGUARDANDO'] || 0
       )
 
       const existente =
@@ -203,7 +219,7 @@ export default function Home() {
     .reduce((acc, item) => {
 
       const status =
-        item['STATUS_PONTO'] || 'SEM STATUS'
+        item['STATUS'] || 'SEM STATUS'
 
       const existente =
         acc.find(x => x.name === status)
@@ -229,7 +245,7 @@ export default function Home() {
     .reduce((acc, item) => {
 
       const medico =
-        item['NM_PRESTADOR'] || 'SEM MÉDICO'
+        item['NM_MEDICO'] || 'SEM MÉDICO'
 
       const unidade =
         item['NM_LOCAL'] || 'SEM UNIDADE'
@@ -276,7 +292,7 @@ export default function Home() {
     .filter(item => {
 
       const status = String(
-        item['STATUS_PONTO']
+        item['STATUS']
       ).toUpperCase()
 
       return status.includes('ATRASO')
@@ -288,11 +304,11 @@ export default function Home() {
         item['NM_LOCAL'] || 'SEM UNIDADE'
 
       const pacientes = Number(
-        item['QT_PACIENTES_AGUARDANDO'] || 0
+        item[' QT_PACIENTES_AGUARDANDO'] || 0
       )
 
       const medico =
-        item['NM_PRESTADOR'] || 'SEM MÉDICO'
+        item['NM_MEDICO'] || 'SEM MÉDICO'
 
       const existente =
         acc.find(x => x.unidade === unidade)
@@ -508,34 +524,14 @@ export default function Home() {
             height={400}
           >
 
-            <BarChart
-              data={statusData}
-              layout='vertical'
-              margin={{ left: 80 }}
-            >
+            <PieChart>
 
-              <CartesianGrid
-                strokeDasharray='3 3'
-                stroke='#4c1d95'
-              />
-
-              <XAxis
-                type='number'
-                stroke='#ddd6fe'
-              />
-
-              <YAxis
-                dataKey='name'
-                type='category'
-                stroke='#ddd6fe'
-                width={180}
-              />
-
-              <Tooltip />
-
-              <Bar
+              <Pie
+                data={statusData}
                 dataKey='value'
-                radius={[0, 10, 10, 0]}
+                nameKey='name'
+                outerRadius={130}
+                label
               >
 
                 {statusData.map((entry, index) => (
@@ -551,9 +547,11 @@ export default function Home() {
 
                 ))}
 
-              </Bar>
+              </Pie>
 
-            </BarChart>
+              <Tooltip />
+
+            </PieChart>
 
           </ResponsiveContainer>
 
@@ -749,7 +747,6 @@ const styles = {
   table: {
     width: '100%',
     borderCollapse: 'collapse',
-    marginTop: '20px',
-    color: '#fff'
+    marginTop: '20px'
   }
 }
