@@ -141,9 +141,27 @@ export default function Home() {
 
     const texto = String(
       valor
-    ).replace(',', '.')
+    )
+      .replace(',', '.')
+      .trim()
 
-    const numero = parseFloat(texto)
+    if (texto.includes(':')) {
+      const partes =
+        texto.split(':')
+
+      const horas =
+        Number(partes[0]) || 0
+
+      const minutos =
+        Number(partes[1]) || 0
+
+      return (
+        horas + minutos / 60
+      )
+    }
+
+    const numero =
+      parseFloat(texto)
 
     if (!isNaN(numero))
       return numero
@@ -156,30 +174,41 @@ export default function Home() {
 
   const totalUnidades =
     new Set(
-      dadosFiltrados.map(
-        (d) =>
-          d[colunas.unidade]
-      )
+      dadosFiltrados
+        .map(
+          (d) =>
+            d[
+              colunas.unidade
+            ]
+        )
+        .filter(Boolean)
     ).size
 
   const totalMedicos =
     new Set(
-      dadosFiltrados.map(
-        (d) =>
-          d[colunas.medico]
-      )
+      dadosFiltrados
+        .map(
+          (d) =>
+            d[
+              colunas.medico
+            ]
+        )
+        .filter(Boolean)
     ).size
 
   const tempoMedio =
-    dadosFiltrados.reduce(
-      (acc, d) =>
-        acc +
-        parseHoras(
-          d[colunas.espera]
-        ),
-      0
-    ) /
-      totalPacientes || 0
+    totalPacientes > 0
+      ? dadosFiltrados.reduce(
+          (acc, d) =>
+            acc +
+            parseHoras(
+              d[
+                colunas.espera
+              ]
+            ),
+          0
+        ) / totalPacientes
+      : 0
 
   const rankingPacientes =
     Object.entries(
@@ -270,6 +299,9 @@ export default function Home() {
         {}
       )
     )
+      .filter(
+        (m) => m.atraso > 0
+      )
       .sort(
         (a, b) =>
           b.atraso - a.atraso
@@ -454,3 +486,569 @@ export default function Home() {
           ))}
         </select>
       </div>
+
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns:
+            'repeat(4,1fr)',
+          gap: '20px',
+        }}
+      >
+        {[
+          [
+            'Total Pacientes',
+            totalPacientes,
+          ],
+          [
+            'Unidades',
+            totalUnidades,
+          ],
+          [
+            'Médicos',
+            totalMedicos,
+          ],
+          [
+            'Tempo Médio Espera',
+            `${tempoMedio.toFixed(
+              1
+            )}h`,
+          ],
+        ].map((c) => (
+          <div
+            key={c[0]}
+            style={{
+              background:
+                cores.card,
+              padding: '36px',
+              borderRadius:
+                '24px',
+              minHeight: '180px',
+            }}
+          >
+            <h3
+              style={{
+                color:
+                  cores.subtitulo,
+                fontSize: '20px',
+              }}
+            >
+              {c[0]}
+            </h3>
+
+            <h2
+              style={{
+                fontSize: '58px',
+                marginTop: '35px',
+              }}
+            >
+              {c[1]}
+            </h2>
+          </div>
+        ))}
+      </div>
+
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns:
+            '1fr 1fr',
+          gap: '24px',
+          marginTop: '30px',
+        }}
+      >
+        <div
+          style={{
+            background:
+              cores.card,
+            borderRadius:
+              '24px',
+            padding: '30px',
+          }}
+        >
+          <h2>
+            🔥 Unidades com
+            Maior Tempo de
+            Espera
+          </h2>
+
+          {rankingPacientes
+            .slice(0, 5)
+            .map((u) => (
+              <div
+                key={u.nome}
+                style={{
+                  background:
+                    '#17175a',
+                  borderRadius:
+                    '18px',
+                  padding:
+                    '18px',
+                  marginTop:
+                    '18px',
+                }}
+              >
+                <strong>
+                  {u.nome}
+                </strong>
+
+                <div
+                  style={{
+                    color:
+                      '#ff6b81',
+                    marginTop:
+                      '6px',
+                  }}
+                >
+                  {tempoMedio.toFixed(
+                    1
+                  )}
+                  h espera média
+                </div>
+
+                <div
+                  style={{
+                    color:
+                      '#d6c4ff',
+                  }}
+                >
+                  {
+                    u.total
+                  }{' '}
+                  pacientes
+                </div>
+              </div>
+            ))}
+        </div>
+
+        <div
+          style={{
+            background:
+              cores.card,
+            borderRadius:
+              '24px',
+            padding: '30px',
+          }}
+        >
+          <h2>
+            ⏰ Unidades com
+            Mais Médicos em
+            Atraso
+          </h2>
+
+          {impactoFila
+            .slice(0, 5)
+            .map((u) => (
+              <div
+                key={u.unidade}
+                style={{
+                  background:
+                    '#17175a',
+                  borderRadius:
+                    '18px',
+                  padding:
+                    '18px',
+                  marginTop:
+                    '18px',
+                }}
+              >
+                <strong>
+                  {
+                    u.unidade
+                  }
+                </strong>
+
+                <div
+                  style={{
+                    color:
+                      '#ff6b81',
+                    marginTop:
+                      '6px',
+                  }}
+                >
+                  {
+                    u.qtdMedicos
+                  }{' '}
+                  médicos
+                </div>
+
+                <div
+                  style={{
+                    color:
+                      '#d6c4ff',
+                  }}
+                >
+                  {
+                    u.pacientes
+                  }{' '}
+                  pacientes
+                </div>
+              </div>
+            ))}
+        </div>
+      </div>
+
+      <div
+        style={{
+          background:
+            cores.card,
+          borderRadius:
+            '24px',
+          padding: '30px',
+          marginTop: '30px',
+        }}
+      >
+        <h2>
+          📊 Atrasos por
+          Período
+        </h2>
+
+        <ResponsiveContainer
+          width='100%'
+          height={350}
+        >
+          <AreaChart
+            data={periodos}
+          >
+            <CartesianGrid
+              strokeDasharray='3 3'
+              stroke={
+                cores.grade
+              }
+            />
+
+            <XAxis
+              dataKey='periodo'
+              stroke='#fff'
+            />
+
+            <YAxis
+              stroke='#fff'
+            />
+
+            <Tooltip />
+
+            <Area
+              type='monotone'
+              dataKey='valor'
+              stroke={
+                cores.azul
+              }
+              fill={
+                cores.azul
+              }
+              fillOpacity={
+                0.6
+              }
+            />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns:
+            '1fr 1fr',
+          gap: '24px',
+          marginTop: '30px',
+        }}
+      >
+        <div
+          style={{
+            background:
+              cores.card,
+            borderRadius:
+              '24px',
+            padding: '30px',
+          }}
+        >
+          <h2>
+            Ranking Crítico
+            de Pacientes
+            Aguardando
+          </h2>
+
+          <ResponsiveContainer
+            width='100%'
+            height={400}
+          >
+            <BarChart
+              data={
+                rankingPacientes
+              }
+            >
+              <CartesianGrid
+                strokeDasharray='3 3'
+                stroke={
+                  cores.grade
+                }
+              />
+
+              <XAxis
+                dataKey='nome'
+                stroke='#fff'
+              />
+
+              <YAxis
+                stroke='#fff'
+              />
+
+              <Tooltip />
+
+              <Bar
+                dataKey='total'
+                fill={
+                  cores.roxo
+                }
+                radius={[
+                  12,
+                  12,
+                  0,
+                  0,
+                ]}
+              />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+
+        <div
+          style={{
+            background:
+              cores.card,
+            borderRadius:
+              '24px',
+            padding: '30px',
+          }}
+        >
+          <h2>
+            Status de
+            Pontos Médicos
+          </h2>
+
+          <ResponsiveContainer
+            width='100%'
+            height={400}
+          >
+            <BarChart
+              data={
+                statusMedicos
+              }
+              layout='vertical'
+            >
+              <CartesianGrid
+                strokeDasharray='3 3'
+                stroke={
+                  cores.grade
+                }
+              />
+
+              <XAxis
+                type='number'
+                stroke='#fff'
+              />
+
+              <YAxis
+                type='category'
+                dataKey='nome'
+                stroke='#fff'
+              />
+
+              <Tooltip />
+
+              <Bar
+                dataKey='total'
+                fill={
+                  cores.roxo
+                }
+                radius={[
+                  0,
+                  12,
+                  12,
+                  0,
+                ]}
+              />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      <div
+        style={{
+          background:
+            cores.card,
+          borderRadius:
+            '24px',
+          padding: '30px',
+          marginTop: '30px',
+        }}
+      >
+        <h2>
+          👨‍⚕️ Médicos com
+          Maior Tempo de
+          Atraso
+        </h2>
+
+        <ResponsiveContainer
+          width='100%'
+          height={420}
+        >
+          <BarChart
+            data={medicosAtraso}
+            layout='vertical'
+          >
+            <CartesianGrid
+              strokeDasharray='3 3'
+              stroke={
+                cores.grade
+              }
+            />
+
+            <XAxis
+              type='number'
+              stroke='#fff'
+            />
+
+            <YAxis
+              type='category'
+              dataKey='medico'
+              stroke='#fff'
+              width={260}
+            />
+
+            <Tooltip />
+
+            <Bar
+              dataKey='atraso'
+              fill={
+                cores.roxo
+              }
+              radius={[
+                0,
+                12,
+                12,
+                0,
+              ]}
+            />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+
+      <div
+        style={{
+          background:
+            cores.card,
+          borderRadius:
+            '24px',
+          padding: '30px',
+          marginTop: '30px',
+        }}
+      >
+        <h2>
+          Impacto na Fila
+          de Espera
+        </h2>
+
+        <table
+          style={{
+            width: '100%',
+            marginTop: '25px',
+            borderCollapse:
+              'collapse',
+          }}
+        >
+          <thead>
+            <tr
+              style={{
+                background:
+                  '#4338a0',
+              }}
+            >
+              <th
+                style={{
+                  padding:
+                    '18px',
+                  textAlign:
+                    'left',
+                }}
+              >
+                Unidade
+              </th>
+
+              <th
+                style={{
+                  padding:
+                    '18px',
+                }}
+              >
+                Qtd Médicos
+              </th>
+
+              <th
+                style={{
+                  padding:
+                    '18px',
+                }}
+              >
+                Pacientes
+              </th>
+            </tr>
+          </thead>
+
+          <tbody>
+            {impactoFila.map(
+              (i) => (
+                <tr
+                  key={
+                    i.unidade
+                  }
+                  style={{
+                    borderBottom:
+                      '1px solid #3b3b7a',
+                  }}
+                >
+                  <td
+                    style={{
+                      padding:
+                        '18px',
+                    }}
+                  >
+                    {
+                      i.unidade
+                    }
+                  </td>
+
+                  <td
+                    style={{
+                      padding:
+                        '18px',
+                      textAlign:
+                        'center',
+                    }}
+                  >
+                    {
+                      i.qtdMedicos
+                    }
+                  </td>
+
+                  <td
+                    style={{
+                      padding:
+                        '18px',
+                      textAlign:
+                        'center',
+                    }}
+                  >
+                    {
+                      i.pacientes
+                    }
+                  </td>
+                </tr>
+              )
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
