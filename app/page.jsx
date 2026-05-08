@@ -11,14 +11,13 @@ import {
   YAxis,
   Tooltip,
   CartesianGrid,
-  PieChart,
-  Pie,
   Cell,
 } from 'recharts'
 
 export default function Home() {
   const [dados, setDados] = useState([])
-  const [unidadeFiltro, setUnidadeFiltro] = useState('TODAS')
+  const [unidadeFiltro, setUnidadeFiltro] =
+    useState('TODAS')
 
   const cores = [
     '#c84df2',
@@ -107,6 +106,42 @@ export default function Home() {
           100
         ).toFixed(1)
       : 0
+
+  const maiorTempoEspera = useMemo(() => {
+    const tempos = dadosFiltrados
+      .map((item) => {
+        const valor =
+          item['TEMPO_DE_ESPERA']
+
+        if (!valor) return 0
+
+        if (typeof valor === 'number') {
+          return valor * 24 * 60
+        }
+
+        if (typeof valor === 'string') {
+          const partes = valor.split(':')
+
+          if (partes.length >= 2) {
+            const horas =
+              Number(partes[0]) || 0
+
+            const minutos =
+              Number(partes[1]) || 0
+
+            return horas * 60 + minutos
+          }
+        }
+
+        return 0
+      })
+      .filter((v) => v > 0)
+
+    if (tempos.length === 0)
+      return 0
+
+    return Math.max(...tempos)
+  }, [dadosFiltrados])
 
   const tempoEsperaMedio = useMemo(() => {
     const tempos = dadosFiltrados
@@ -211,17 +246,50 @@ export default function Home() {
       )
     )
 
-  const tabelaCritica =
-    dadosFiltrados.filter((item) => {
-      const status = String(
-        item['STATUS']
-      ).toUpperCase()
+  const tabelaCritica = Object.values(
+    dadosFiltrados.reduce(
+      (acc, item) => {
+        const status = String(
+          item['STATUS']
+        ).toUpperCase()
 
-      return (
-        status.includes('ATRASO') ||
-        status.includes('CRITICO')
-      )
-    })
+        if (
+          !status.includes('ATRASO')
+        )
+          return acc
+
+        const medico =
+          item['NM_MEDICO'] ||
+          'SEM MÉDICO'
+
+        const unidade =
+          item['NM_FILIAL'] ||
+          'SEM UNIDADE'
+
+        const chave =
+          medico + unidade
+
+        if (!acc[chave]) {
+          acc[chave] = {
+            unidade,
+            medico,
+            pacientes: 0,
+            status,
+          }
+        }
+
+        acc[chave].pacientes +=
+          Number(
+            item[
+              ' QT_PACIENTES_AGUARDANDO'
+            ] || 0
+          )
+
+        return acc
+      },
+      {}
+    )
+  )
 
   return (
     <div style={styles.page}>
@@ -324,6 +392,16 @@ export default function Home() {
             min
           </p>
         </div>
+
+        <div style={styles.card}>
+          <h3 style={styles.cardTitle}>
+            Maior Tempo de Espera
+          </h3>
+
+          <p style={styles.cardValue}>
+            {maiorTempoEspera} min
+          </p>
+        </div>
       </div>
 
       <div style={styles.grid}>
@@ -374,13 +452,23 @@ export default function Home() {
             width="100%"
             height={350}
           >
-            <PieChart>
-              <Pie
-                data={statusMedico}
+            <BarChart data={statusMedico}>
+              <CartesianGrid stroke="#35204d" />
+
+              <XAxis
+                dataKey="motivo"
+                stroke="#d7c6ff"
+              />
+
+              <YAxis stroke="#d7c6ff" />
+
+              <Tooltip />
+
+              <Bar
                 dataKey="quantidade"
-                nameKey="motivo"
-                outerRadius={120}
-                label
+                radius={[
+                  10, 10, 0, 0,
+                ]}
               >
                 {statusMedico.map(
                   (
@@ -398,10 +486,8 @@ export default function Home() {
                     />
                   )
                 )}
-              </Pie>
-
-              <Tooltip />
-            </PieChart>
+              </Bar>
+            </BarChart>
           </ResponsiveContainer>
         </div>
       </div>
@@ -435,6 +521,11 @@ export default function Home() {
 
           <tbody>
             {tabelaCritica
+              .sort(
+                (a, b) =>
+                  b.pacientes -
+                  a.pacientes
+              )
               .slice(0, 20)
               .map(
                 (
@@ -448,9 +539,7 @@ export default function Home() {
                       }
                     >
                       {
-                        item[
-                          'NM_FILIAL'
-                        ]
+                        item.unidade
                       }
                     </td>
 
@@ -460,9 +549,7 @@ export default function Home() {
                       }
                     >
                       {
-                        item[
-                          'NM_MEDICO'
-                        ]
+                        item.medico
                       }
                     </td>
 
@@ -472,9 +559,7 @@ export default function Home() {
                       }
                     >
                       {
-                        item[
-                          ' QT_PACIENTES_AGUARDANDO'
-                        ]
+                        item.pacientes
                       }
                     </td>
 
@@ -484,9 +569,7 @@ export default function Home() {
                       }
                     >
                       {
-                        item[
-                          'STATUS'
-                        ]
+                        item.status
                       }
                     </td>
                   </tr>
