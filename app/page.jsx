@@ -1,14 +1,16 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import * as XLSX from 'xlsx'
+
 import {
+  ResponsiveContainer,
   BarChart,
   Bar,
   XAxis,
   YAxis,
   Tooltip,
-  ResponsiveContainer,
+  CartesianGrid,
   PieChart,
   Pie,
   Cell,
@@ -18,7 +20,7 @@ export default function Home() {
   const [dados, setDados] = useState([])
   const [unidadeFiltro, setUnidadeFiltro] = useState('TODAS')
 
-  const cores = ['#38bdf8', '#22c55e', '#f59e0b', '#ef4444']
+  const cores = ['#ef4444', '#f59e0b', '#38bdf8', '#22c55e']
 
   const handleUpload = (e) => {
     const arquivo = e.target.files[0]
@@ -27,16 +29,21 @@ export default function Home() {
 
     const reader = new FileReader()
 
-    reader.onload = (evt) => {
-      const data = evt.target.result
+    reader.onload = (evento) => {
+      const data = evento.target.result
 
-      const workbook = XLSX.read(data, { type: 'binary' })
+      const workbook = XLSX.read(data, {
+        type: 'binary',
+      })
 
       const sheetName = workbook.SheetNames[0]
 
       const worksheet = workbook.Sheets[sheetName]
 
-      const json = XLSX.utils.sheet_to_json(worksheet)
+      const json = XLSX.utils.sheet_to_json(worksheet, {
+        range: 3,
+        defval: '',
+      })
 
       setDados(json)
     }
@@ -44,38 +51,94 @@ export default function Home() {
     reader.readAsBinaryString(arquivo)
   }
 
-  const unidades = [
-    'TODAS',
-    ...new Set(dados.map((item) => item.NM_FILIAL).filter(Boolean)),
-  ]
+  const unidades = useMemo(() => {
+    const lista = dados
+      .map((item) => item['NM_FILIAL'])
+      .filter(Boolean)
 
-  const dadosFiltrados =
-    unidadeFiltro === 'TODAS'
-      ? dados
-      : dados.filter((item) => item.NM_FILIAL === unidadeFiltro)
+    return ['TODAS', ...new Set(lista)]
+  }, [dados])
 
-  const totalPacientes = dadosFiltrados.length
+  const dadosFiltrados = useMemo(() => {
+    if (unidadeFiltro === 'TODAS') {
+      return dados
+    }
 
-  const topUnidades = Object.values(
+    return dados.filter(
+      (item) => item['NM_FILIAL'] === unidadeFiltro
+    )
+  }, [dados, unidadeFiltro])
+
+  const totalRegistros = dadosFiltrados.length
+
+  const medicosAtrasados = dadosFiltrados.filter(
+    (item) => item['ATRASO'] === 'SIM'
+  ).length
+
+  const percentualAtraso =
+    totalRegistros > 0
+      ? ((medicosAtrasados / totalRegistros) * 100).toFixed(1)
+      : 0
+
+  const pacientesAguardando = dadosFiltrados.reduce(
+    (acc, item) =>
+      acc + Number(item[' QT_PACIENTES_AGUARDANDO'] || 0),
+    0
+  )
+
+  const tempoEsperaMedio = (
     dadosFiltrados.reduce((acc, item) => {
-      const unidade = item.NM_FILIAL || 'Sem unidade'
+      const tempo = item['TEMPO_DE_ESPERA']
+
+      if (!tempo) return acc
+
+      const segundos =
+        tempo?.h * 3600 +
+        tempo?.m * 60 +
+        tempo?.s
+
+      return acc + segundos
+    }, 0) / (dadosFiltrados.length || 1)
+  )
+
+  const tempoMedioMinutos = Math.round(
+    tempoEsperaMedio / 60
+  )
+
+  const topCriticos = Object.values(
+    dadosFiltrados.reduce((acc, item) => {
+      const unidade = item['NM_FILIAL'] || 'SEM UNIDADE'
 
       if (!acc[unidade]) {
         acc[unidade] = {
           unidade,
-          total: 0,
+          pacientes: 0,
+          atrasos: 0,
         }
       }
 
-      acc[unidade].total += 1
+      acc[unidade].pacientes += Number(
+        item[' QT_PACIENTES_AGUARDANDO'] || 0
+      )
+
+      if (item['ATRASO'] === 'SIM') {
+        acc[unidade].atrasos += 1
+      }
 
       return acc
     }, {})
   )
+    .map((item) => ({
+      ...item,
+      impacto:
+        item.pacientes + item.atrasos * 2,
+    }))
+    .sort((a, b) => b.impacto - a.impacto)
+    .slice(0, 10)
 
   const statusData = Object.values(
     dadosFiltrados.reduce((acc, item) => {
-      const status = item.STATUS || 'Sem Status'
+      const status = item['STATUS'] || 'SEM STATUS'
 
       if (!acc[status]) {
         acc[status] = {
@@ -90,88 +153,133 @@ export default function Home() {
     }, {})
   )
 
-  const redefinirFiltros = () => {
-    setUnidadeFiltro('TODAS')
-  }
-
   return (
     <div style={styles.page}>
       <div style={styles.header}>
         <div>
-          <h1 style={styles.title}>Dashboard Atrasos Médicos</h1>
+          <h1 style={styles.title}>
+            Dashboard Atrasos Médicos
+          </h1>
 
           <p style={styles.subtitle}>
-            Monitoramento operacional hospitalar
+            Gestão operacional hospitalar
           </p>
         </div>
 
-        <div style={styles.uploadContainer}>
-          <input type="file" accept=".xlsx, .xls" onChange={handleUpload} />
+        <div style={styles.uploadBox}>
+          <input
+            type="file"
+            accept=".xlsx,.xls"
+            onChange={handleUpload}
+          />
         </div>
       </div>
 
       <div style={styles.filters}>
         <select
           value={unidadeFiltro}
-          onChange={(e) => setUnidadeFiltro(e.target.value)}
+          onChange={(e) =>
+            setUnidadeFiltro(e.target.value)
+          }
           style={styles.select}
         >
           {unidades.map((unidade, index) => (
-            <option key={index}>{unidade}</option>
+            <option key={index}>
+              {unidade}
+            </option>
           ))}
         </select>
 
-        <button onClick={redefinirFiltros} style={styles.button}>
+        <button
+          style={styles.button}
+          onClick={() => setUnidadeFiltro('TODAS')}
+        >
           Redefinir
         </button>
       </div>
 
       <div style={styles.cards}>
         <div style={styles.card}>
-          <h3 style={styles.cardTitle}>Total Registros</h3>
-          <p style={styles.cardValue}>{totalPacientes}</p>
-        </div>
+          <h3 style={styles.cardTitle}>
+            Médicos em Atraso
+          </h3>
 
-        <div style={styles.card}>
-          <h3 style={styles.cardTitle}>Unidades</h3>
-          <p style={styles.cardValue}>{unidades.length - 1}</p>
-        </div>
-
-        <div style={styles.card}>
-          <h3 style={styles.cardTitle}>Status Diferentes</h3>
-          <p style={styles.cardValue}>{statusData.length}</p>
-        </div>
-
-        <div style={styles.card}>
-          <h3 style={styles.cardTitle}>Médicos</h3>
           <p style={styles.cardValue}>
-            {
-              new Set(
-                dadosFiltrados.map((item) => item.NM_MEDICO).filter(Boolean)
-              ).size
-            }
+            {medicosAtrasados}
+          </p>
+        </div>
+
+        <div style={styles.card}>
+          <h3 style={styles.cardTitle}>
+            % Em Atraso
+          </h3>
+
+          <p style={styles.cardValue}>
+            {percentualAtraso}%
+          </p>
+        </div>
+
+        <div style={styles.card}>
+          <h3 style={styles.cardTitle}>
+            Pacientes Aguardando
+          </h3>
+
+          <p style={styles.cardValue}>
+            {pacientesAguardando}
+          </p>
+        </div>
+
+        <div style={styles.card}>
+          <h3 style={styles.cardTitle}>
+            Tempo Médio Espera
+          </h3>
+
+          <p style={styles.cardValue}>
+            {tempoMedioMinutos} min
           </p>
         </div>
       </div>
 
       <div style={styles.grid}>
         <div style={styles.chartBox}>
-          <h2 style={styles.chartTitle}>Top Unidades</h2>
+          <h2 style={styles.chartTitle}>
+            Ranking Crítico
+          </h2>
 
-          <ResponsiveContainer width="100%" height={320}>
-            <BarChart data={topUnidades}>
-              <XAxis dataKey="unidade" stroke="#fff" />
-              <YAxis stroke="#fff" />
+          <ResponsiveContainer
+            width="100%"
+            height={350}
+          >
+            <BarChart data={topCriticos}>
+              <CartesianGrid stroke="#16385f" />
+
+              <XAxis
+                dataKey="unidade"
+                stroke="#9fb3c8"
+              />
+
+              <YAxis stroke="#9fb3c8" />
+
               <Tooltip />
-              <Bar dataKey="total" fill="#38bdf8" radius={[8, 8, 0, 0]} />
+
+              <Bar
+                dataKey="impacto"
+                fill="#ef4444"
+                radius={[8, 8, 0, 0]}
+              />
             </BarChart>
           </ResponsiveContainer>
         </div>
 
         <div style={styles.chartBox}>
-          <h2 style={styles.chartTitle}>Distribuição Status</h2>
+          <h2 style={styles.chartTitle}>
+            Status Operacional
+          </h2>
 
-          <ResponsiveContainer width="100%" height={320}>
+          <ResponsiveContainer
+            width="100%"
+            height={350}
+          >
             <PieChart>
               <Pie
                 data={statusData}
@@ -180,41 +288,104 @@ export default function Home() {
                 outerRadius={120}
                 label
               >
-                {statusData.map((entry, index) => (
-                  <Cell
-                    key={`cell-${index}`}
-                    fill={cores[index % cores.length]}
-                  />
-                ))}
+                {statusData.map(
+                  (entry, index) => (
+                    <Cell
+                      key={index}
+                      fill={
+                        cores[
+                          index % cores.length
+                        ]
+                      }
+                    />
+                  )
+                )}
               </Pie>
+
+              <Tooltip />
             </PieChart>
           </ResponsiveContainer>
         </div>
       </div>
 
       <div style={styles.tableContainer}>
-        <h2 style={styles.chartTitle}>Dados Operacionais</h2>
+        <h2 style={styles.chartTitle}>
+          Impacto na Fila de Espera
+        </h2>
 
         <div style={styles.tableWrapper}>
           <table style={styles.table}>
             <thead>
               <tr>
-                <th style={styles.th}>Unidade</th>
-                <th style={styles.th}>Médico</th>
-                <th style={styles.th}>Especialidade</th>
-                <th style={styles.th}>Status</th>
+                <th style={styles.th}>
+                  Unidade
+                </th>
+
+                <th style={styles.th}>
+                  Médico
+                </th>
+
+                <th style={styles.th}>
+                  Especialidade
+                </th>
+
+                <th style={styles.th}>
+                  Pacientes
+                </th>
+
+                <th style={styles.th}>
+                  Status
+                </th>
               </tr>
             </thead>
 
             <tbody>
-              {dadosFiltrados.slice(0, 20).map((item, index) => (
-                <tr key={index}>
-                  <td style={styles.td}>{item.NM_FILIAL}</td>
-                  <td style={styles.td}>{item.NM_MEDICO}</td>
-                  <td style={styles.td}>{item.DS_ESPECIALIDADE}</td>
-                  <td style={styles.td}>{item.STATUS}</td>
-                </tr>
-              ))}
+              {dadosFiltrados
+                .sort(
+                  (a, b) =>
+                    Number(
+                      b[
+                        ' QT_PACIENTES_AGUARDANDO'
+                      ] || 0
+                    ) -
+                    Number(
+                      a[
+                        ' QT_PACIENTES_AGUARDANDO'
+                      ] || 0
+                    )
+                )
+                .slice(0, 20)
+                .map((item, index) => (
+                  <tr key={index}>
+                    <td style={styles.td}>
+                      {item['NM_FILIAL']}
+                    </td>
+
+                    <td style={styles.td}>
+                      {item['NM_MEDICO']}
+                    </td>
+
+                    <td style={styles.td}>
+                      {
+                        item[
+                          'DS_ESPECIALIDADE'
+                        ]
+                      }
+                    </td>
+
+                    <td style={styles.td}>
+                      {
+                        item[
+                          ' QT_PACIENTES_AGUARDANDO'
+                        ]
+                      }
+                    </td>
+
+                    <td style={styles.td}>
+                      {item['STATUS']}
+                    </td>
+                  </tr>
+                ))}
             </tbody>
           </table>
         </div>
@@ -251,10 +422,11 @@ const styles = {
     fontSize: '18px',
   },
 
-  uploadContainer: {
+  uploadBox: {
     background: '#0d223d',
     padding: '20px',
-    borderRadius: '16px',
+    borderRadius: '18px',
+    border: '1px solid #16385f',
   },
 
   filters: {
@@ -268,11 +440,11 @@ const styles = {
     padding: '12px',
     borderRadius: '10px',
     border: 'none',
-    minWidth: '220px',
+    minWidth: '250px',
   },
 
   button: {
-    padding: '12px 18px',
+    padding: '12px 20px',
     borderRadius: '10px',
     border: 'none',
     background: '#38bdf8',
@@ -283,7 +455,8 @@ const styles = {
 
   cards: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+    gridTemplateColumns:
+      'repeat(auto-fit, minmax(220px, 1fr))',
     gap: '20px',
     marginBottom: '30px',
   },
@@ -301,7 +474,7 @@ const styles = {
   },
 
   cardValue: {
-    fontSize: '38px',
+    fontSize: '42px',
     fontWeight: 'bold',
   },
 
@@ -321,6 +494,7 @@ const styles = {
 
   chartTitle: {
     marginBottom: '20px',
+    fontSize: '28px',
   },
 
   tableContainer: {
@@ -341,12 +515,12 @@ const styles = {
 
   th: {
     background: '#102944',
-    padding: '14px',
+    padding: '16px',
     textAlign: 'left',
   },
 
   td: {
-    padding: '14px',
+    padding: '16px',
     borderBottom: '1px solid #16385f',
   },
 }
