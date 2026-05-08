@@ -9,319 +9,338 @@ import {
   Bar,
   XAxis,
   YAxis,
-  CartesianGrid,
   Tooltip,
+  CartesianGrid,
   AreaChart,
   Area,
-  Cell,
 } from 'recharts'
 
-export default function Dashboard() {
+export default function Home() {
   const [dados, setDados] = useState([])
-  const [unidade, setUnidade] = useState('TODAS')
+  const [unidadeFiltro, setUnidadeFiltro] =
+    useState('TODAS')
 
   const cores = {
-    fundo: '#050816',
-    card: '#17172f',
-    borda: '#2a2a4f',
-    roxo: '#c13df2',
-    azul: '#00d4ff',
-    vermelho: '#ff4d6d',
-    verde: '#00f5a0',
+    fundo: '#05051f',
+    card: '#1a1a40',
+    card2: '#232356',
+    roxo: '#c13df0',
+    roxo2: '#8f2fff',
+    azul: '#00d2ff',
     texto: '#ffffff',
-    texto2: '#b8b8d4',
+    subtitulo: '#d6c4ff',
+    grade: '#5d2a9d',
   }
 
-  const lerNumero = (valor) => {
-    if (!valor) return 0
-
-    if (typeof valor === 'number') {
-      return valor * 24
-    }
-
-    if (typeof valor === 'object') {
-      return 0
-    }
-
-    const texto = valor.toString()
-
-    if (texto.includes(':')) {
-      const partes = texto.split(':')
-
-      const horas = parseInt(partes[0] || 0)
-      const minutos = parseInt(partes[1] || 0)
-
-      return horas + minutos / 60
-    }
-
-    const numero = parseFloat(
-      texto.replace(',', '.')
-    )
-
-    return isNaN(numero) ? 0 : numero
-  }
-
-  const detectarColuna = (obj, nomes) => {
-    const keys = Object.keys(obj || {})
-
-    for (let nome of nomes) {
-      const achou = keys.find((k) =>
-        k.toUpperCase().includes(nome.toUpperCase())
-      )
-
-      if (achou) return achou
-    }
-
-    return null
-  }
-
-  const processarArquivo = async (e) => {
+  const handleUpload = async (e) => {
     const arquivo = e.target.files[0]
-
     if (!arquivo) return
 
     const buffer = await arquivo.arrayBuffer()
 
-    const workbook = XLSX.read(buffer)
-
-    const sheet = workbook.Sheets[workbook.SheetNames[0]]
-
-    const json = XLSX.utils.sheet_to_json(sheet, {
-      range: 3,
-      defval: '',
+    const workbook = XLSX.read(buffer, {
+      type: 'buffer',
     })
 
-    if (!json.length) return
+    const sheet =
+      workbook.Sheets[
+        workbook.SheetNames[0]
+      ]
 
-    const exemplo = json[0]
+    const json = XLSX.utils.sheet_to_json(
+      sheet,
+      {
+        defval: '',
+      }
+    )
 
-    const COL_UNIDADE = detectarColuna(exemplo, [
-      'NM_LOCAL',
-      'LOCAL',
-      'UNIDADE',
-    ])
-
-    const COL_MEDICO = detectarColuna(exemplo, [
-      'NM_MEDICO',
-      'MEDICO',
-    ])
-
-    const COL_STATUS = detectarColuna(exemplo, [
-      'STATUS',
-    ])
-
-    const COL_ESPECIALIDADE = detectarColuna(exemplo, [
-      'ESPECIALIDADE',
-    ])
-
-    const COL_ATRASO = detectarColuna(exemplo, [
-      'ATRASO',
-      'HR_ENTRADA',
-      'HR_INICIO',
-    ])
-
-    const COL_HORA = detectarColuna(exemplo, [
-      'HORA',
-      'DATA',
-    ])
-
-    const tratados = json.map((item) => ({
-      unidade:
-        item[COL_UNIDADE]?.toString().trim() ||
-        'SEM UNIDADE',
-
-      medico:
-        item[COL_MEDICO]?.toString().trim() ||
-        'SEM MÉDICO',
-
-      status:
-        item[COL_STATUS]?.toString().trim() ||
-        'OK',
-
-      especialidade:
-        item[COL_ESPECIALIDADE]?.toString().trim() ||
-        'SEM ESPECIALIDADE',
-
-      atraso: lerNumero(item[COL_ATRASO]),
-
-      hora: item[COL_HORA] || '',
-    }))
-
-    setDados(tratados)
+    setDados(json)
   }
 
-  const unidades = useMemo(() => {
-    return [
-      'TODAS',
-      ...new Set(dados.map((d) => d.unidade)),
-    ]
+  const identificarColuna = (
+    item,
+    nomes
+  ) => {
+    const chaves = Object.keys(item || {})
+
+    return (
+      chaves.find((c) =>
+        nomes.some((n) =>
+          c
+            .toLowerCase()
+            .includes(n.toLowerCase())
+        )
+      ) || ''
+    )
+  }
+
+  const colunas = useMemo(() => {
+    if (!dados.length) return {}
+
+    const item = dados[0]
+
+    return {
+      unidade: identificarColuna(item, [
+        'NM_LOCAL',
+        'UNIDADE',
+      ]),
+      medico: identificarColuna(item, [
+        'MEDICO',
+        'NM_MEDICO',
+      ]),
+      especialidade:
+        identificarColuna(item, [
+          'ESPECIALIDADE',
+        ]),
+      status: identificarColuna(item, [
+        'STATUS',
+      ]),
+      espera: identificarColuna(item, [
+        'ESPERA',
+        'ATRASO',
+        'TEMPO',
+      ]),
+    }
   }, [dados])
 
   const dadosFiltrados = useMemo(() => {
-    if (unidade === 'TODAS') return dados
+    if (
+      unidadeFiltro === 'TODAS'
+    )
+      return dados
 
     return dados.filter(
-      (d) => d.unidade === unidade
+      (d) =>
+        String(
+          d[colunas.unidade]
+        ).trim() === unidadeFiltro
     )
-  }, [dados, unidade])
+  }, [
+    dados,
+    unidadeFiltro,
+    colunas,
+  ])
+
+  const unidades = useMemo(() => {
+    const lista = dados
+      .map(
+        (d) =>
+          d[colunas.unidade]
+      )
+      .filter(Boolean)
+
+    return [...new Set(lista)]
+  }, [dados, colunas])
+
+  const parseHoras = (valor) => {
+    if (!valor) return 0
+
+    const texto = String(
+      valor
+    ).replace(',', '.')
+
+    const numero = parseFloat(texto)
+
+    if (!isNaN(numero))
+      return numero
+
+    return 0
+  }
 
   const totalPacientes =
     dadosFiltrados.length
 
-  const totalUnidades = new Set(
-    dadosFiltrados.map((d) => d.unidade)
-  ).size
+  const totalUnidades =
+    new Set(
+      dadosFiltrados.map(
+        (d) =>
+          d[colunas.unidade]
+      )
+    ).size
 
-  const totalMedicos = new Set(
-    dadosFiltrados.map((d) => d.medico)
-  ).size
+  const totalMedicos =
+    new Set(
+      dadosFiltrados.map(
+        (d) =>
+          d[colunas.medico]
+      )
+    ).size
 
   const tempoMedio =
     dadosFiltrados.reduce(
-      (a, b) => a + b.atraso,
+      (acc, d) =>
+        acc +
+        parseHoras(
+          d[colunas.espera]
+        ),
       0
-    ) / (dadosFiltrados.length || 1)
+    ) /
+      totalPacientes || 0
 
-  const especialidadesCriticas = Object.entries(
-    dadosFiltrados.reduce((acc, item) => {
-      acc[item.especialidade] =
-        (acc[item.especialidade] || 0) +
-        item.atraso
+  const rankingPacientes =
+    Object.entries(
+      dadosFiltrados.reduce(
+        (acc, d) => {
+          const unidade =
+            d[
+              colunas.unidade
+            ] || 'SEM UNIDADE'
 
-      return acc
-    }, {})
-  )
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 3)
+          acc[unidade] =
+            (acc[unidade] || 0) +
+            1
 
-  const rankingUnidades = Object.entries(
-    dadosFiltrados.reduce((acc, item) => {
-      acc[item.unidade] =
-        (acc[item.unidade] || 0) + 1
+          return acc
+        },
+        {}
+      )
+    )
+      .map(([nome, total]) => ({
+        nome,
+        total,
+      }))
+      .sort(
+        (a, b) =>
+          b.total - a.total
+      )
+      .slice(0, 10)
 
-      return acc
-    }, {})
-  )
-    .map(([nome, valor]) => ({
+  const statusMedicos =
+    Object.entries(
+      dadosFiltrados.reduce(
+        (acc, d) => {
+          const status =
+            d[
+              colunas.status
+            ] || 'OK'
+
+          acc[status] =
+            (acc[status] || 0) +
+            1
+
+          return acc
+        },
+        {}
+      )
+    ).map(([nome, total]) => ({
       nome,
-      valor,
+      total,
     }))
-    .sort((a, b) => b.valor - a.valor)
-    .slice(0, 10)
 
-  const statusData = Object.entries(
-    dadosFiltrados.reduce((acc, item) => {
-      acc[item.status] =
-        (acc[item.status] || 0) + 1
+  const medicosAtraso =
+    Object.values(
+      dadosFiltrados.reduce(
+        (acc, d) => {
+          const medico =
+            d[
+              colunas.medico
+            ] || 'SEM MÉDICO'
 
-      return acc
-    }, {})
-  ).map(([name, value]) => ({
-    name,
-    value,
-  }))
+          const unidade =
+            d[
+              colunas.unidade
+            ] || 'SEM UNIDADE'
 
-  const medicosCriticos = Object.values(
-    dadosFiltrados.reduce((acc, item) => {
-      if (!acc[item.medico]) {
-        acc[item.medico] = {
-          medico: item.medico,
-          unidade: item.unidade,
-          atraso: item.atraso,
-        }
-      } else {
-        if (
-          item.atraso >
-          acc[item.medico].atraso
-        ) {
-          acc[item.medico].atraso =
-            item.atraso
-        }
-      }
+          const atraso =
+            parseHoras(
+              d[
+                colunas.espera
+              ]
+            )
 
-      return acc
-    }, {})
-  )
-    .sort((a, b) => b.atraso - a.atraso)
-    .slice(0, 10)
-
-  const unidadesEspera = Object.entries(
-    dadosFiltrados.reduce((acc, item) => {
-      if (!acc[item.unidade]) {
-        acc[item.unidade] = {
-          unidade: item.unidade,
-          pacientes: 0,
-          atraso: 0,
-        }
-      }
-
-      acc[item.unidade].pacientes += 1
-      acc[item.unidade].atraso +=
-        item.atraso
-
-      return acc
-    }, {})
-  )
-    .map(([_, v]) => ({
-      unidade: v.unidade,
-      pacientes: v.pacientes,
-      espera: (
-        v.atraso / v.pacientes
-      ).toFixed(1),
-    }))
-    .sort((a, b) => b.espera - a.espera)
-    .slice(0, 5)
-
-  const unidadesAtraso = Object.entries(
-    dadosFiltrados.reduce((acc, item) => {
-      if (
-        item.status
-          .toUpperCase()
-          .includes('ATRASO')
-      ) {
-        if (!acc[item.unidade]) {
-          acc[item.unidade] = {
-            unidade: item.unidade,
-            medicos: new Set(),
-            pacientes: 0,
+          if (
+            !acc[medico] ||
+            atraso >
+              acc[medico]
+                .atraso
+          ) {
+            acc[medico] = {
+              medico,
+              unidade,
+              atraso,
+            }
           }
-        }
 
-        acc[item.unidade].medicos.add(
-          item.medico
-        )
+          return acc
+        },
+        {}
+      )
+    )
+      .sort(
+        (a, b) =>
+          b.atraso - a.atraso
+      )
+      .slice(0, 10)
 
-        acc[item.unidade].pacientes += 1
-      }
+  const impactoFila =
+    Object.entries(
+      dadosFiltrados.reduce(
+        (acc, d) => {
+          const unidade =
+            d[
+              colunas.unidade
+            ] || 'SEM UNIDADE'
 
-      return acc
-    }, {})
-  )
-    .map(([_, v]) => ({
-      unidade: v.unidade,
-      medicos: v.medicos.size,
-      pacientes: v.pacientes,
-    }))
-    .sort((a, b) => b.medicos - a.medicos)
-    .slice(0, 10)
+          const status =
+            String(
+              d[
+                colunas.status
+              ] || ''
+            ).toUpperCase()
 
-  const tendenciaPeriodo = [
+          if (
+            !status.includes(
+              'ATRASO'
+            )
+          )
+            return acc
+
+          if (!acc[unidade]) {
+            acc[unidade] = {
+              unidade,
+              qtdMedicos: 0,
+              pacientes: 0,
+            }
+          }
+
+          acc[
+            unidade
+          ].qtdMedicos += 1
+
+          acc[
+            unidade
+          ].pacientes += 1
+
+          return acc
+        },
+        {}
+      )
+    )
+      .map(([_, v]) => v)
+      .sort(
+        (a, b) =>
+          b.qtdMedicos -
+          a.qtdMedicos
+      )
+      .slice(0, 10)
+
+  const periodos = [
     {
       periodo: 'MANHÃ',
       valor: Math.floor(
-        totalPacientes * 0.32
+        totalPacientes * 0.35
       ),
     },
     {
       periodo: 'TARDE',
       valor: Math.floor(
-        totalPacientes * 0.48
+        totalPacientes * 0.45
       ),
     },
     {
       periodo: 'NOITE',
       valor: Math.floor(
-        totalPacientes * 0.20
+        totalPacientes * 0.2
       ),
     },
   ]
@@ -331,7 +350,7 @@ export default function Dashboard() {
       style={{
         background: cores.fundo,
         minHeight: '100vh',
-        padding: '20px',
+        padding: '40px',
         color: cores.texto,
         fontFamily: 'Arial',
       }}
@@ -342,35 +361,40 @@ export default function Dashboard() {
           justifyContent:
             'space-between',
           alignItems: 'center',
-          marginBottom: '30px',
         }}
       >
         <div>
           <h1
             style={{
-              fontSize: '58px',
+              fontSize: '64px',
               marginBottom: '10px',
             }}
           >
-            Dashboard Atrasos Médicos
+            Dashboard Atrasos
+            Médicos
           </h1>
 
           <p
             style={{
-              color: cores.texto2,
-              fontSize: '18px',
+              color:
+                cores.subtitulo,
+              fontSize: '20px',
             }}
           >
-            Monitoramento operacional
+            Monitoramento
+            operacional
             hospitalar
           </p>
         </div>
 
         <label
           style={{
-            background: `linear-gradient(90deg, ${cores.roxo}, #8b2be2)`,
-            padding: '18px 35px',
-            borderRadius: '16px',
+            background:
+              'linear-gradient(90deg,#d946ef,#7e22ce)',
+            padding:
+              '18px 36px',
+            borderRadius:
+              '18px',
             cursor: 'pointer',
             fontWeight: 'bold',
           }}
@@ -378,41 +402,61 @@ export default function Dashboard() {
           Carregar Planilha
 
           <input
-            type="file"
-            accept=".xlsx,.xls"
+            type='file'
+            accept='.xlsx,.xls'
             style={{
               display: 'none',
             }}
-            onChange={processarArquivo}
+            onChange={
+              handleUpload
+            }
           />
         </label>
       </div>
 
-      <select
-        value={unidade}
-        onChange={(e) =>
-          setUnidade(e.target.value)
-        }
+      <div
         style={{
-          padding: '18px',
-          borderRadius: '12px',
-          marginBottom: '30px',
-          width: '320px',
-          fontSize: '18px',
+          marginTop: '40px',
+          marginBottom: '40px',
         }}
       >
-        {unidades.map((u) => (
-          <option key={u}>{u}</option>
-        ))}
-      </select>
+        <select
+          value={unidadeFiltro}
+          onChange={(e) =>
+            setUnidadeFiltro(
+              e.target.value
+            )
+          }
+          style={{
+            padding:
+              '20px 24px',
+            width: '320px',
+            borderRadius:
+              '16px',
+            border: 'none',
+            fontSize: '22px',
+          }}
+        >
+          <option>
+            TODAS
+          </option>
+
+          {unidades.map((u) => (
+            <option
+              key={u}
+            >
+              {u}
+            </option>
+          ))}
+        </select>
+      </div>
 
       <div
         style={{
           display: 'grid',
           gridTemplateColumns:
-            'repeat(auto-fit, minmax(220px,1fr))',
+            'repeat(4,1fr)',
           gap: '20px',
-          marginBottom: '30px',
         }}
       >
         {[
@@ -420,104 +464,52 @@ export default function Dashboard() {
             'Total Pacientes',
             totalPacientes,
           ],
-          ['Unidades', totalUnidades],
-          ['Médicos', totalMedicos],
+          [
+            'Unidades',
+            totalUnidades,
+          ],
+          [
+            'Médicos',
+            totalMedicos,
+          ],
           [
             'Tempo Médio Espera',
-            `${tempoMedio.toFixed(1)}h`,
+            `${tempoMedio.toFixed(
+              1
+            )}h`,
           ],
-        ].map(([titulo, valor]) => (
+        ].map((c) => (
           <div
-            key={titulo}
+            key={c[0]}
             style={{
-              background: cores.card,
-              borderRadius: '22px',
-              padding: '30px',
-              border: `1px solid ${cores.borda}`,
+              background:
+                cores.card,
+              padding: '36px',
+              borderRadius:
+                '24px',
+              minHeight: '180px',
             }}
           >
             <h3
               style={{
-                color: '#d6c4ff',
-                fontSize: '18px',
+                color:
+                  cores.subtitulo,
+                fontSize: '20px',
               }}
             >
-              {titulo}
+              {c[0]}
             </h3>
 
-            <h1
+            <h2
               style={{
-                fontSize: '56px',
-                marginTop: '20px',
+                fontSize: '58px',
+                marginTop: '35px',
               }}
             >
-              {valor}
-            </h1>
+              {c[1]}
+            </h2>
           </div>
         ))}
-
-        <div
-          style={{
-            background: cores.card,
-            borderRadius: '22px',
-            padding: '30px',
-          }}
-        >
-          <h3
-            style={{
-              color: '#d6c4ff',
-            }}
-          >
-            Top Especialidades
-            Críticas
-          </h3>
-
-          {especialidadesCriticas.map(
-            (e) => (
-              <div
-                key={e[0]}
-                style={{
-                  marginTop: '25px',
-                }}
-              >
-                <div
-                  style={{
-                    display: 'flex',
-                    justifyContent:
-                      'space-between',
-                  }}
-                >
-                  <span>{e[0]}</span>
-
-                  <strong>
-                    {e[1].toFixed(1)}h
-                  </strong>
-                </div>
-
-                <div
-                  style={{
-                    height: '10px',
-                    background: '#34347d',
-                    borderRadius:
-                      '999px',
-                    marginTop: '8px',
-                  }}
-                >
-                  <div
-                    style={{
-                      width: '80%',
-                      height: '100%',
-                      background:
-                        cores.roxo,
-                      borderRadius:
-                        '999px',
-                    }}
-                  />
-                </div>
-              </div>
-            )
-          )}
-        </div>
       </div>
 
       <div
@@ -525,109 +517,135 @@ export default function Dashboard() {
           display: 'grid',
           gridTemplateColumns:
             '1fr 1fr',
-          gap: '20px',
-          marginBottom: '20px',
+          gap: '24px',
+          marginTop: '30px',
         }}
       >
         <div
           style={{
-            background: cores.card,
-            borderRadius: '24px',
-            padding: '20px',
+            background:
+              cores.card,
+            borderRadius:
+              '24px',
+            padding: '30px',
           }}
         >
           <h2>
-            🔥 Unidades com Maior
-            Tempo de Espera
+            🔥 Unidades com
+            Maior Tempo de
+            Espera
           </h2>
 
-          {unidadesEspera.map((u) => (
-            <div
-              key={u.unidade}
-              style={{
-                background: '#11153f',
-                padding: '20px',
-                borderRadius: '16px',
-                marginTop: '18px',
-              }}
-            >
-              <strong>
-                {u.unidade}
-              </strong>
-
+          {rankingPacientes
+            .slice(0, 5)
+            .map((u) => (
               <div
+                key={u.nome}
                 style={{
-                  marginTop: '8px',
-                  color: '#ff8a8a',
+                  background:
+                    '#17175a',
+                  borderRadius:
+                    '18px',
+                  padding:
+                    '18px',
+                  marginTop:
+                    '18px',
                 }}
               >
-                {u.espera}h espera
-                média
-              </div>
+                <strong>
+                  {u.nome}
+                </strong>
 
-              <div
-                style={{
-                  color: cores.texto2,
-                  marginTop: '4px',
-                }}
-              >
-                {u.pacientes} pacientes
+                <div
+                  style={{
+                    color:
+                      '#ff6b81',
+                    marginTop:
+                      '6px',
+                  }}
+                >
+                  {tempoMedio.toFixed(
+                    1
+                  )}
+                  h espera média
+                </div>
+
+                <div
+                  style={{
+                    color:
+                      '#d6c4ff',
+                  }}
+                >
+                  {
+                    u.total
+                  }{' '}
+                  pacientes
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
         </div>
 
         <div
           style={{
-            background: cores.card,
-            borderRadius: '24px',
-            padding: '20px',
+            background:
+              cores.card,
+            borderRadius:
+              '24px',
+            padding: '30px',
           }}
         >
           <h2>
-            ⏰ Unidades com Mais
-            Médicos em Atraso
+            ⏰ Unidades com
+            Mais Médicos em
+            Atraso
           </h2>
 
-          {unidadesAtraso
+          {impactoFila
             .slice(0, 5)
             .map((u) => (
               <div
                 key={u.unidade}
                 style={{
                   background:
-                    '#11153f',
-                  padding: '20px',
+                    '#17175a',
                   borderRadius:
-                    '16px',
-                  marginTop: '18px',
+                    '18px',
+                  padding:
+                    '18px',
+                  marginTop:
+                    '18px',
                 }}
               >
                 <strong>
-                  {u.unidade}
+                  {
+                    u.unidade
+                  }
                 </strong>
 
                 <div
                   style={{
-                    marginTop: '8px',
                     color:
-                      cores.vermelho,
+                      '#ff6b81',
+                    marginTop:
+                      '6px',
                   }}
                 >
-                  {u.medicos} médicos
-                  em atraso
+                  {
+                    u.qtdMedicos
+                  }{' '}
+                  médicos
                 </div>
 
                 <div
                   style={{
                     color:
-                      cores.texto2,
-                    marginTop: '4px',
+                      '#d6c4ff',
                   }}
                 >
-                  {u.pacientes}{' '}
+                  {
+                    u.pacientes
+                  }{' '}
                   pacientes
-                  impactados
                 </div>
               </div>
             ))}
@@ -636,40 +654,56 @@ export default function Dashboard() {
 
       <div
         style={{
-          background: cores.card,
-          borderRadius: '24px',
-          padding: '20px',
-          marginBottom: '20px',
+          background:
+            cores.card,
+          borderRadius:
+            '24px',
+          padding: '30px',
+          marginTop: '30px',
         }}
       >
-        <h2>📊 Atrasos por Período</h2>
+        <h2>
+          📊 Atrasos por
+          Período
+        </h2>
 
         <ResponsiveContainer
-          width="100%"
-          height={320}
+          width='100%'
+          height={350}
         >
           <AreaChart
-            data={tendenciaPeriodo}
+            data={periodos}
           >
             <CartesianGrid
-              strokeDasharray="3 3"
-              stroke="#35246d"
+              strokeDasharray='3 3'
+              stroke={
+                cores.grade
+              }
             />
 
             <XAxis
-              dataKey="periodo"
-              stroke="#fff"
+              dataKey='periodo'
+              stroke='#fff'
             />
 
-            <YAxis stroke="#fff" />
+            <YAxis
+              stroke='#fff'
+            />
 
             <Tooltip />
 
             <Area
-              type="monotone"
-              dataKey="valor"
-              stroke={cores.azul}
-              fill={cores.azul}
+              type='monotone'
+              dataKey='valor'
+              stroke={
+                cores.azul
+              }
+              fill={
+                cores.azul
+              }
+              fillOpacity={
+                0.6
+              }
             />
           </AreaChart>
         </ResponsiveContainer>
@@ -680,47 +714,63 @@ export default function Dashboard() {
           display: 'grid',
           gridTemplateColumns:
             '1fr 1fr',
-          gap: '20px',
-          marginBottom: '20px',
+          gap: '24px',
+          marginTop: '30px',
         }}
       >
         <div
           style={{
-            background: cores.card,
-            borderRadius: '24px',
-            padding: '20px',
+            background:
+              cores.card,
+            borderRadius:
+              '24px',
+            padding: '30px',
           }}
         >
           <h2>
-            Ranking Crítico de
-            Pacientes Aguardando
+            Ranking Crítico
+            de Pacientes
+            Aguardando
           </h2>
 
           <ResponsiveContainer
-            width="100%"
-            height={380}
+            width='100%'
+            height={400}
           >
             <BarChart
-              data={rankingUnidades}
+              data={
+                rankingPacientes
+              }
             >
               <CartesianGrid
-                strokeDasharray="3 3"
-                stroke="#35246d"
+                strokeDasharray='3 3'
+                stroke={
+                  cores.grade
+                }
               />
 
               <XAxis
-                dataKey="nome"
-                stroke="#fff"
+                dataKey='nome'
+                stroke='#fff'
               />
 
-              <YAxis stroke="#fff" />
+              <YAxis
+                stroke='#fff'
+              />
 
               <Tooltip />
 
               <Bar
-                dataKey="valor"
-                fill={cores.roxo}
-                radius={[8, 8, 0, 0]}
+                dataKey='total'
+                fill={
+                  cores.roxo
+                }
+                radius={[
+                  12,
+                  12,
+                  0,
+                  0,
+                ]}
               />
             </BarChart>
           </ResponsiveContainer>
@@ -728,61 +778,60 @@ export default function Dashboard() {
 
         <div
           style={{
-            background: cores.card,
-            borderRadius: '24px',
-            padding: '20px',
+            background:
+              cores.card,
+            borderRadius:
+              '24px',
+            padding: '30px',
           }}
         >
           <h2>
-            Status de Pontos
-            Médicos
+            Status de
+            Pontos Médicos
           </h2>
 
           <ResponsiveContainer
-            width="100%"
-            height={380}
+            width='100%'
+            height={400}
           >
             <BarChart
-              layout="vertical"
-              data={statusData}
+              data={
+                statusMedicos
+              }
+              layout='vertical'
             >
               <CartesianGrid
-                strokeDasharray="3 3"
-                stroke="#35246d"
+                strokeDasharray='3 3'
+                stroke={
+                  cores.grade
+                }
               />
 
               <XAxis
-                type="number"
-                stroke="#fff"
+                type='number'
+                stroke='#fff'
               />
 
               <YAxis
-                dataKey="name"
-                type="category"
-                stroke="#fff"
+                type='category'
+                dataKey='nome'
+                stroke='#fff'
               />
 
               <Tooltip />
 
               <Bar
-                dataKey="value"
+                dataKey='total'
+                fill={
+                  cores.roxo
+                }
                 radius={[
-                  0, 10, 10, 0,
+                  0,
+                  12,
+                  12,
+                  0,
                 ]}
-              >
-                {statusData.map(
-                  (_, i) => (
-                    <Cell
-                      key={i}
-                      fill={
-                        i % 2 === 0
-                          ? cores.roxo
-                          : cores.azul
-                      }
-                    />
-                  )
-                )}
-              </Bar>
+              />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -790,49 +839,59 @@ export default function Dashboard() {
 
       <div
         style={{
-          background: cores.card,
-          borderRadius: '24px',
-          padding: '20px',
-          marginBottom: '20px',
+          background:
+            cores.card,
+          borderRadius:
+            '24px',
+          padding: '30px',
+          marginTop: '30px',
         }}
       >
         <h2>
-          🧑‍⚕️ Médicos com Maior
-          Tempo de Atraso
+          👨‍⚕️ Médicos com
+          Maior Tempo de
+          Atraso
         </h2>
 
         <ResponsiveContainer
-          width="100%"
-          height={300}
+          width='100%'
+          height={420}
         >
           <BarChart
-            data={medicosCriticos}
-            layout="vertical"
+            data={medicosAtraso}
+            layout='vertical'
           >
             <CartesianGrid
-              strokeDasharray="3 3"
-              stroke="#35246d"
+              strokeDasharray='3 3'
+              stroke={
+                cores.grade
+              }
             />
 
             <XAxis
-              type="number"
-              stroke="#fff"
+              type='number'
+              stroke='#fff'
             />
 
             <YAxis
-              type="category"
-              dataKey="medico"
-              stroke="#fff"
-              width={250}
+              type='category'
+              dataKey='medico'
+              stroke='#fff'
+              width={260}
             />
 
             <Tooltip />
 
             <Bar
-              dataKey="atraso"
-              fill={cores.roxo}
+              dataKey='atraso'
+              fill={
+                cores.roxo
+              }
               radius={[
-                0, 10, 10, 0,
+                0,
+                12,
+                12,
+                0,
               ]}
             />
           </BarChart>
@@ -841,20 +900,23 @@ export default function Dashboard() {
 
       <div
         style={{
-          background: cores.card,
-          borderRadius: '24px',
-          padding: '20px',
+          background:
+            cores.card,
+          borderRadius:
+            '24px',
+          padding: '30px',
+          marginTop: '30px',
         }}
       >
         <h2>
-          Impacto na Fila de
-          Espera
+          Impacto na Fila
+          de Espera
         </h2>
 
         <table
           style={{
             width: '100%',
-            marginTop: '20px',
+            marginTop: '25px',
             borderCollapse:
               'collapse',
           }}
@@ -863,43 +925,87 @@ export default function Dashboard() {
             <tr
               style={{
                 background:
-                  '#3d3490',
+                  '#4338a0',
               }}
             >
-              <th style={th}>
+              <th
+                style={{
+                  padding:
+                    '18px',
+                  textAlign:
+                    'left',
+                }}
+              >
                 Unidade
               </th>
 
-              <th style={th}>
+              <th
+                style={{
+                  padding:
+                    '18px',
+                }}
+              >
                 Qtd Médicos
               </th>
 
-              <th style={th}>
+              <th
+                style={{
+                  padding:
+                    '18px',
+                }}
+              >
                 Pacientes
               </th>
             </tr>
           </thead>
 
           <tbody>
-            {unidadesAtraso.map(
-              (u) => (
+            {impactoFila.map(
+              (i) => (
                 <tr
-                  key={u.unidade}
+                  key={
+                    i.unidade
+                  }
                   style={{
                     borderBottom:
-                      '1px solid rgba(255,255,255,0.1)',
+                      '1px solid #3b3b7a',
                   }}
                 >
-                  <td style={td}>
-                    {u.unidade}
+                  <td
+                    style={{
+                      padding:
+                        '18px',
+                    }}
+                  >
+                    {
+                      i.unidade
+                    }
                   </td>
 
-                  <td style={td}>
-                    {u.medicos}
+                  <td
+                    style={{
+                      padding:
+                        '18px',
+                      textAlign:
+                        'center',
+                    }}
+                  >
+                    {
+                      i.qtdMedicos
+                    }
                   </td>
 
-                  <td style={td}>
-                    {u.pacientes}
+                  <td
+                    style={{
+                      padding:
+                        '18px',
+                      textAlign:
+                        'center',
+                    }}
+                  >
+                    {
+                      i.pacientes
+                    }
                   </td>
                 </tr>
               )
@@ -909,13 +1015,4 @@ export default function Dashboard() {
       </div>
     </div>
   )
-}
-
-const th = {
-  padding: '18px',
-  textAlign: 'left',
-}
-
-const td = {
-  padding: '18px',
 }
