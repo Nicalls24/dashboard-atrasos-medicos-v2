@@ -1,8 +1,8 @@
 import './globals.css'
 
 export const metadata = {
-  title: 'Dashboard Atrasos Médicos',
-  description: 'Dashboard Hospitalar',
+  title: 'Dashboard',
+  description: 'Dashboard',
 }
 
 export default function RootLayout({ children }) {
