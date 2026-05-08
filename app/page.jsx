@@ -20,7 +20,13 @@ export default function Home() {
   const [dados, setDados] = useState([])
   const [unidadeFiltro, setUnidadeFiltro] = useState('TODAS')
 
-  const cores = ['#ef4444', '#f59e0b', '#38bdf8', '#22c55e']
+  const cores = [
+    '#c84df2',
+    '#8000db',
+    '#921c9e',
+    '#6d3fc2',
+    '#7b30f2',
+  ]
 
   const handleUpload = (e) => {
     const arquivo = e.target.files[0]
@@ -36,14 +42,18 @@ export default function Home() {
         type: 'binary',
       })
 
-      const sheetName = workbook.SheetNames[0]
+      const worksheet =
+        workbook.Sheets[
+          workbook.SheetNames[0]
+        ]
 
-      const worksheet = workbook.Sheets[sheetName]
-
-      const json = XLSX.utils.sheet_to_json(worksheet, {
-        range: 3,
-        defval: '',
-      })
+      const json = XLSX.utils.sheet_to_json(
+        worksheet,
+        {
+          range: 3,
+          defval: '',
+        }
+      )
 
       setDados(json)
     }
@@ -60,98 +70,158 @@ export default function Home() {
   }, [dados])
 
   const dadosFiltrados = useMemo(() => {
-    if (unidadeFiltro === 'TODAS') {
+    if (unidadeFiltro === 'TODAS')
       return dados
-    }
 
     return dados.filter(
-      (item) => item['NM_FILIAL'] === unidadeFiltro
+      (item) =>
+        item['NM_FILIAL'] === unidadeFiltro
     )
   }, [dados, unidadeFiltro])
 
-  const totalRegistros = dadosFiltrados.length
+  const pacientesAguardando =
+    dadosFiltrados.reduce(
+      (acc, item) =>
+        acc +
+        Number(
+          item[
+            ' QT_PACIENTES_AGUARDANDO'
+          ] || 0
+        ),
+      0
+    )
 
-  const medicosAtrasados = dadosFiltrados.filter(
-    (item) => item['ATRASO'] === 'SIM'
-  ).length
+  const medicosAtrasados =
+    dadosFiltrados.filter(
+      (item) =>
+        String(item['ATRASO'])
+          .toUpperCase()
+          .includes('SIM')
+    ).length
 
   const percentualAtraso =
-    totalRegistros > 0
-      ? ((medicosAtrasados / totalRegistros) * 100).toFixed(1)
+    dadosFiltrados.length > 0
+      ? (
+          (medicosAtrasados /
+            dadosFiltrados.length) *
+          100
+        ).toFixed(1)
       : 0
 
-  const pacientesAguardando = dadosFiltrados.reduce(
-    (acc, item) =>
-      acc + Number(item[' QT_PACIENTES_AGUARDANDO'] || 0),
-    0
-  )
+  const tempoEsperaMedio = useMemo(() => {
+    const tempos = dadosFiltrados
+      .map((item) => {
+        const valor =
+          item['TEMPO_DE_ESPERA']
 
-  const tempoEsperaMedio = (
-    dadosFiltrados.reduce((acc, item) => {
-      const tempo = item['TEMPO_DE_ESPERA']
+        if (!valor) return 0
 
-      if (!tempo) return acc
-
-      const segundos =
-        tempo?.h * 3600 +
-        tempo?.m * 60 +
-        tempo?.s
-
-      return acc + segundos
-    }, 0) / (dadosFiltrados.length || 1)
-  )
-
-  const tempoMedioMinutos = Math.round(
-    tempoEsperaMedio / 60
-  )
-
-  const topCriticos = Object.values(
-    dadosFiltrados.reduce((acc, item) => {
-      const unidade = item['NM_FILIAL'] || 'SEM UNIDADE'
-
-      if (!acc[unidade]) {
-        acc[unidade] = {
-          unidade,
-          pacientes: 0,
-          atrasos: 0,
+        if (
+          typeof valor === 'number'
+        ) {
+          return valor * 24 * 60
         }
-      }
 
-      acc[unidade].pacientes += Number(
-        item[' QT_PACIENTES_AGUARDANDO'] || 0
+        if (
+          typeof valor === 'string'
+        ) {
+          const partes =
+            valor.split(':')
+
+          if (partes.length >= 2) {
+            const horas =
+              Number(partes[0]) || 0
+
+            const minutos =
+              Number(partes[1]) || 0
+
+            return horas * 60 + minutos
+          }
+        }
+
+        return 0
+      })
+      .filter((v) => v > 0)
+
+    if (tempos.length === 0)
+      return 0
+
+    const media =
+      tempos.reduce(
+        (a, b) => a + b,
+        0
+      ) / tempos.length
+
+    return Math.round(media)
+  }, [dadosFiltrados])
+
+  const rankingCritico =
+    Object.values(
+      dadosFiltrados.reduce(
+        (acc, item) => {
+          const unidade =
+            item['NM_FILIAL'] ||
+            'SEM UNIDADE'
+
+          if (!acc[unidade]) {
+            acc[unidade] = {
+              unidade,
+              total: 0,
+            }
+          }
+
+          acc[unidade].total +=
+            Number(
+              item[
+                ' QT_PACIENTES_AGUARDANDO'
+              ] || 0
+            )
+
+          return acc
+        },
+        {}
       )
+    )
+      .sort(
+        (a, b) =>
+          b.total - a.total
+      )
+      .slice(0, 10)
 
-      if (item['ATRASO'] === 'SIM') {
-        acc[unidade].atrasos += 1
-      }
+  const statusMedico =
+    Object.values(
+      dadosFiltrados.reduce(
+        (acc, item) => {
+          const status =
+            item['STATUS'] ||
+            'SEM STATUS'
 
-      return acc
-    }, {})
-  )
-    .map((item) => ({
-      ...item,
-      impacto:
-        item.pacientes + item.atrasos * 2,
-    }))
-    .sort((a, b) => b.impacto - a.impacto)
-    .slice(0, 10)
+          if (!acc[status]) {
+            acc[status] = {
+              motivo: status,
+              quantidade: 0,
+            }
+          }
 
-  const statusData = Object.values(
-    dadosFiltrados.reduce((acc, item) => {
-      const status = item['STATUS'] || 'SEM STATUS'
+          acc[status].quantidade += 1
 
-      if (!acc[status]) {
-        acc[status] = {
-          name: status,
-          value: 0,
-        }
-      }
+          return acc
+        },
+        {}
+      )
+    )
 
-      acc[status].value += 1
+  const tabelaCritica =
+    dadosFiltrados.filter((item) => {
+      const status = String(
+        item['STATUS']
+      ).toUpperCase()
 
-      return acc
-    }, {})
-  )
+      return (
+        status.includes('ATRASO') ||
+        status.includes('CRITICO')
+      )
+    })
 
   return (
     <div style={styles.page}>
@@ -166,33 +236,46 @@ export default function Home() {
           </p>
         </div>
 
-        <div style={styles.uploadBox}>
+        <label style={styles.uploadButton}>
+          Carregar Planilhas
+
           <input
             type="file"
             accept=".xlsx,.xls"
             onChange={handleUpload}
+            style={{
+              display: 'none',
+            }}
           />
-        </div>
+        </label>
       </div>
 
       <div style={styles.filters}>
         <select
           value={unidadeFiltro}
           onChange={(e) =>
-            setUnidadeFiltro(e.target.value)
+            setUnidadeFiltro(
+              e.target.value
+            )
           }
           style={styles.select}
         >
-          {unidades.map((unidade, index) => (
-            <option key={index}>
-              {unidade}
-            </option>
-          ))}
+          {unidades.map(
+            (unidade, index) => (
+              <option key={index}>
+                {unidade}
+              </option>
+            )
+          )}
         </select>
 
         <button
-          style={styles.button}
-          onClick={() => setUnidadeFiltro('TODAS')}
+          style={styles.resetButton}
+          onClick={() =>
+            setUnidadeFiltro(
+              'TODAS'
+            )
+          }
         >
           Redefinir
         </button>
@@ -225,7 +308,9 @@ export default function Home() {
           </h3>
 
           <p style={styles.cardValue}>
-            {pacientesAguardando}
+            {
+              pacientesAguardando
+            }
           </p>
         </div>
 
@@ -235,7 +320,8 @@ export default function Home() {
           </h3>
 
           <p style={styles.cardValue}>
-            {tempoMedioMinutos} min
+            {tempoEsperaMedio}{' '}
+            min
           </p>
         </div>
       </div>
@@ -243,29 +329,36 @@ export default function Home() {
       <div style={styles.grid}>
         <div style={styles.chartBox}>
           <h2 style={styles.chartTitle}>
-            Ranking Crítico
+            Ranking Crítico de
+            Pacientes Aguardando
           </h2>
 
           <ResponsiveContainer
             width="100%"
             height={350}
           >
-            <BarChart data={topCriticos}>
-              <CartesianGrid stroke="#16385f" />
+            <BarChart
+              data={
+                rankingCritico
+              }
+            >
+              <CartesianGrid stroke="#35204d" />
 
               <XAxis
                 dataKey="unidade"
-                stroke="#9fb3c8"
+                stroke="#d7c6ff"
               />
 
-              <YAxis stroke="#9fb3c8" />
+              <YAxis stroke="#d7c6ff" />
 
               <Tooltip />
 
               <Bar
-                dataKey="impacto"
-                fill="#ef4444"
-                radius={[8, 8, 0, 0]}
+                dataKey="total"
+                fill="#c84df2"
+                radius={[
+                  10, 10, 0, 0,
+                ]}
               />
             </BarChart>
           </ResponsiveContainer>
@@ -273,7 +366,8 @@ export default function Home() {
 
         <div style={styles.chartBox}>
           <h2 style={styles.chartTitle}>
-            Status Operacional
+            Status de Pontos
+            Médicos
           </h2>
 
           <ResponsiveContainer
@@ -282,19 +376,23 @@ export default function Home() {
           >
             <PieChart>
               <Pie
-                data={statusData}
-                dataKey="value"
-                nameKey="name"
+                data={statusMedico}
+                dataKey="quantidade"
+                nameKey="motivo"
                 outerRadius={120}
                 label
               >
-                {statusData.map(
-                  (entry, index) => (
+                {statusMedico.map(
+                  (
+                    entry,
+                    index
+                  ) => (
                     <Cell
                       key={index}
                       fill={
                         cores[
-                          index % cores.length
+                          index %
+                            cores.length
                         ]
                       }
                     />
@@ -310,70 +408,69 @@ export default function Home() {
 
       <div style={styles.tableContainer}>
         <h2 style={styles.chartTitle}>
-          Impacto na Fila de Espera
+          Impacto na Fila de
+          Espera
         </h2>
 
-        <div style={styles.tableWrapper}>
-          <table style={styles.table}>
-            <thead>
-              <tr>
-                <th style={styles.th}>
-                  Unidade
-                </th>
+        <table style={styles.table}>
+          <thead>
+            <tr>
+              <th style={styles.th}>
+                Unidade
+              </th>
 
-                <th style={styles.th}>
-                  Médico
-                </th>
+              <th style={styles.th}>
+                Médico
+              </th>
 
-                <th style={styles.th}>
-                  Especialidade
-                </th>
+              <th style={styles.th}>
+                Pacientes
+              </th>
 
-                <th style={styles.th}>
-                  Pacientes
-                </th>
+              <th style={styles.th}>
+                Status
+              </th>
+            </tr>
+          </thead>
 
-                <th style={styles.th}>
-                  Status
-                </th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {dadosFiltrados
-                .sort(
-                  (a, b) =>
-                    Number(
-                      b[
-                        ' QT_PACIENTES_AGUARDANDO'
-                      ] || 0
-                    ) -
-                    Number(
-                      a[
-                        ' QT_PACIENTES_AGUARDANDO'
-                      ] || 0
-                    )
-                )
-                .slice(0, 20)
-                .map((item, index) => (
+          <tbody>
+            {tabelaCritica
+              .slice(0, 20)
+              .map(
+                (
+                  item,
+                  index
+                ) => (
                   <tr key={index}>
-                    <td style={styles.td}>
-                      {item['NM_FILIAL']}
-                    </td>
-
-                    <td style={styles.td}>
-                      {item['NM_MEDICO']}
-                    </td>
-
-                    <td style={styles.td}>
+                    <td
+                      style={
+                        styles.td
+                      }
+                    >
                       {
                         item[
-                          'DS_ESPECIALIDADE'
+                          'NM_FILIAL'
                         ]
                       }
                     </td>
 
-                    <td style={styles.td}>
+                    <td
+                      style={
+                        styles.td
+                      }
+                    >
+                      {
+                        item[
+                          'NM_MEDICO'
+                        ]
+                      }
+                    </td>
+
+                    <td
+                      style={
+                        styles.td
+                      }
+                    >
                       {
                         item[
                           ' QT_PACIENTES_AGUARDANDO'
@@ -381,14 +478,22 @@ export default function Home() {
                       }
                     </td>
 
-                    <td style={styles.td}>
-                      {item['STATUS']}
+                    <td
+                      style={
+                        styles.td
+                      }
+                    >
+                      {
+                        item[
+                          'STATUS'
+                        ]
+                      }
                     </td>
                   </tr>
-                ))}
-            </tbody>
-          </table>
-        </div>
+                )
+              )}
+          </tbody>
+        </table>
       </div>
     </div>
   )
@@ -397,7 +502,8 @@ export default function Home() {
 const styles = {
   page: {
     minHeight: '100vh',
-    background: '#061529',
+    background:
+      'linear-gradient(180deg,#060816,#0d1230)',
     padding: '30px',
     color: '#fff',
     fontFamily: 'Arial',
@@ -405,50 +511,55 @@ const styles = {
 
   header: {
     display: 'flex',
-    justifyContent: 'space-between',
+    justifyContent:
+      'space-between',
     alignItems: 'center',
     marginBottom: '30px',
     flexWrap: 'wrap',
-    gap: '20px',
   },
 
   title: {
-    fontSize: '42px',
+    fontSize: '46px',
     marginBottom: '10px',
   },
 
   subtitle: {
-    color: '#9fb3c8',
+    color: '#b8a7d9',
     fontSize: '18px',
   },
 
-  uploadBox: {
-    background: '#0d223d',
-    padding: '20px',
-    borderRadius: '18px',
-    border: '1px solid #16385f',
+  uploadButton: {
+    background:
+      'linear-gradient(135deg,#8000db,#c84df2)',
+    padding: '14px 28px',
+    borderRadius: '14px',
+    cursor: 'pointer',
+    fontWeight: 'bold',
+    color: '#fff',
+    boxShadow:
+      '0 0 20px rgba(128,0,219,0.4)',
   },
 
   filters: {
     display: 'flex',
     gap: '15px',
     marginBottom: '30px',
-    flexWrap: 'wrap',
   },
 
   select: {
     padding: '12px',
-    borderRadius: '10px',
-    border: 'none',
+    borderRadius: '12px',
     minWidth: '250px',
+    border: 'none',
   },
 
-  button: {
-    padding: '12px 20px',
-    borderRadius: '10px',
+  resetButton: {
+    background:
+      'linear-gradient(135deg,#6d3fc2,#7b30f2)',
     border: 'none',
-    background: '#38bdf8',
     color: '#fff',
+    padding: '12px 24px',
+    borderRadius: '12px',
     fontWeight: 'bold',
     cursor: 'pointer',
   },
@@ -456,56 +567,61 @@ const styles = {
   cards: {
     display: 'grid',
     gridTemplateColumns:
-      'repeat(auto-fit, minmax(220px, 1fr))',
+      'repeat(auto-fit,minmax(220px,1fr))',
     gap: '20px',
     marginBottom: '30px',
   },
 
   card: {
-    background: '#0d223d',
-    padding: '25px',
-    borderRadius: '18px',
-    border: '1px solid #16385f',
+    background:
+      'rgba(255,255,255,0.04)',
+    backdropFilter: 'blur(12px)',
+    border:
+      '1px solid rgba(255,255,255,0.08)',
+    borderRadius: '24px',
+    padding: '30px',
   },
 
   cardTitle: {
-    color: '#8fb3d9',
-    marginBottom: '15px',
+    color: '#d7c6ff',
+    marginBottom: '25px',
+    fontSize: '20px',
   },
 
   cardValue: {
-    fontSize: '42px',
+    fontSize: '48px',
     fontWeight: 'bold',
   },
 
   grid: {
     display: 'grid',
-    gridTemplateColumns: '1fr 1fr',
+    gridTemplateColumns:
+      '1fr 1fr',
     gap: '20px',
     marginBottom: '30px',
   },
 
   chartBox: {
-    background: '#0d223d',
+    background:
+      'rgba(255,255,255,0.04)',
+    borderRadius: '24px',
     padding: '20px',
-    borderRadius: '18px',
-    border: '1px solid #16385f',
+    border:
+      '1px solid rgba(255,255,255,0.08)',
   },
 
   chartTitle: {
+    fontSize: '30px',
     marginBottom: '20px',
-    fontSize: '28px',
   },
 
   tableContainer: {
-    background: '#0d223d',
+    background:
+      'rgba(255,255,255,0.04)',
+    borderRadius: '24px',
     padding: '20px',
-    borderRadius: '18px',
-    border: '1px solid #16385f',
-  },
-
-  tableWrapper: {
-    overflowX: 'auto',
+    border:
+      '1px solid rgba(255,255,255,0.08)',
   },
 
   table: {
@@ -514,13 +630,15 @@ const styles = {
   },
 
   th: {
-    background: '#102944',
+    background:
+      'rgba(255,255,255,0.08)',
     padding: '16px',
     textAlign: 'left',
   },
 
   td: {
     padding: '16px',
-    borderBottom: '1px solid #16385f',
+    borderBottom:
+      '1px solid rgba(255,255,255,0.08)',
   },
 }
