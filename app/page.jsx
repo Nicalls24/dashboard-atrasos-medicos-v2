@@ -11,11 +11,9 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  PieChart,
-  Pie,
-  Cell,
   AreaChart,
   Area,
+  Cell,
 } from 'recharts'
 
 export default function Dashboard() {
@@ -37,13 +35,27 @@ export default function Dashboard() {
   const lerNumero = (valor) => {
     if (!valor) return 0
 
+    if (typeof valor === 'number') {
+      return valor * 24
+    }
+
+    if (typeof valor === 'object') {
+      return 0
+    }
+
+    const texto = valor.toString()
+
+    if (texto.includes(':')) {
+      const partes = texto.split(':')
+
+      const horas = parseInt(partes[0] || 0)
+      const minutos = parseInt(partes[1] || 0)
+
+      return horas + minutos / 60
+    }
+
     const numero = parseFloat(
-      valor
-        .toString()
-        .replace('h', '')
-        .replace('min', '')
-        .replace(',', '.')
-        .trim()
+      texto.replace(',', '.')
     )
 
     return isNaN(numero) ? 0 : numero
@@ -65,14 +77,19 @@ export default function Dashboard() {
 
   const processarArquivo = async (e) => {
     const arquivo = e.target.files[0]
+
     if (!arquivo) return
 
     const buffer = await arquivo.arrayBuffer()
+
     const workbook = XLSX.read(buffer)
 
     const sheet = workbook.Sheets[workbook.SheetNames[0]]
 
-    const json = XLSX.utils.sheet_to_json(sheet)
+    const json = XLSX.utils.sheet_to_json(sheet, {
+      range: 3,
+      defval: '',
+    })
 
     if (!json.length) return
 
@@ -80,8 +97,8 @@ export default function Dashboard() {
 
     const COL_UNIDADE = detectarColuna(exemplo, [
       'NM_LOCAL',
-      'UNIDADE',
       'LOCAL',
+      'UNIDADE',
     ])
 
     const COL_MEDICO = detectarColuna(exemplo, [
@@ -99,8 +116,8 @@ export default function Dashboard() {
 
     const COL_ATRASO = detectarColuna(exemplo, [
       'ATRASO',
-      'TEMPO',
-      'ESPERA',
+      'HR_ENTRADA',
+      'HR_INICIO',
     ])
 
     const COL_HORA = detectarColuna(exemplo, [
@@ -109,12 +126,24 @@ export default function Dashboard() {
     ])
 
     const tratados = json.map((item) => ({
-      unidade: item[COL_UNIDADE] || 'SEM UNIDADE',
-      medico: item[COL_MEDICO] || 'SEM MÉDICO',
-      status: item[COL_STATUS] || 'OK',
+      unidade:
+        item[COL_UNIDADE]?.toString().trim() ||
+        'SEM UNIDADE',
+
+      medico:
+        item[COL_MEDICO]?.toString().trim() ||
+        'SEM MÉDICO',
+
+      status:
+        item[COL_STATUS]?.toString().trim() ||
+        'OK',
+
       especialidade:
-        item[COL_ESPECIALIDADE] || 'SEM ESPECIALIDADE',
+        item[COL_ESPECIALIDADE]?.toString().trim() ||
+        'SEM ESPECIALIDADE',
+
       atraso: lerNumero(item[COL_ATRASO]),
+
       hora: item[COL_HORA] || '',
     }))
 
@@ -131,10 +160,13 @@ export default function Dashboard() {
   const dadosFiltrados = useMemo(() => {
     if (unidade === 'TODAS') return dados
 
-    return dados.filter((d) => d.unidade === unidade)
+    return dados.filter(
+      (d) => d.unidade === unidade
+    )
   }, [dados, unidade])
 
-  const totalPacientes = dadosFiltrados.length
+  const totalPacientes =
+    dadosFiltrados.length
 
   const totalUnidades = new Set(
     dadosFiltrados.map((d) => d.unidade)
@@ -145,13 +177,16 @@ export default function Dashboard() {
   ).size
 
   const tempoMedio =
-    dadosFiltrados.reduce((a, b) => a + b.atraso, 0) /
-    (dadosFiltrados.length || 1)
+    dadosFiltrados.reduce(
+      (a, b) => a + b.atraso,
+      0
+    ) / (dadosFiltrados.length || 1)
 
   const especialidadesCriticas = Object.entries(
     dadosFiltrados.reduce((acc, item) => {
       acc[item.especialidade] =
-        (acc[item.especialidade] || 0) + item.atraso
+        (acc[item.especialidade] || 0) +
+        item.atraso
 
       return acc
     }, {})
@@ -195,8 +230,12 @@ export default function Dashboard() {
           atraso: item.atraso,
         }
       } else {
-        if (item.atraso > acc[item.medico].atraso) {
-          acc[item.medico].atraso = item.atraso
+        if (
+          item.atraso >
+          acc[item.medico].atraso
+        ) {
+          acc[item.medico].atraso =
+            item.atraso
         }
       }
 
@@ -204,7 +243,7 @@ export default function Dashboard() {
     }, {})
   )
     .sort((a, b) => b.atraso - a.atraso)
-    .slice(0, 5)
+    .slice(0, 10)
 
   const unidadesEspera = Object.entries(
     dadosFiltrados.reduce((acc, item) => {
@@ -217,7 +256,8 @@ export default function Dashboard() {
       }
 
       acc[item.unidade].pacientes += 1
-      acc[item.unidade].atraso += item.atraso
+      acc[item.unidade].atraso +=
+        item.atraso
 
       return acc
     }, {})
@@ -225,7 +265,9 @@ export default function Dashboard() {
     .map(([_, v]) => ({
       unidade: v.unidade,
       pacientes: v.pacientes,
-      espera: (v.atraso / v.pacientes).toFixed(1),
+      espera: (
+        v.atraso / v.pacientes
+      ).toFixed(1),
     }))
     .sort((a, b) => b.espera - a.espera)
     .slice(0, 5)
@@ -233,7 +275,9 @@ export default function Dashboard() {
   const unidadesAtraso = Object.entries(
     dadosFiltrados.reduce((acc, item) => {
       if (
-        item.status.toUpperCase().includes('ATRASO')
+        item.status
+          .toUpperCase()
+          .includes('ATRASO')
       ) {
         if (!acc[item.unidade]) {
           acc[item.unidade] = {
@@ -243,7 +287,10 @@ export default function Dashboard() {
           }
         }
 
-        acc[item.unidade].medicos.add(item.medico)
+        acc[item.unidade].medicos.add(
+          item.medico
+        )
+
         acc[item.unidade].pacientes += 1
       }
 
@@ -261,15 +308,21 @@ export default function Dashboard() {
   const tendenciaPeriodo = [
     {
       periodo: 'MANHÃ',
-      valor: 420,
+      valor: Math.floor(
+        totalPacientes * 0.32
+      ),
     },
     {
       periodo: 'TARDE',
-      valor: 980,
+      valor: Math.floor(
+        totalPacientes * 0.48
+      ),
     },
     {
       periodo: 'NOITE',
-      valor: 310,
+      valor: Math.floor(
+        totalPacientes * 0.20
+      ),
     },
   ]
 
@@ -286,7 +339,8 @@ export default function Dashboard() {
       <div
         style={{
           display: 'flex',
-          justifyContent: 'space-between',
+          justifyContent:
+            'space-between',
           alignItems: 'center',
           marginBottom: '30px',
         }}
@@ -307,7 +361,8 @@ export default function Dashboard() {
               fontSize: '18px',
             }}
           >
-            Monitoramento operacional hospitalar
+            Monitoramento operacional
+            hospitalar
           </p>
         </div>
 
@@ -325,7 +380,9 @@ export default function Dashboard() {
           <input
             type="file"
             accept=".xlsx,.xls"
-            style={{ display: 'none' }}
+            style={{
+              display: 'none',
+            }}
             onChange={processarArquivo}
           />
         </label>
@@ -333,7 +390,9 @@ export default function Dashboard() {
 
       <select
         value={unidade}
-        onChange={(e) => setUnidade(e.target.value)}
+        onChange={(e) =>
+          setUnidade(e.target.value)
+        }
         style={{
           padding: '18px',
           borderRadius: '12px',
@@ -357,10 +416,16 @@ export default function Dashboard() {
         }}
       >
         {[
-          ['Total Pacientes', totalPacientes],
+          [
+            'Total Pacientes',
+            totalPacientes,
+          ],
           ['Unidades', totalUnidades],
           ['Médicos', totalMedicos],
-          ['Tempo Médio Espera', `${tempoMedio.toFixed(1)}h`],
+          [
+            'Tempo Médio Espera',
+            `${tempoMedio.toFixed(1)}h`,
+          ],
         ].map(([titulo, valor]) => (
           <div
             key={titulo}
@@ -403,52 +468,63 @@ export default function Dashboard() {
               color: '#d6c4ff',
             }}
           >
-            Top Especialidades Críticas
+            Top Especialidades
+            Críticas
           </h3>
 
-          {especialidadesCriticas.map((e) => (
-            <div
-              key={e[0]}
-              style={{
-                marginTop: '25px',
-              }}
-            >
+          {especialidadesCriticas.map(
+            (e) => (
               <div
+                key={e[0]}
                 style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                }}
-              >
-                <span>{e[0]}</span>
-                <strong>{e[1].toFixed(1)}h</strong>
-              </div>
-
-              <div
-                style={{
-                  height: '10px',
-                  background: '#34347d',
-                  borderRadius: '999px',
-                  marginTop: '8px',
+                  marginTop: '25px',
                 }}
               >
                 <div
                   style={{
-                    width: '80%',
-                    height: '100%',
-                    background: cores.roxo,
-                    borderRadius: '999px',
+                    display: 'flex',
+                    justifyContent:
+                      'space-between',
                   }}
-                />
+                >
+                  <span>{e[0]}</span>
+
+                  <strong>
+                    {e[1].toFixed(1)}h
+                  </strong>
+                </div>
+
+                <div
+                  style={{
+                    height: '10px',
+                    background: '#34347d',
+                    borderRadius:
+                      '999px',
+                    marginTop: '8px',
+                  }}
+                >
+                  <div
+                    style={{
+                      width: '80%',
+                      height: '100%',
+                      background:
+                        cores.roxo,
+                      borderRadius:
+                        '999px',
+                    }}
+                  />
+                </div>
               </div>
-            </div>
-          ))}
+            )
+          )}
         </div>
       </div>
 
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: '1fr 1fr',
+          gridTemplateColumns:
+            '1fr 1fr',
           gap: '20px',
           marginBottom: '20px',
         }}
@@ -460,7 +536,10 @@ export default function Dashboard() {
             padding: '20px',
           }}
         >
-          <h2>🔥 Unidades com Maior Tempo de Espera</h2>
+          <h2>
+            🔥 Unidades com Maior
+            Tempo de Espera
+          </h2>
 
           {unidadesEspera.map((u) => (
             <div
@@ -472,7 +551,9 @@ export default function Dashboard() {
                 marginTop: '18px',
               }}
             >
-              <strong>{u.unidade}</strong>
+              <strong>
+                {u.unidade}
+              </strong>
 
               <div
                 style={{
@@ -480,7 +561,8 @@ export default function Dashboard() {
                   color: '#ff8a8a',
                 }}
               >
-                {u.espera}h espera média
+                {u.espera}h espera
+                média
               </div>
 
               <div
@@ -502,39 +584,53 @@ export default function Dashboard() {
             padding: '20px',
           }}
         >
-          <h2>⏰ Unidades com Mais Médicos em Atraso</h2>
+          <h2>
+            ⏰ Unidades com Mais
+            Médicos em Atraso
+          </h2>
 
-          {unidadesAtraso.slice(0, 5).map((u) => (
-            <div
-              key={u.unidade}
-              style={{
-                background: '#11153f',
-                padding: '20px',
-                borderRadius: '16px',
-                marginTop: '18px',
-              }}
-            >
-              <strong>{u.unidade}</strong>
-
+          {unidadesAtraso
+            .slice(0, 5)
+            .map((u) => (
               <div
+                key={u.unidade}
                 style={{
-                  marginTop: '8px',
-                  color: cores.vermelho,
+                  background:
+                    '#11153f',
+                  padding: '20px',
+                  borderRadius:
+                    '16px',
+                  marginTop: '18px',
                 }}
               >
-                {u.medicos} médicos em atraso
-              </div>
+                <strong>
+                  {u.unidade}
+                </strong>
 
-              <div
-                style={{
-                  color: cores.texto2,
-                  marginTop: '4px',
-                }}
-              >
-                {u.pacientes} pacientes impactados
+                <div
+                  style={{
+                    marginTop: '8px',
+                    color:
+                      cores.vermelho,
+                  }}
+                >
+                  {u.medicos} médicos
+                  em atraso
+                </div>
+
+                <div
+                  style={{
+                    color:
+                      cores.texto2,
+                    marginTop: '4px',
+                  }}
+                >
+                  {u.pacientes}{' '}
+                  pacientes
+                  impactados
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
         </div>
       </div>
 
@@ -548,11 +644,22 @@ export default function Dashboard() {
       >
         <h2>📊 Atrasos por Período</h2>
 
-        <ResponsiveContainer width="100%" height={320}>
-          <AreaChart data={tendenciaPeriodo}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#35246d" />
+        <ResponsiveContainer
+          width="100%"
+          height={320}
+        >
+          <AreaChart
+            data={tendenciaPeriodo}
+          >
+            <CartesianGrid
+              strokeDasharray="3 3"
+              stroke="#35246d"
+            />
 
-            <XAxis dataKey="periodo" stroke="#fff" />
+            <XAxis
+              dataKey="periodo"
+              stroke="#fff"
+            />
 
             <YAxis stroke="#fff" />
 
@@ -571,7 +678,8 @@ export default function Dashboard() {
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: '1fr 1fr',
+          gridTemplateColumns:
+            '1fr 1fr',
           gap: '20px',
           marginBottom: '20px',
         }}
@@ -583,16 +691,27 @@ export default function Dashboard() {
             padding: '20px',
           }}
         >
-          <h2>Ranking Crítico de Pacientes Aguardando</h2>
+          <h2>
+            Ranking Crítico de
+            Pacientes Aguardando
+          </h2>
 
-          <ResponsiveContainer width="100%" height={380}>
-            <BarChart data={rankingUnidades}>
+          <ResponsiveContainer
+            width="100%"
+            height={380}
+          >
+            <BarChart
+              data={rankingUnidades}
+            >
               <CartesianGrid
                 strokeDasharray="3 3"
                 stroke="#35246d"
               />
 
-              <XAxis dataKey="nome" stroke="#fff" />
+              <XAxis
+                dataKey="nome"
+                stroke="#fff"
+              />
 
               <YAxis stroke="#fff" />
 
@@ -614,9 +733,15 @@ export default function Dashboard() {
             padding: '20px',
           }}
         >
-          <h2>Status de Pontos Médicos</h2>
+          <h2>
+            Status de Pontos
+            Médicos
+          </h2>
 
-          <ResponsiveContainer width="100%" height={380}>
+          <ResponsiveContainer
+            width="100%"
+            height={380}
+          >
             <BarChart
               layout="vertical"
               data={statusData}
@@ -626,7 +751,10 @@ export default function Dashboard() {
                 stroke="#35246d"
               />
 
-              <XAxis type="number" stroke="#fff" />
+              <XAxis
+                type="number"
+                stroke="#fff"
+              />
 
               <YAxis
                 dataKey="name"
@@ -638,18 +766,22 @@ export default function Dashboard() {
 
               <Bar
                 dataKey="value"
-                radius={[0, 10, 10, 0]}
+                radius={[
+                  0, 10, 10, 0,
+                ]}
               >
-                {statusData.map((_, i) => (
-                  <Cell
-                    key={i}
-                    fill={
-                      i % 2 === 0
-                        ? cores.roxo
-                        : cores.azul
-                    }
-                  />
-                ))}
+                {statusData.map(
+                  (_, i) => (
+                    <Cell
+                      key={i}
+                      fill={
+                        i % 2 === 0
+                          ? cores.roxo
+                          : cores.azul
+                      }
+                    />
+                  )
+                )}
               </Bar>
             </BarChart>
           </ResponsiveContainer>
@@ -664,9 +796,15 @@ export default function Dashboard() {
           marginBottom: '20px',
         }}
       >
-        <h2>🧑‍⚕️ Médicos com Maior Tempo de Atraso</h2>
+        <h2>
+          🧑‍⚕️ Médicos com Maior
+          Tempo de Atraso
+        </h2>
 
-        <ResponsiveContainer width="100%" height={300}>
+        <ResponsiveContainer
+          width="100%"
+          height={300}
+        >
           <BarChart
             data={medicosCriticos}
             layout="vertical"
@@ -676,7 +814,10 @@ export default function Dashboard() {
               stroke="#35246d"
             />
 
-            <XAxis type="number" stroke="#fff" />
+            <XAxis
+              type="number"
+              stroke="#fff"
+            />
 
             <YAxis
               type="category"
@@ -690,7 +831,9 @@ export default function Dashboard() {
             <Bar
               dataKey="atraso"
               fill={cores.roxo}
-              radius={[0, 10, 10, 0]}
+              radius={[
+                0, 10, 10, 0,
+              ]}
             />
           </BarChart>
         </ResponsiveContainer>
@@ -703,41 +846,64 @@ export default function Dashboard() {
           padding: '20px',
         }}
       >
-        <h2>Impacto na Fila de Espera</h2>
+        <h2>
+          Impacto na Fila de
+          Espera
+        </h2>
 
         <table
           style={{
             width: '100%',
             marginTop: '20px',
-            borderCollapse: 'collapse',
+            borderCollapse:
+              'collapse',
           }}
         >
           <thead>
             <tr
               style={{
-                background: '#3d3490',
+                background:
+                  '#3d3490',
               }}
             >
-              <th style={th}>Unidade</th>
-              <th style={th}>Qtd Médicos</th>
-              <th style={th}>Pacientes</th>
+              <th style={th}>
+                Unidade
+              </th>
+
+              <th style={th}>
+                Qtd Médicos
+              </th>
+
+              <th style={th}>
+                Pacientes
+              </th>
             </tr>
           </thead>
 
           <tbody>
-            {unidadesAtraso.map((u) => (
-              <tr
-                key={u.unidade}
-                style={{
-                  borderBottom:
-                    '1px solid rgba(255,255,255,0.1)',
-                }}
-              >
-                <td style={td}>{u.unidade}</td>
-                <td style={td}>{u.medicos}</td>
-                <td style={td}>{u.pacientes}</td>
-              </tr>
-            ))}
+            {unidadesAtraso.map(
+              (u) => (
+                <tr
+                  key={u.unidade}
+                  style={{
+                    borderBottom:
+                      '1px solid rgba(255,255,255,0.1)',
+                  }}
+                >
+                  <td style={td}>
+                    {u.unidade}
+                  </td>
+
+                  <td style={td}>
+                    {u.medicos}
+                  </td>
+
+                  <td style={td}>
+                    {u.pacientes}
+                  </td>
+                </tr>
+              )
+            )}
           </tbody>
         </table>
       </div>
