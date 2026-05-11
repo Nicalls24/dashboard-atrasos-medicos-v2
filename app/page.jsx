@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState, useEffect, useRef } from 'react'
+import { useMemo, useState } from 'react'
 import * as XLSX from 'xlsx'
 
 // ─── Palette ──────────────────────────────────────────────
@@ -59,12 +59,55 @@ const STATUS_LABEL = (s = '') => {
   return 'OK'
 }
 
+// ─── Parseia qualquer valor de data/hora para Date ────────
+const parseDate = (v) => {
+  if (!v) return null
+  // número serial do Excel
+  if (typeof v === 'number') {
+    // serial Excel: dias desde 1900-01-01
+    const d = new Date((v - 25569) * 86400 * 1000)
+    return isNaN(d) ? null : d
+  }
+  const s = String(v).trim()
+  if (!s) return null
+  // dd/mm/yyyy ou dd/mm/yyyy hh:mm
+  const m1 = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/)
+  if (m1) return new Date(+m1[3], +m1[2] - 1, +m1[1])
+  const d = new Date(s)
+  return isNaN(d) ? null : d
+}
+
+// Retorna true se a data está dentro do período selecionado
+const dentroDoPeríodo = (date, período) => {
+  if (!date || período === 'TODOS') return true
+  const agora = new Date()
+  if (período === 'DIA') {
+    return (
+      date.getDate()     === agora.getDate() &&
+      date.getMonth()    === agora.getMonth() &&
+      date.getFullYear() === agora.getFullYear()
+    )
+  }
+  if (período === 'SEMANA') {
+    const inicioSemana = new Date(agora)
+    inicioSemana.setDate(agora.getDate() - agora.getDay()) // domingo
+    inicioSemana.setHours(0, 0, 0, 0)
+    return date >= inicioSemana
+  }
+  if (período === 'MÊS') {
+    return (
+      date.getMonth()    === agora.getMonth() &&
+      date.getFullYear() === agora.getFullYear()
+    )
+  }
+  return true
+}
+
 // ─── Mini bar chart (SVG) ─────────────────────────────────
 function MiniBar({ data, color }) {
   if (!data.length) return null
   const max = Math.max(...data.map(d => d.value), 1)
   const W = 100, H = 48, barW = W / data.length - 3
-
   return (
     <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 52 }}>
       {data.map((d, i) => {
@@ -72,12 +115,8 @@ function MiniBar({ data, color }) {
         const x = i * (W / data.length) + 1
         return (
           <g key={i}>
-            <rect
-              x={x} y={H - bh} width={barW} height={bh}
-              rx="2" fill={color} opacity="0.85"
-            />
-            <text x={x + barW / 2} y={H - bh - 3} textAnchor="middle"
-              fontSize="5" fill={T.sub}>{d.label}</text>
+            <rect x={x} y={H - bh} width={barW} height={bh} rx="2" fill={color} opacity="0.85" />
+            <text x={x + barW / 2} y={H - bh - 3} textAnchor="middle" fontSize="5" fill={T.sub}>{d.label}</text>
           </g>
         )
       })}
@@ -93,10 +132,9 @@ function HBar({ label, value, max, color, unit = '', rank }) {
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {rank != null && (
-            <span style={{
-              fontSize: 11, fontWeight: 700, color: rank < 3 ? T.danger : T.muted,
-              minWidth: 20
-            }}>#{rank + 1}</span>
+            <span style={{ fontSize: 11, fontWeight: 700, color: rank < 3 ? T.danger : T.muted, minWidth: 20 }}>
+              #{rank + 1}
+            </span>
           )}
           <span style={{ fontSize: 13, color: T.text, fontWeight: 500,
             maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -106,10 +144,7 @@ function HBar({ label, value, max, color, unit = '', rank }) {
         <span style={{ fontSize: 13, fontWeight: 700, color }}>{value}{unit}</span>
       </div>
       <div style={{ background: T.border, borderRadius: 6, height: 6, overflow: 'hidden' }}>
-        <div style={{
-          height: '100%', borderRadius: 6, background: color,
-          width: `${pct}%`, transition: 'width .6s ease'
-        }} />
+        <div style={{ height: '100%', borderRadius: 6, background: color, width: `${pct}%`, transition: 'width .6s ease' }} />
       </div>
     </div>
   )
@@ -123,17 +158,14 @@ function StatCard({ icon, label, value, sub, accent }) {
       padding: '22px 24px', display: 'flex', flexDirection: 'column', gap: 10,
       position: 'relative', overflow: 'hidden',
     }}>
-      <div style={{
-        position: 'absolute', top: -20, right: -20, width: 90, height: 90,
-        borderRadius: '50%', background: accent, opacity: .07
-      }} />
+      <div style={{ position: 'absolute', top: -20, right: -20, width: 90, height: 90,
+        borderRadius: '50%', background: accent, opacity: .07 }} />
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <span style={{ fontSize: 22 }}>{icon}</span>
         <span style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase',
           letterSpacing: '.08em', fontWeight: 600 }}>{label}</span>
       </div>
-      <div style={{ fontSize: 40, fontWeight: 800, color: T.text,
-        lineHeight: 1, letterSpacing: '-1px' }}>{value}</div>
+      <div style={{ fontSize: 40, fontWeight: 800, color: T.text, lineHeight: 1, letterSpacing: '-1px' }}>{value}</div>
       {sub && <div style={{ fontSize: 12, color: T.sub }}>{sub}</div>}
     </div>
   )
@@ -142,20 +174,19 @@ function StatCard({ icon, label, value, sub, accent }) {
 // ─── Section header ───────────────────────────────────────
 function SectionHeader({ children }) {
   return (
-    <h2 style={{
-      fontSize: 14, fontWeight: 700, textTransform: 'uppercase',
-      letterSpacing: '.12em', color: T.sub, marginBottom: 18, marginTop: 0
-    }}>{children}</h2>
+    <h2 style={{ fontSize: 14, fontWeight: 700, textTransform: 'uppercase',
+      letterSpacing: '.12em', color: T.sub, marginBottom: 18, marginTop: 0 }}>
+      {children}
+    </h2>
   )
 }
 
 // ─── Card wrapper ─────────────────────────────────────────
 function Card({ children, style = {} }) {
   return (
-    <div style={{
-      background: T.card, border: `1px solid ${T.border}`,
-      borderRadius: 16, padding: 24, ...style
-    }}>{children}</div>
+    <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 16, padding: 24, ...style }}>
+      {children}
+    </div>
   )
 }
 
@@ -168,10 +199,10 @@ function Donut({ segments, size = 120 }) {
     <svg width={size} height={size} viewBox="0 0 120 120">
       <circle cx={cx} cy={cy} r={r} fill="none" stroke={T.border} strokeWidth="14" />
       {segments.map((seg, i) => {
-        const dash = (seg.value / total) * circ
-        const gap  = circ - dash
+        const dash   = (seg.value / total) * circ
+        const gap    = circ - dash
         const offset = circ - cumulative * circ / total
-        cumulative += seg.value
+        cumulative  += seg.value
         return (
           <circle key={i} cx={cx} cy={cy} r={r} fill="none"
             stroke={seg.color} strokeWidth="14"
@@ -193,20 +224,47 @@ function Donut({ segments, size = 120 }) {
 // ─── Badge ────────────────────────────────────────────────
 function Badge({ label, color }) {
   return (
-    <span style={{
-      fontSize: 11, fontWeight: 700, padding: '3px 9px',
-      borderRadius: 20, background: color + '22', color, whiteSpace: 'nowrap'
-    }}>{label}</span>
+    <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px',
+      borderRadius: 20, background: color + '22', color, whiteSpace: 'nowrap' }}>
+      {label}
+    </span>
+  )
+}
+
+// ─── Período badge (no topbar) ────────────────────────────
+const PERIODOS = [
+  { key: 'TODOS', label: 'Todos'  },
+  { key: 'DIA',   label: 'Dia'    },
+  { key: 'SEMANA',label: 'Semana' },
+  { key: 'MÊS',   label: 'Mês'    },
+]
+
+function PeriodoSelector({ value, onChange }) {
+  return (
+    <div style={{ display: 'flex', gap: 4, background: T.card,
+      border: `1px solid ${T.border}`, borderRadius: 10, padding: 4 }}>
+      {PERIODOS.map(p => (
+        <button key={p.key} onClick={() => onChange(p.key)} style={{
+          padding: '6px 14px', borderRadius: 7, border: 'none',
+          fontSize: 12, fontWeight: 700, cursor: 'pointer', transition: 'all .15s',
+          background: value === p.key ? `linear-gradient(135deg,${T.accent},${T.accentB})` : 'transparent',
+          color: value === p.key ? '#000' : T.muted,
+        }}>{p.label}</button>
+      ))}
+    </div>
   )
 }
 
 // ─── Main ─────────────────────────────────────────────────
 export default function Home() {
-  const [dados, setDados] = useState([])
-  const [uf, setUf] = useState('TODOS')
-  const [status, setStatus] = useState('TODOS')
+  const [dados,   setDados]   = useState([])
+  const [uf,      setUf]      = useState('TODOS')
+  const [status,  setStatus]  = useState('TODOS')
   const [loading, setLoading] = useState(false)
-  const [search, setSearch] = useState('')
+  const [search,  setSearch]  = useState('')
+
+  // ── NOVO: filtro de período ──────────────────────────────
+  const [período, setPeriodo] = useState('TODOS')
 
   const handleUpload = async (e) => {
     const file = e.target.files[0]
@@ -220,36 +278,48 @@ export default function Home() {
     setUf('TODOS')
     setStatus('TODOS')
     setSearch('')
+    setPeriodo('TODOS')   // resetar período ao carregar nova planilha
     setLoading(false)
   }
 
-  // ── Column detection
+  // ── Column detection (inalterado) ────────────────────────
   const cols = useMemo(() => {
     if (!dados.length) return {}
     const k = Object.keys(dados[0])
     const find = (...terms) => k.find(c => terms.some(t => c.toLowerCase().includes(t.toLowerCase()))) || ''
     return {
-      unidade:      find('NM_LOCAL', 'UNIDADE'),
-      medico:       find('NM_MEDICO', 'MEDICO'),
-      esp:          find('ESPECIALIDADE'),
-      status:       find('STATUS'),
-      atraso:       find('TEMPO DE ATRASO', 'ATRASO'),
-      espera:       find('TEMPO_DE_ESPERA'),
-      qtPacts:      find('QT_PACIENTES_AGUARDANDO'),
-      uf:           find('UF'),
-      filial:       find('NM_FILIAL'),
-      cidade:       find('CIDADE'),
-      hrInicio:     find('HR_INICIO'),
-      hrEntrada:    find('HR_ENTRADA'),
+      unidade:  find('NM_LOCAL', 'UNIDADE'),
+      medico:   find('NM_MEDICO', 'MEDICO'),
+      esp:      find('ESPECIALIDADE'),
+      status:   find('STATUS'),
+      atraso:   find('TEMPO DE ATRASO', 'ATRASO'),
+      espera:   find('TEMPO_DE_ESPERA'),
+      qtPacts:  find('QT_PACIENTES_AGUARDANDO'),
+      uf:       find('UF'),
+      filial:   find('NM_FILIAL'),
+      cidade:   find('CIDADE'),
+      hrInicio: find('HR_INICIO'),
+      hrEntrada:find('HR_ENTRADA'),
+      // ── NOVO: detecta coluna de data para filtro de período
+      data:     find('HR_INICIO', 'HR_ENTRADA', 'DT_', 'DATA', 'DATE'),
     }
   }, [dados])
 
-  // ── Filter
-  const ufs      = useMemo(() => [...new Set(dados.map(d => String(d[cols.uf] || '').trim()).filter(Boolean))].sort(), [dados, cols])
-  const statuses = useMemo(() => [...new Set(dados.map(d => String(d[cols.status] || '').trim()).filter(Boolean))].sort(), [dados, cols])
+  // ── Filtro de período: pré-filtra os dados pela coluna de data
+  const dadosPorPeriodo = useMemo(() => {
+    if (período === 'TODOS' || !cols.data) return dados
+    return dados.filter(d => {
+      const dt = parseDate(d[cols.data])
+      return dentroDoPeríodo(dt, período)
+    })
+  }, [dados, cols.data, período])
+
+  // ── Filtros de UF/status/search (inalterados, agora sobre dadosPorPeriodo)
+  const ufs      = useMemo(() => [...new Set(dadosPorPeriodo.map(d => String(d[cols.uf] || '').trim()).filter(Boolean))].sort(), [dadosPorPeriodo, cols])
+  const statuses = useMemo(() => [...new Set(dadosPorPeriodo.map(d => String(d[cols.status] || '').trim()).filter(Boolean))].sort(), [dadosPorPeriodo, cols])
 
   const filtered = useMemo(() => {
-    let r = dados
+    let r = dadosPorPeriodo
     if (uf !== 'TODOS')     r = r.filter(d => String(d[cols.uf] || '').trim() === uf)
     if (status !== 'TODOS') r = r.filter(d => String(d[cols.status] || '').trim() === status)
     if (search)             r = r.filter(d =>
@@ -257,86 +327,62 @@ export default function Home() {
         .some(v => String(v || '').toLowerCase().includes(search.toLowerCase()))
     )
     return r
-  }, [dados, uf, status, search, cols])
+  }, [dadosPorPeriodo, uf, status, search, cols])
 
-  // ── KPIs
+  // ── KPIs (inalterados) ────────────────────────────────────
   const totalRegistros = filtered.length
   const totalUnidades  = new Set(filtered.map(d => d[cols.unidade]).filter(Boolean)).size
   const totalMedicos   = new Set(filtered.map(d => d[cols.medico]).filter(Boolean)).size
-  const emAtraso       = filtered.filter(d => {
-    const s = String(d[cols.status] || '').toUpperCase()
-    return s.includes('ATRASO')
-  }).length
+  const emAtraso       = filtered.filter(d => String(d[cols.status] || '').toUpperCase().includes('ATRASO')).length
   const taxaAtraso     = totalRegistros > 0 ? ((emAtraso / totalRegistros) * 100).toFixed(1) : 0
   const totalEspera    = filtered.reduce((a, d) => a + parseHM(d[cols.espera]), 0)
   const mediaEspera    = totalRegistros > 0 ? totalEspera / totalRegistros : 0
   const totalPacAguard = filtered.reduce((a, d) => a + (Number(d[cols.qtPacts]) || 0), 0)
 
-  // ── Status breakdown
+  // ── Breakdowns (inalterados) ──────────────────────────────
   const statusBreakdown = useMemo(() => {
     const m = {}
-    filtered.forEach(d => {
-      const s = String(d[cols.status] || 'OK').trim()
-      m[s] = (m[s] || 0) + 1
-    })
-    return Object.entries(m).map(([label, value]) => ({
-      label, value, color: STATUS_COLOR(label)
-    })).sort((a, b) => b.value - a.value)
+    filtered.forEach(d => { const s = String(d[cols.status] || 'OK').trim(); m[s] = (m[s] || 0) + 1 })
+    return Object.entries(m).map(([label, value]) => ({ label, value, color: STATUS_COLOR(label) }))
+      .sort((a, b) => b.value - a.value)
   }, [filtered, cols])
 
-  // ── Top unidades por atraso
   const topUnidadesAtraso = useMemo(() => {
     const m = {}
-    filtered
-      .filter(d => String(d[cols.status] || '').toUpperCase().includes('ATRASO'))
-      .forEach(d => {
-        const u = d[cols.unidade] || 'Sem Unidade'
-        m[u] = (m[u] || 0) + 1
-      })
+    filtered.filter(d => String(d[cols.status] || '').toUpperCase().includes('ATRASO'))
+      .forEach(d => { const u = d[cols.unidade] || 'Sem Unidade'; m[u] = (m[u] || 0) + 1 })
     return Object.entries(m).map(([nome, total]) => ({ nome, total }))
       .sort((a, b) => b.total - a.total).slice(0, 10)
   }, [filtered, cols])
 
-  // ── Top medicos por tempo de espera
   const topMedicos = useMemo(() => {
     const m = {}
     filtered.forEach(d => {
       const med = d[cols.medico] || 'Sem Médico'
       const h   = parseHM(d[cols.espera])
       if (!m[med]) m[med] = { med, unidade: d[cols.unidade] || '', total: 0, n: 0, maxH: 0 }
-      m[med].total += h
-      m[med].n++
+      m[med].total += h; m[med].n++
       if (h > m[med].maxH) m[med].maxH = h
     })
-    return Object.values(m).filter(x => x.total > 0)
-      .sort((a, b) => b.total - a.total).slice(0, 10)
+    return Object.values(m).filter(x => x.total > 0).sort((a, b) => b.total - a.total).slice(0, 10)
   }, [filtered, cols])
 
-  // ── Especialidades
   const espBreak = useMemo(() => {
     const m = {}
-    filtered.forEach(d => {
-      const e = d[cols.esp] || 'Outro'
-      m[e] = (m[e] || 0) + 1
-    })
+    filtered.forEach(d => { const e = d[cols.esp] || 'Outro'; m[e] = (m[e] || 0) + 1 })
     return Object.entries(m).map(([nome, total]) => ({ nome, total }))
       .sort((a, b) => b.total - a.total).slice(0, 8)
   }, [filtered, cols])
   const maxEsp = espBreak[0]?.total || 1
 
-  // ── UF breakdown
   const ufBreak = useMemo(() => {
     const m = {}
-    filtered.forEach(d => {
-      const u = String(d[cols.uf] || '?').trim()
-      m[u] = (m[u] || 0) + 1
-    })
+    filtered.forEach(d => { const u = String(d[cols.uf] || '?').trim(); m[u] = (m[u] || 0) + 1 })
     return Object.entries(m).map(([nome, total]) => ({ nome, total }))
       .sort((a, b) => b.total - a.total).slice(0, 8)
   }, [filtered, cols])
   const maxUF = ufBreak[0]?.total || 1
 
-  // ── Impacto fila (unidades com atraso + pacientes aguardando)
   const impactoFila = useMemo(() => {
     const m = {}
     filtered.forEach(d => {
@@ -352,12 +398,12 @@ export default function Home() {
 
   const hasData = dados.length > 0
 
+  // ── Label do período selecionado para exibição ────────────
+  const períodoLabel = PERIODOS.find(p => p.key === período)?.label || 'Todos'
+
   return (
-    <div style={{
-      background: T.bg, minHeight: '100vh',
-      fontFamily: "'DM Sans', 'Segoe UI', sans-serif",
-      color: T.text, padding: '0',
-    }}>
+    <div style={{ background: T.bg, minHeight: '100vh',
+      fontFamily: "'DM Sans', 'Segoe UI', sans-serif", color: T.text, padding: '0' }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700;800&display=swap');
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -379,28 +425,27 @@ export default function Home() {
           <div style={{
             width: 32, height: 32, borderRadius: 8,
             background: `linear-gradient(135deg, ${T.accent}, ${T.accentB})`,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 16,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16,
           }}>🏥</div>
           <div>
-            <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: '-.01em' }}>
-              Monitor Hospitalar
-            </div>
+            <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: '-.01em' }}>Monitor Hospitalar</div>
             <div style={{ fontSize: 11, color: T.muted }}>Atrasos Médicos · Operacional</div>
           </div>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          {/* ── NOVO: seletor de período ── */}
+          {hasData && <PeriodoSelector value={período} onChange={setPeriodo} />}
+
           {hasData && (
             <div style={{ fontSize: 12, color: T.muted }}>
-              {totalRegistros.toLocaleString('pt-BR')} registros carregados
+              {totalRegistros.toLocaleString('pt-BR')} registros · {períodoLabel}
             </div>
           )}
           <label className="btn-upload" style={{
             background: `linear-gradient(135deg, ${T.accent}, ${T.accentB})`,
             color: '#000', fontWeight: 700, fontSize: 13,
-            padding: '9px 20px', borderRadius: 10, cursor: 'pointer',
-            transition: 'all .2s',
+            padding: '9px 20px', borderRadius: 10, cursor: 'pointer', transition: 'all .2s',
           }}>
             {loading ? 'Carregando…' : '+ Carregar Planilha'}
             <input type="file" accept=".xlsx,.xls" style={{ display: 'none' }} onChange={handleUpload} />
@@ -410,12 +455,10 @@ export default function Home() {
 
       <div style={{ padding: '32px 40px' }}>
 
-        {/* ── Empty state ── */}
+        {/* ── Empty state (inalterado) ── */}
         {!hasData && (
-          <div style={{
-            display: 'flex', flexDirection: 'column', alignItems: 'center',
-            justifyContent: 'center', minHeight: 'calc(100vh - 140px)', gap: 16,
-          }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center',
+            justifyContent: 'center', minHeight: 'calc(100vh - 140px)', gap: 16 }}>
             <div style={{ fontSize: 56 }}>📋</div>
             <div style={{ fontSize: 22, fontWeight: 700 }}>Nenhuma planilha carregada</div>
             <div style={{ color: T.muted, fontSize: 14 }}>
@@ -426,45 +469,34 @@ export default function Home() {
 
         {hasData && (<>
 
-          {/* ── Filters ── */}
-          <div style={{
-            display: 'flex', gap: 12, marginBottom: 28, flexWrap: 'wrap', alignItems: 'center'
-          }}>
-            <input
-              value={search}
-              onChange={e => setSearch(e.target.value)}
+          {/* ── Filters (inalterados) ── */}
+          <div style={{ display: 'flex', gap: 12, marginBottom: 28, flexWrap: 'wrap', alignItems: 'center' }}>
+            <input value={search} onChange={e => setSearch(e.target.value)}
               placeholder="Buscar unidade, médico, especialidade…"
-              style={{
-                background: T.card, border: `1px solid ${T.border}`, borderRadius: 10,
-                color: T.text, fontSize: 13, padding: '9px 14px', outline: 'none',
-                width: 300,
-              }}
-            />
+              style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 10,
+                color: T.text, fontSize: 13, padding: '9px 14px', outline: 'none', width: 300 }} />
             <select value={uf} onChange={e => setUf(e.target.value)} style={{
               background: T.card, border: `1px solid ${T.border}`, borderRadius: 10,
-              color: T.text, fontSize: 13, padding: '9px 14px', outline: 'none', cursor: 'pointer'
-            }}>
+              color: T.text, fontSize: 13, padding: '9px 14px', outline: 'none', cursor: 'pointer' }}>
               <option value="TODOS">Todos os Estados</option>
               {ufs.map(u => <option key={u}>{u}</option>)}
             </select>
             <select value={status} onChange={e => setStatus(e.target.value)} style={{
               background: T.card, border: `1px solid ${T.border}`, borderRadius: 10,
-              color: T.text, fontSize: 13, padding: '9px 14px', outline: 'none', cursor: 'pointer'
-            }}>
+              color: T.text, fontSize: 13, padding: '9px 14px', outline: 'none', cursor: 'pointer' }}>
               <option value="TODOS">Todos os Status</option>
               {statuses.map(s => <option key={s}>{s}</option>)}
             </select>
             {(uf !== 'TODOS' || status !== 'TODOS' || search) && (
               <button onClick={() => { setUf('TODOS'); setStatus('TODOS'); setSearch('') }}
-                style={{
-                  background: 'transparent', border: `1px solid ${T.border}`,
-                  borderRadius: 10, color: T.muted, fontSize: 13, padding: '9px 14px',
-                  cursor: 'pointer',
-                }}>✕ Limpar filtros</button>
+                style={{ background: 'transparent', border: `1px solid ${T.border}`,
+                  borderRadius: 10, color: T.muted, fontSize: 13, padding: '9px 14px', cursor: 'pointer' }}>
+                ✕ Limpar filtros
+              </button>
             )}
           </div>
 
-          {/* ── KPI Cards ── */}
+          {/* ── KPI Cards (inalterados) ── */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 16, marginBottom: 24 }}>
             <StatCard icon="🩺" label="Total Registros" value={totalRegistros.toLocaleString('pt-BR')}
               sub={`${totalUnidades} unidades · ${totalMedicos} médicos`} accent={T.accent} />
@@ -476,10 +508,8 @@ export default function Home() {
               sub="na fila agora" accent={T.success} />
           </div>
 
-          {/* ── Row 2: Donut + Status + UFs ── */}
+          {/* ── Row 2 (inalterada) ── */}
           <div style={{ display: 'grid', gridTemplateColumns: '240px 1fr 1fr', gap: 16, marginBottom: 16 }}>
-
-            {/* Donut */}
             <Card style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16 }}>
               <SectionHeader>Distribuição</SectionHeader>
               <Donut size={130} segments={statusBreakdown.map(s => ({ value: s.value, color: s.color }))} />
@@ -497,33 +527,25 @@ export default function Home() {
                 ))}
               </div>
             </Card>
-
-            {/* Top Unidades por Atraso */}
             <Card>
               <SectionHeader>🔴 Unidades com Mais Atrasos</SectionHeader>
               {topUnidadesAtraso.slice(0, 6).map((u, i) => (
                 <HBar key={u.nome} rank={i} label={u.nome} value={u.total}
                   max={topUnidadesAtraso[0]?.total || 1}
                   color={i === 0 ? T.danger : i === 1 ? '#FF7A00' : T.warning}
-                  unit=" atrasos"
-                />
+                  unit=" atrasos" />
               ))}
             </Card>
-
-            {/* UF breakdown */}
             <Card>
               <SectionHeader>📍 Registros por Estado (UF)</SectionHeader>
               {ufBreak.map((u, i) => (
-                <HBar key={u.nome} label={u.nome} value={u.total} max={maxUF}
-                  color={T.accent} />
+                <HBar key={u.nome} label={u.nome} value={u.total} max={maxUF} color={T.accent} />
               ))}
             </Card>
           </div>
 
-          {/* ── Row 3: Médicos + Especialidades ── */}
+          {/* ── Row 3 (inalterada) ── */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
-
-            {/* Top médicos tempo espera */}
             <Card>
               <SectionHeader>👨‍⚕️ Médicos com Maior Tempo de Espera (acumulado)</SectionHeader>
               {topMedicos.map((m, i) => (
@@ -535,8 +557,6 @@ export default function Home() {
                 <div style={{ color: T.muted, fontSize: 13 }}>Nenhum dado de espera encontrado.</div>
               )}
             </Card>
-
-            {/* Especialidades */}
             <Card>
               <SectionHeader>🩻 Especialidades com Mais Atendimentos</SectionHeader>
               {espBreak.map((e, i) => (
@@ -546,7 +566,7 @@ export default function Home() {
             </Card>
           </div>
 
-          {/* ── Impacto na Fila ── */}
+          {/* ── Impacto na Fila (inalterado) ── */}
           <Card style={{ marginBottom: 16 }}>
             <SectionHeader>📊 Impacto na Fila de Espera — Unidades em Atraso</SectionHeader>
             {impactoFila.length === 0 ? (
@@ -557,25 +577,23 @@ export default function Home() {
                   <thead>
                     <tr style={{ borderBottom: `1px solid ${T.border}` }}>
                       {['Unidade', 'Médicos em Atraso', 'Pacientes Aguardando', 'Pacientes / Médico', 'Severidade'].map(h => (
-                        <th key={h} style={{
-                          padding: '10px 14px', textAlign: 'left',
+                        <th key={h} style={{ padding: '10px 14px', textAlign: 'left',
                           color: T.muted, fontWeight: 600, fontSize: 11,
-                          textTransform: 'uppercase', letterSpacing: '.06em'
-                        }}>{h}</th>
+                          textTransform: 'uppercase', letterSpacing: '.06em' }}>{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
                     {impactoFila.map((r, i) => {
                       const ratio = r.medicos > 0 ? (r.pacientes / r.medicos).toFixed(1) : '-'
-                      const sev = r.medicos >= 5 ? 'Crítico' : r.medicos >= 3 ? 'Alto' : 'Moderado'
-                      const sevC = r.medicos >= 5 ? T.danger : r.medicos >= 3 ? T.warning : T.success
+                      const sev   = r.medicos >= 5 ? 'Crítico' : r.medicos >= 3 ? 'Alto' : 'Moderado'
+                      const sevC  = r.medicos >= 5 ? T.danger  : r.medicos >= 3 ? T.warning : T.success
                       return (
                         <tr key={r.unidade} className="row-table"
                           style={{ borderBottom: `1px solid ${T.border}`, transition: 'background .15s' }}>
                           <td style={{ padding: '12px 14px', fontWeight: 500, color: T.text }}>{r.unidade}</td>
-                          <td style={{ padding: '12px 14px', color: T.danger, fontWeight: 700 }}>{r.medicos}</td>
-                          <td style={{ padding: '12px 14px', color: T.warning, fontWeight: 700 }}>{r.pacientes}</td>
+                          <td style={{ padding: '12px 14px', color: T.danger,   fontWeight: 700 }}>{r.medicos}</td>
+                          <td style={{ padding: '12px 14px', color: T.warning,  fontWeight: 700 }}>{r.pacientes}</td>
                           <td style={{ padding: '12px 14px', color: T.sub }}>{ratio}</td>
                           <td style={{ padding: '12px 14px' }}><Badge label={sev} color={sevC} /></td>
                         </tr>
@@ -590,6 +608,7 @@ export default function Home() {
           {/* ── Footer ── */}
           <div style={{ textAlign: 'center', color: T.muted, fontSize: 11, paddingTop: 8, paddingBottom: 24 }}>
             Dashboard Monitoramento Hospitalar · Dados carregados da planilha · {new Date().toLocaleDateString('pt-BR')}
+            {período !== 'TODOS' && ` · Filtro de período: ${períodoLabel}`}
           </div>
 
         </>)}
