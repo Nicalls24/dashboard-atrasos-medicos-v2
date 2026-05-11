@@ -22,11 +22,15 @@ const T = {
 // ─── Helpers ──────────────────────────────────────────────
 const parseHM = (v) => {
   if (!v && v !== 0) return 0
-  if (typeof v === 'number') return v * 24
+  if (typeof v === 'number') {
+    // timedelta serial do Excel: fração de dia
+    if (v < 1) return v * 24
+    return v * 24
+  }
   const s = String(v).trim()
   if (s.includes(':')) {
-    const [h, m] = s.split(':').map(Number)
-    return (h || 0) + (m || 0) / 60
+    const parts = s.split(':').map(Number)
+    return (parts[0] || 0) + (parts[1] || 0) / 60 + (parts[2] || 0) / 3600
   }
   const n = parseFloat(s.replace(',', '.'))
   return isNaN(n) ? 0 : n
@@ -59,22 +63,25 @@ const STATUS_LABEL = (s = '') => {
   return 'OK'
 }
 
-// ─── Parseia qualquer valor de data/hora para Date ────────
-const parseDate = (v) => {
-  if (!v) return null
-  // número serial do Excel
-  if (typeof v === 'number') {
-    // serial Excel: dias desde 1900-01-01
-    const d = new Date((v - 25569) * 86400 * 1000)
-    return isNaN(d) ? null : d
+// ─── Converte serial Excel (número inteiro) para Date ─────
+// Excel base: 1 = 01/01/1900. Ajuste para timedelta: 25569 = diff entre Excel e Unix epoch
+const excelSerialToDate = (serial) => {
+  if (!serial && serial !== 0) return null
+  if (typeof serial === 'number') {
+    // DATA_AGENDA: inteiro grande (ex: 46146) → data real
+    if (serial > 1000) {
+      const d = new Date((serial - 25569) * 86400 * 1000)
+      return isNaN(d.getTime()) ? null : d
+    }
+    // fração de dia (timedelta) → não é data
+    return null
   }
-  const s = String(v).trim()
-  if (!s) return null
-  // dd/mm/yyyy ou dd/mm/yyyy hh:mm
+  const s = String(serial).trim()
+  // dd/mm/yyyy
   const m1 = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/)
   if (m1) return new Date(+m1[3], +m1[2] - 1, +m1[1])
   const d = new Date(s)
-  return isNaN(d) ? null : d
+  return isNaN(d.getTime()) ? null : d
 }
 
 // Retorna true se a data está dentro do período selecionado
@@ -89,10 +96,12 @@ const dentroDoPeríodo = (date, período) => {
     )
   }
   if (período === 'SEMANA') {
-    const inicioSemana = new Date(agora)
-    inicioSemana.setDate(agora.getDate() - agora.getDay()) // domingo
-    inicioSemana.setHours(0, 0, 0, 0)
-    return date >= inicioSemana
+    const ini = new Date(agora)
+    ini.setDate(agora.getDate() - agora.getDay())
+    ini.setHours(0, 0, 0, 0)
+    const fim = new Date(ini)
+    fim.setDate(ini.getDate() + 7)
+    return date >= ini && date < fim
   }
   if (período === 'MÊS') {
     return (
@@ -103,45 +112,29 @@ const dentroDoPeríodo = (date, período) => {
   return true
 }
 
-// ─── Mini bar chart (SVG) ─────────────────────────────────
-function MiniBar({ data, color }) {
-  if (!data.length) return null
-  const max = Math.max(...data.map(d => d.value), 1)
-  const W = 100, H = 48, barW = W / data.length - 3
-  return (
-    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 52 }}>
-      {data.map((d, i) => {
-        const bh = Math.max(2, (d.value / max) * (H - 12))
-        const x = i * (W / data.length) + 1
-        return (
-          <g key={i}>
-            <rect x={x} y={H - bh} width={barW} height={bh} rx="2" fill={color} opacity="0.85" />
-            <text x={x + barW / 2} y={H - bh - 3} textAnchor="middle" fontSize="5" fill={T.sub}>{d.label}</text>
-          </g>
-        )
-      })}
-    </svg>
-  )
-}
-
-// ─── Horizontal bar ───────────────────────────────────────
-function HBar({ label, value, max, color, unit = '', rank }) {
+// ─── Sub-components ───────────────────────────────────────
+function HBar({ label, value, max, color, unit = '', rank, sub }) {
   const pct = max > 0 ? (value / max) * 100 : 0
   return (
     <div style={{ marginBottom: 14 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
           {rank != null && (
-            <span style={{ fontSize: 11, fontWeight: 700, color: rank < 3 ? T.danger : T.muted, minWidth: 20 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: rank < 3 ? T.danger : T.muted, minWidth: 24, flexShrink: 0 }}>
               #{rank + 1}
             </span>
           )}
-          <span style={{ fontSize: 13, color: T.text, fontWeight: 500,
-            maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {label}
-          </span>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 13, color: T.text, fontWeight: 500,
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {label}
+            </div>
+            {sub && (
+              <div style={{ fontSize: 10.5, color: T.muted, marginTop: 1 }}>{sub}</div>
+            )}
+          </div>
         </div>
-        <span style={{ fontSize: 13, fontWeight: 700, color }}>{value}{unit}</span>
+        <span style={{ fontSize: 13, fontWeight: 700, color, flexShrink: 0, marginLeft: 8 }}>{value}{unit}</span>
       </div>
       <div style={{ background: T.border, borderRadius: 6, height: 6, overflow: 'hidden' }}>
         <div style={{ height: '100%', borderRadius: 6, background: color, width: `${pct}%`, transition: 'width .6s ease' }} />
@@ -150,7 +143,6 @@ function HBar({ label, value, max, color, unit = '', rank }) {
   )
 }
 
-// ─── Stat card ────────────────────────────────────────────
 function StatCard({ icon, label, value, sub, accent }) {
   return (
     <div style={{
@@ -171,7 +163,6 @@ function StatCard({ icon, label, value, sub, accent }) {
   )
 }
 
-// ─── Section header ───────────────────────────────────────
 function SectionHeader({ children }) {
   return (
     <h2 style={{ fontSize: 14, fontWeight: 700, textTransform: 'uppercase',
@@ -181,7 +172,6 @@ function SectionHeader({ children }) {
   )
 }
 
-// ─── Card wrapper ─────────────────────────────────────────
 function Card({ children, style = {} }) {
   return (
     <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 16, padding: 24, ...style }}>
@@ -190,7 +180,6 @@ function Card({ children, style = {} }) {
   )
 }
 
-// ─── Donut (SVG) ─────────────────────────────────────────
 function Donut({ segments, size = 120 }) {
   const r = 46, cx = 60, cy = 60, circ = 2 * Math.PI * r
   const total = segments.reduce((a, s) => a + s.value, 0) || 1
@@ -221,7 +210,6 @@ function Donut({ segments, size = 120 }) {
   )
 }
 
-// ─── Badge ────────────────────────────────────────────────
 function Badge({ label, color }) {
   return (
     <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px',
@@ -231,12 +219,12 @@ function Badge({ label, color }) {
   )
 }
 
-// ─── Período badge (no topbar) ────────────────────────────
+// ─── Período selector ─────────────────────────────────────
 const PERIODOS = [
   { key: 'TODOS', label: 'Todos'  },
   { key: 'DIA',   label: 'Dia'    },
   { key: 'SEMANA',label: 'Semana' },
-  { key: 'MÊS',   label: 'Mês'    },
+  { key: 'MÊS',   label: 'Mês'   },
 ]
 
 function PeriodoSelector({ value, onChange }) {
@@ -262,8 +250,6 @@ export default function Home() {
   const [status,  setStatus]  = useState('TODOS')
   const [loading, setLoading] = useState(false)
   const [search,  setSearch]  = useState('')
-
-  // ── NOVO: filtro de período ──────────────────────────────
   const [período, setPeriodo] = useState('TODOS')
 
   const handleUpload = async (e) => {
@@ -273,51 +259,56 @@ export default function Home() {
     const buf = await file.arrayBuffer()
     const wb  = XLSX.read(buf, { type: 'buffer' })
     const ws  = wb.Sheets[wb.SheetNames[0]]
+    // range: 3 = pula as 3 primeiras linhas de cabeçalho extra
     const json = XLSX.utils.sheet_to_json(ws, { range: 3, defval: '' })
     setDados(json)
     setUf('TODOS')
     setStatus('TODOS')
     setSearch('')
-    setPeriodo('TODOS')   // resetar período ao carregar nova planilha
+    setPeriodo('TODOS')
     setLoading(false)
   }
 
-  // ── Column detection (inalterado) ────────────────────────
+  // ── Detecção de colunas ───────────────────────────────────
   const cols = useMemo(() => {
     if (!dados.length) return {}
     const k = Object.keys(dados[0])
-    const find = (...terms) => k.find(c => terms.some(t => c.toLowerCase().includes(t.toLowerCase()))) || ''
+    const find = (...terms) => k.find(c => terms.some(t => c.toLowerCase() === t.toLowerCase())) ||
+                               k.find(c => terms.some(t => c.toLowerCase().includes(t.toLowerCase()))) || ''
     return {
-      unidade:  find('NM_LOCAL', 'UNIDADE'),
-      medico:   find('NM_MEDICO', 'MEDICO'),
-      esp:      find('ESPECIALIDADE'),
-      status:   find('STATUS'),
-      atraso:   find('TEMPO DE ATRASO', 'ATRASO'),
-      espera:   find('TEMPO_DE_ESPERA'),
-      qtPacts:  find('QT_PACIENTES_AGUARDANDO'),
-      uf:       find('UF'),
-      filial:   find('NM_FILIAL'),
-      cidade:   find('CIDADE'),
-      hrInicio: find('HR_INICIO'),
-      hrEntrada:find('HR_ENTRADA'),
-      // ── NOVO: detecta coluna de data para filtro de período
-      data:     find('HR_INICIO', 'HR_ENTRADA', 'DT_', 'DATA', 'DATE'),
+      unidade:   find('NM_LOCAL', 'UNIDADE'),
+      medico:    find('NM_MEDICO', 'MEDICO'),      // nome do médico, não CD_MEDICO
+      esp:       find('DS_ESPECIALIDADE', 'ESPECIALIDADE'),
+      status:    find('STATUS'),
+      espera:    find('TEMPO_DE_ESPERA'),
+      qtPacts:   find('QT_PACIENTES_AGUARDANDO'),
+      uf:        find('UF'),
+      cidade:    find('CIDADE'),
+      dataAgenda:find('DATA_AGENDA'),              // serial Excel de data
+      dtRegistro:find('DT_REGISTRO'),
     }
   }, [dados])
 
-  // ── Filtro de período: pré-filtra os dados pela coluna de data
-  const dadosPorPeriodo = useMemo(() => {
-    if (período === 'TODOS' || !cols.data) return dados
-    return dados.filter(d => {
-      const dt = parseDate(d[cols.data])
-      return dentroDoPeríodo(dt, período)
-    })
-  }, [dados, cols.data, período])
+  // ── Pré-processa a data uma vez por registro ──────────────
+  const dadosComData = useMemo(() => {
+    if (!dados.length || !cols.dataAgenda) return dados
+    return dados.map(d => ({
+      ...d,
+      __date: excelSerialToDate(d[cols.dataAgenda]),
+    }))
+  }, [dados, cols.dataAgenda])
 
-  // ── Filtros de UF/status/search (inalterados, agora sobre dadosPorPeriodo)
+  // ── Filtro de período (usa DATA_AGENDA convertida) ────────
+  const dadosPorPeriodo = useMemo(() => {
+    if (período === 'TODOS') return dadosComData
+    return dadosComData.filter(d => dentroDoPeríodo(d.__date, período))
+  }, [dadosComData, período])
+
+  // ── Listas de opções ─────────────────────────────────────
   const ufs      = useMemo(() => [...new Set(dadosPorPeriodo.map(d => String(d[cols.uf] || '').trim()).filter(Boolean))].sort(), [dadosPorPeriodo, cols])
   const statuses = useMemo(() => [...new Set(dadosPorPeriodo.map(d => String(d[cols.status] || '').trim()).filter(Boolean))].sort(), [dadosPorPeriodo, cols])
 
+  // ── Filtros UF / status / busca ───────────────────────────
   const filtered = useMemo(() => {
     let r = dadosPorPeriodo
     if (uf !== 'TODOS')     r = r.filter(d => String(d[cols.uf] || '').trim() === uf)
@@ -329,17 +320,20 @@ export default function Home() {
     return r
   }, [dadosPorPeriodo, uf, status, search, cols])
 
-  // ── KPIs (inalterados) ────────────────────────────────────
+  // ── KPIs globais ─────────────────────────────────────────
   const totalRegistros = filtered.length
   const totalUnidades  = new Set(filtered.map(d => d[cols.unidade]).filter(Boolean)).size
-  const totalMedicos   = new Set(filtered.map(d => d[cols.medico]).filter(Boolean)).size
-  const emAtraso       = filtered.filter(d => String(d[cols.status] || '').toUpperCase().includes('ATRASO')).length
-  const taxaAtraso     = totalRegistros > 0 ? ((emAtraso / totalRegistros) * 100).toFixed(1) : 0
-  const totalEspera    = filtered.reduce((a, d) => a + parseHM(d[cols.espera]), 0)
-  const mediaEspera    = totalRegistros > 0 ? totalEspera / totalRegistros : 0
+
+  // Médicos únicos (sem duplicatas por agenda)
+  const totalMedicos = new Set(filtered.map(d => d[cols.medico]).filter(Boolean)).size
+
+  const emAtraso    = filtered.filter(d => String(d[cols.status] || '').toUpperCase().includes('ATRASO')).length
+  const taxaAtraso  = totalRegistros > 0 ? ((emAtraso / totalRegistros) * 100).toFixed(1) : 0
+  const totalEspera = filtered.reduce((a, d) => a + parseHM(d[cols.espera]), 0)
+  const mediaEspera = totalRegistros > 0 ? totalEspera / totalRegistros : 0
   const totalPacAguard = filtered.reduce((a, d) => a + (Number(d[cols.qtPacts]) || 0), 0)
 
-  // ── Breakdowns (inalterados) ──────────────────────────────
+  // ── Status breakdown ─────────────────────────────────────
   const statusBreakdown = useMemo(() => {
     const m = {}
     filtered.forEach(d => { const s = String(d[cols.status] || 'OK').trim(); m[s] = (m[s] || 0) + 1 })
@@ -347,6 +341,7 @@ export default function Home() {
       .sort((a, b) => b.value - a.value)
   }, [filtered, cols])
 
+  // ── Top unidades por atraso ───────────────────────────────
   const topUnidadesAtraso = useMemo(() => {
     const m = {}
     filtered.filter(d => String(d[cols.status] || '').toUpperCase().includes('ATRASO'))
@@ -355,18 +350,61 @@ export default function Home() {
       .sort((a, b) => b.total - a.total).slice(0, 10)
   }, [filtered, cols])
 
+  // ── Médicos com maior espera — CORRIGIDO ──────────────────
+  // Considera apenas 1 entrada por médico+dia (deduplicação por agenda)
+  // Depois agrega por nome do médico
   const topMedicos = useMemo(() => {
-    const m = {}
-    filtered.forEach(d => {
-      const med = d[cols.medico] || 'Sem Médico'
-      const h   = parseHM(d[cols.espera])
-      if (!m[med]) m[med] = { med, unidade: d[cols.unidade] || '', total: 0, n: 0, maxH: 0 }
-      m[med].total += h; m[med].n++
-      if (h > m[med].maxH) m[med].maxH = h
+    // Passo 1: deduplicar por NM_MEDICO + DATA_AGENDA (agenda única)
+    const seen = new Set()
+    const dedup = filtered.filter(d => {
+      const med  = String(d[cols.medico] || '').trim()
+      const data = d[cols.dataAgenda] || ''
+      if (!med) return false
+      const key = `${med}||${data}`
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
     })
-    return Object.values(m).filter(x => x.total > 0).sort((a, b) => b.total - a.total).slice(0, 10)
+
+    // Passo 2: agregar por NM_MEDICO
+    const m = {}
+    dedup.forEach(d => {
+      const med = String(d[cols.medico] || '').trim() || 'Sem Médico'
+      const h   = parseHM(d[cols.espera])
+      if (!m[med]) m[med] = { med, total: 0, agendas: 0, pacts: 0 }
+      m[med].total  += h
+      m[med].agendas++
+      m[med].pacts  += Number(d[cols.qtPacts]) || 0
+    })
+
+    return Object.values(m).filter(x => x.total > 0)
+      .sort((a, b) => b.total - a.total).slice(0, 10)
   }, [filtered, cols])
 
+  // ── Médicos únicos em atraso — CORRIGIDO ─────────────────
+  // Para o impacto na fila: médico = NM_MEDICO único (não por linha)
+  const impactoFila = useMemo(() => {
+    const m = {}
+    // Deduplicar médico em atraso por unidade+médico+data
+    const seenMed = new Set()
+    filtered
+      .filter(d => String(d[cols.status] || '').toUpperCase().includes('ATRASO'))
+      .forEach(d => {
+        const u   = d[cols.unidade] || 'Sem Unidade'
+        const med = String(d[cols.medico] || '').trim()
+        const dt  = d[cols.dataAgenda] || ''
+        const key = `${u}||${med}||${dt}`
+
+        if (!m[u]) m[u] = { unidade: u, medicos: new Set(), pacientes: 0 }
+        m[u].medicos.add(`${med}||${dt}`)  // agenda única
+        m[u].pacientes += Number(d[cols.qtPacts]) || 0
+      })
+    return Object.values(m)
+      .map(r => ({ ...r, medicos: r.medicos.size }))
+      .sort((a, b) => b.pacientes - a.pacientes).slice(0, 8)
+  }, [filtered, cols])
+
+  // ── Especialidades ────────────────────────────────────────
   const espBreak = useMemo(() => {
     const m = {}
     filtered.forEach(d => { const e = d[cols.esp] || 'Outro'; m[e] = (m[e] || 0) + 1 })
@@ -375,6 +413,7 @@ export default function Home() {
   }, [filtered, cols])
   const maxEsp = espBreak[0]?.total || 1
 
+  // ── UF breakdown ─────────────────────────────────────────
   const ufBreak = useMemo(() => {
     const m = {}
     filtered.forEach(d => { const u = String(d[cols.uf] || '?').trim(); m[u] = (m[u] || 0) + 1 })
@@ -383,22 +422,7 @@ export default function Home() {
   }, [filtered, cols])
   const maxUF = ufBreak[0]?.total || 1
 
-  const impactoFila = useMemo(() => {
-    const m = {}
-    filtered.forEach(d => {
-      const s = String(d[cols.status] || '').toUpperCase()
-      if (!s.includes('ATRASO')) return
-      const u = d[cols.unidade] || 'Sem Unidade'
-      if (!m[u]) m[u] = { unidade: u, medicos: 0, pacientes: 0 }
-      m[u].medicos++
-      m[u].pacientes += Number(d[cols.qtPacts]) || 0
-    })
-    return Object.values(m).sort((a, b) => b.pacientes - a.pacientes).slice(0, 8)
-  }, [filtered, cols])
-
-  const hasData = dados.length > 0
-
-  // ── Label do período selecionado para exibição ────────────
+  const hasData  = dados.length > 0
   const períodoLabel = PERIODOS.find(p => p.key === período)?.label || 'Todos'
 
   return (
@@ -432,11 +456,8 @@ export default function Home() {
             <div style={{ fontSize: 11, color: T.muted }}>Atrasos Médicos · Operacional</div>
           </div>
         </div>
-
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          {/* ── NOVO: seletor de período ── */}
           {hasData && <PeriodoSelector value={período} onChange={setPeriodo} />}
-
           {hasData && (
             <div style={{ fontSize: 12, color: T.muted }}>
               {totalRegistros.toLocaleString('pt-BR')} registros · {períodoLabel}
@@ -455,7 +476,7 @@ export default function Home() {
 
       <div style={{ padding: '32px 40px' }}>
 
-        {/* ── Empty state (inalterado) ── */}
+        {/* ── Empty ── */}
         {!hasData && (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center',
             justifyContent: 'center', minHeight: 'calc(100vh - 140px)', gap: 16 }}>
@@ -469,7 +490,7 @@ export default function Home() {
 
         {hasData && (<>
 
-          {/* ── Filters (inalterados) ── */}
+          {/* ── Filters ── */}
           <div style={{ display: 'flex', gap: 12, marginBottom: 28, flexWrap: 'wrap', alignItems: 'center' }}>
             <input value={search} onChange={e => setSearch(e.target.value)}
               placeholder="Buscar unidade, médico, especialidade…"
@@ -496,10 +517,10 @@ export default function Home() {
             )}
           </div>
 
-          {/* ── KPI Cards (inalterados) ── */}
+          {/* ── KPI Cards ── */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 16, marginBottom: 24 }}>
             <StatCard icon="🩺" label="Total Registros" value={totalRegistros.toLocaleString('pt-BR')}
-              sub={`${totalUnidades} unidades · ${totalMedicos} médicos`} accent={T.accent} />
+              sub={`${totalUnidades} unidades · ${totalMedicos} médicos únicos`} accent={T.accent} />
             <StatCard icon="⚠️" label="Em Atraso" value={emAtraso.toLocaleString('pt-BR')}
               sub={`${taxaAtraso}% do total`} accent={T.danger} />
             <StatCard icon="⏱️" label="Espera Média" value={fmtH(mediaEspera)}
@@ -508,7 +529,7 @@ export default function Home() {
               sub="na fila agora" accent={T.success} />
           </div>
 
-          {/* ── Row 2 (inalterada) ── */}
+          {/* ── Row 2: Donut + Unidades + UF ── */}
           <div style={{ display: 'grid', gridTemplateColumns: '240px 1fr 1fr', gap: 16, marginBottom: 16 }}>
             <Card style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16 }}>
               <SectionHeader>Distribuição</SectionHeader>
@@ -527,6 +548,7 @@ export default function Home() {
                 ))}
               </div>
             </Card>
+
             <Card>
               <SectionHeader>🔴 Unidades com Mais Atrasos</SectionHeader>
               {topUnidadesAtraso.slice(0, 6).map((u, i) => (
@@ -536,6 +558,7 @@ export default function Home() {
                   unit=" atrasos" />
               ))}
             </Card>
+
             <Card>
               <SectionHeader>📍 Registros por Estado (UF)</SectionHeader>
               {ufBreak.map((u, i) => (
@@ -544,19 +567,25 @@ export default function Home() {
             </Card>
           </div>
 
-          {/* ── Row 3 (inalterada) ── */}
+          {/* ── Row 3: Médicos (com nome) + Especialidades ── */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
+
             <Card>
               <SectionHeader>👨‍⚕️ Médicos com Maior Tempo de Espera (acumulado)</SectionHeader>
               {topMedicos.map((m, i) => (
                 <HBar key={m.med} rank={i} label={m.med}
-                  value={parseFloat(m.total.toFixed(1))} max={topMedicos[0]?.total || 1}
-                  color={i < 3 ? T.danger : T.warning} unit="h" />
+                  value={parseFloat(m.total.toFixed(1))}
+                  max={topMedicos[0]?.total || 1}
+                  color={i < 3 ? T.danger : T.warning}
+                  unit="h"
+                  sub={`${m.agendas} agenda${m.agendas > 1 ? 's' : ''} · ${m.pacts} pacientes`}
+                />
               ))}
               {topMedicos.length === 0 && (
                 <div style={{ color: T.muted, fontSize: 13 }}>Nenhum dado de espera encontrado.</div>
               )}
             </Card>
+
             <Card>
               <SectionHeader>🩻 Especialidades com Mais Atendimentos</SectionHeader>
               {espBreak.map((e, i) => (
@@ -566,7 +595,7 @@ export default function Home() {
             </Card>
           </div>
 
-          {/* ── Impacto na Fila (inalterado) ── */}
+          {/* ── Impacto na Fila ── */}
           <Card style={{ marginBottom: 16 }}>
             <SectionHeader>📊 Impacto na Fila de Espera — Unidades em Atraso</SectionHeader>
             {impactoFila.length === 0 ? (
@@ -576,7 +605,7 @@ export default function Home() {
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                   <thead>
                     <tr style={{ borderBottom: `1px solid ${T.border}` }}>
-                      {['Unidade', 'Médicos em Atraso', 'Pacientes Aguardando', 'Pacientes / Médico', 'Severidade'].map(h => (
+                      {['Unidade', 'Agendas em Atraso', 'Pacientes Aguardando', 'Pacientes / Agenda', 'Severidade'].map(h => (
                         <th key={h} style={{ padding: '10px 14px', textAlign: 'left',
                           color: T.muted, fontWeight: 600, fontSize: 11,
                           textTransform: 'uppercase', letterSpacing: '.06em' }}>{h}</th>
@@ -592,8 +621,8 @@ export default function Home() {
                         <tr key={r.unidade} className="row-table"
                           style={{ borderBottom: `1px solid ${T.border}`, transition: 'background .15s' }}>
                           <td style={{ padding: '12px 14px', fontWeight: 500, color: T.text }}>{r.unidade}</td>
-                          <td style={{ padding: '12px 14px', color: T.danger,   fontWeight: 700 }}>{r.medicos}</td>
-                          <td style={{ padding: '12px 14px', color: T.warning,  fontWeight: 700 }}>{r.pacientes}</td>
+                          <td style={{ padding: '12px 14px', color: T.danger,  fontWeight: 700 }}>{r.medicos}</td>
+                          <td style={{ padding: '12px 14px', color: T.warning, fontWeight: 700 }}>{r.pacientes}</td>
                           <td style={{ padding: '12px 14px', color: T.sub }}>{ratio}</td>
                           <td style={{ padding: '12px 14px' }}><Badge label={sev} color={sevC} /></td>
                         </tr>
@@ -608,7 +637,7 @@ export default function Home() {
           {/* ── Footer ── */}
           <div style={{ textAlign: 'center', color: T.muted, fontSize: 11, paddingTop: 8, paddingBottom: 24 }}>
             Dashboard Monitoramento Hospitalar · Dados carregados da planilha · {new Date().toLocaleDateString('pt-BR')}
-            {período !== 'TODOS' && ` · Filtro de período: ${períodoLabel}`}
+            {período !== 'TODOS' && ` · Período: ${períodoLabel}`}
           </div>
 
         </>)}
