@@ -198,7 +198,7 @@ function Card({ children, style = {} }) {
       borderRadius:16, padding:20, ...style }}>{children}</div>
   )
 }
-function StatCard({ icon, label, value, sub, accent }) {
+function StatCard({ icon, label, value, sub, accent, note }) {
   return (
     <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:14,
       padding:'18px 20px', display:'flex', flexDirection:'column', gap:8,
@@ -212,6 +212,10 @@ function StatCard({ icon, label, value, sub, accent }) {
       </div>
       <div style={{ fontSize:34, fontWeight:900, color:T.text, lineHeight:1 }}>{value}</div>
       {sub && <div style={{ fontSize:11, color:T.sub }}>{sub}</div>}
+      {note && (
+        <div style={{ fontSize:10, color:T.muted, fontStyle:'italic',
+          borderTop:`1px solid ${T.border}`, paddingTop:6, marginTop:2 }}>{note}</div>
+      )}
     </div>
   )
 }
@@ -673,15 +677,38 @@ export default function Home() {
               value={semPontoN.toLocaleString('pt-BR')}
               sub="HR_ENTRADA vazia" accent={T.warning} />
             <StatCard icon="⏱️" label="Espera Média"
-              value={fmtH(mediaEsp)} sub="por atendimento" accent="#818CF8" />
+              value={fmtH(mediaEsp)} sub="por atendimento" accent="#818CF8"
+              note={mediaEsp === 0 ? 'Sem registros de espera neste filtro — HR_REGISTRO_ESPERA ainda não disponível' : undefined} />
             <StatCard icon="👥" label="Pacientes na Fila"
-              value={totalPacs.toLocaleString('pt-BR')} sub="aguardando agora" accent={T.success} />
+              value={totalPacs.toLocaleString('pt-BR')} sub="aguardando agora" accent={T.success}
+              note={totalPacs === 0 ? 'Sem fila registrada neste filtro — QT_PACIENTES_AGUARDANDO vazio' : undefined} />
           </div>
 
           {/* Status */}
           <Card style={{ marginBottom:18 }}>
             <SH>📊 Distribuição de Status — {períodoLabel}{horaFilt!=='TODAS'?` · ${String(horaFilt).padStart(2,'0')}h`:''}</SH>
             <StatusCards breakdown={statusBreak} total={totalReg} />
+            {/* Nota explicativa sobre status ausentes */}
+            {statusBreak.length > 0 && (() => {
+              const keys = statusBreak.map(s => s.key)
+              const ausentes = ['ATRASO GRAVE','Falta Médica','Remarcação Adm','Remarcação Médico','SEM_PONTO']
+                .filter(k => !keys.includes(k))
+              if (!ausentes.length) return null
+              return (
+                <div style={{ marginTop:14, padding:'10px 14px',
+                  background:T.border+'55', borderRadius:9,
+                  fontSize:11, color:T.muted, display:'flex', alignItems:'center', gap:8 }}>
+                  <span>ℹ️</span>
+                  <span>
+                    Status sem ocorrências neste filtro (normal): {' '}
+                    <strong style={{ color:T.sub }}>
+                      {ausentes.map(k => getCfg(k).label).join(', ')}
+                    </strong>
+                    . Os dados são reais — não há registros desses status para o período/hora selecionado.
+                  </span>
+                </div>
+              )
+            })()}
           </Card>
 
           {/* Tabelas */}
