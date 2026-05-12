@@ -203,7 +203,7 @@ function Badge({ label, color }) {
 
 const PERIODOS = [
   { key: 'TODOS',  label: 'Todos'  },
-  { key: 'DIA',    label: 'Dia'    },
+  { key: 'DIA',    label: 'Ontem'  },
   { key: 'SEMANA', label: 'Semana' },
   { key: 'MÊS',    label: 'Mês'    },
 ]
@@ -284,23 +284,39 @@ export default function Home() {
   const periodoFn = useMemo(() =>
     buildFilter(allDates, período), [allDates, período])
 
-  // ── Label legível para o período ────────────────────
+  // ── Label da data acompanha o filtro — usa datas reais dos dados filtrados
   const períodoLabel = useMemo(() => {
-    if (!allDates.length || período === 'TODOS') return `${dados.length.toLocaleString('pt-BR')} reg.`
+    if (!allDates.length) return `${dados.length.toLocaleString('pt-BR')} reg.`
     const sorted  = [...allDates].sort()
-    const maxDate = sorted[sorted.length - 1]
+    const maxDate = sorted[sorted.length - 1]   // data mais recente da base
+    const minDate = sorted[0]                    // data mais antiga da base
     const fmt     = (s) => s.split('-').reverse().join('/')
 
-    if (período === 'DIA')    return `Dia ${fmt(maxDate)}`
+    if (período === 'TODOS') {
+      // Mostra o range completo de datas da base
+      return minDate === maxDate
+        ? `${fmt(maxDate)}`
+        : `${fmt(minDate)} → ${fmt(maxDate)}`
+    }
+    if (período === 'DIA') {
+      // Ontem = dia mais recente da base
+      return `Ontem · ${fmt(maxDate)}`
+    }
     if (período === 'SEMANA') {
-      const c = new Date(maxDate); c.setDate(c.getDate() - 6)
-      const cs = `${c.getFullYear()}-${String(c.getMonth()+1).padStart(2,'0')}-${String(c.getDate()).padStart(2,'0')}`
-      return `${fmt(cs)} → ${fmt(maxDate)}`
+      // 7 dias a partir do mais recente — usa as datas que realmente existem no filtro
+      const c = new Date(maxDate)
+      c.setDate(c.getDate() - 6)
+      const cutStr = `${c.getFullYear()}-${String(c.getMonth()+1).padStart(2,'0')}-${String(c.getDate()).padStart(2,'0')}`
+      // Pega a data mais antiga que está dentro da semana
+      const semanaMin = sorted.find(d => d >= cutStr) || cutStr
+      return `${fmt(semanaMin)} → ${fmt(maxDate)}`
     }
     if (período === 'MÊS') {
-      const [y, m] = maxDate.split('-')
-      const nome = new Date(+y, +m-1).toLocaleString('pt-BR', { month: 'long' })
-      return `${nome.charAt(0).toUpperCase()+nome.slice(1)} ${y}`
+      const mesAno  = maxDate.slice(0,7)
+      const mesMin  = sorted.find(d => d.slice(0,7) === mesAno) || maxDate
+      const [y, m]  = maxDate.split('-')
+      const nome    = new Date(+y, +m-1).toLocaleString('pt-BR', { month: 'long' })
+      return `${nome.charAt(0).toUpperCase()+nome.slice(1)} · ${fmt(mesMin)} → ${fmt(maxDate)}`
     }
     return ''
   }, [allDates, período, dados.length])
