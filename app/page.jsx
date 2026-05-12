@@ -60,25 +60,29 @@ const STATUS_LABEL = (s = '') => {
 }
 
 // ─── Data: serial Excel → 'YYYY-MM-DD' ───────────────────
+// Usa métodos UTC para evitar deslocamento de fuso horário (Brasil UTC-3)
+// sem UTC: serial 46153 (11/05) aparece como 10/05 às 21h no horário local
 const serialToDateStr = (v) => {
   if (!v && v !== 0) return ''
-  let ms
+  let d
   if (typeof v === 'number') {
-    // Serial Excel: dias desde 1899-12-30
-    ms = (v - 25569) * 86400 * 1000
+    // Serial Excel: dias desde 1899-12-30, convertido para ms UTC
+    d = new Date(Math.round((v - 25569) * 86400 * 1000))
   } else {
     const s = String(v).trim()
-    // dd/mm/yyyy
     const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/)
-    if (m) ms = new Date(+m[3], +m[2]-1, +m[1]).getTime()
-    else    ms = new Date(s).getTime()
+    if (m) {
+      // dd/mm/yyyy — cria como UTC explícito para evitar fuso
+      d = new Date(Date.UTC(+m[3], +m[2]-1, +m[1]))
+    } else {
+      d = new Date(s)
+    }
   }
-  if (!ms && ms !== 0) return ''
-  const d  = new Date(ms)
-  if (isNaN(d)) return ''
-  const dd = String(d.getDate()).padStart(2,'0')
-  const mm = String(d.getMonth()+1).padStart(2,'0')
-  return `${d.getFullYear()}-${mm}-${dd}`
+  if (!d || isNaN(d)) return ''
+  // *** USA getUTC* para ler a data correta independente do fuso ***
+  const dd = String(d.getUTCDate()).padStart(2,'0')
+  const mm = String(d.getUTCMonth()+1).padStart(2,'0')
+  return `${d.getUTCFullYear()}-${mm}-${dd}`
 }
 
 // ─── Filtro por período — baseado nas datas da própria base ─
@@ -91,9 +95,9 @@ const buildFilter = (allDates, período) => {
     return (ds) => ds === maxDate
   }
   if (período === 'SEMANA') {
-    const cutoff = new Date(maxDate)
-    cutoff.setDate(cutoff.getDate() - 6)
-    const cutStr = `${cutoff.getFullYear()}-${String(cutoff.getMonth()+1).padStart(2,'0')}-${String(cutoff.getDate()).padStart(2,'0')}`
+    const cutoff = new Date(maxDate + 'T00:00:00Z')
+    cutoff.setUTCDate(cutoff.getUTCDate() - 6)
+    const cutStr = `${cutoff.getUTCFullYear()}-${String(cutoff.getUTCMonth()+1).padStart(2,'0')}-${String(cutoff.getUTCDate()).padStart(2,'0')}`
     return (ds) => ds >= cutStr && ds <= maxDate
   }
   if (período === 'MÊS') {
@@ -304,9 +308,9 @@ export default function Home() {
     }
     if (período === 'SEMANA') {
       // 7 dias a partir do mais recente — usa as datas que realmente existem no filtro
-      const c = new Date(maxDate)
-      c.setDate(c.getDate() - 6)
-      const cutStr = `${c.getFullYear()}-${String(c.getMonth()+1).padStart(2,'0')}-${String(c.getDate()).padStart(2,'0')}`
+      const c = new Date(maxDate + 'T00:00:00Z')
+      c.setUTCDate(c.getUTCDate() - 6)
+      const cutStr = `${c.getUTCFullYear()}-${String(c.getUTCMonth()+1).padStart(2,'0')}-${String(c.getUTCDate()).padStart(2,'0')}`
       // Pega a data mais antiga que está dentro da semana
       const semanaMin = sorted.find(d => d >= cutStr) || cutStr
       return `${fmt(semanaMin)} → ${fmt(maxDate)}`
