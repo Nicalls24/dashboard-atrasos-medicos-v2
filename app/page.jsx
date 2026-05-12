@@ -19,15 +19,44 @@ const T = {
   sub:     '#8FADC8',
 }
 
-// ─── Helpers ──────────────────────────────────────────────
+// ─── Status config (imagem 1) ────────────────────────────
+const STATUS_CFG = [
+  { key: 'OK',                bg: '#16A34A', fg: '#fff',    label: 'Motivo (OK)',            desc: 'Atendimento dentro do prazo'         },
+  { key: 'ATRASO',            bg: '#CA8A04', fg: '#fff',    label: 'Atraso',                 desc: '31 min < atraso < 45 min'            },
+  { key: 'ATRASO CRÍTICO',    bg: '#EA580C', fg: '#fff',    label: 'Atraso Crítico',         desc: '46 min > atraso < 1h30'              },
+  { key: 'ATRASO GRAVE',      bg: '#DC2626', fg: '#fff',    label: 'Atraso Grave',           desc: 'Atraso > 1h30'                       },
+  { key: 'Falta Médica',      bg: '#1D4ED8', fg: '#fff',    label: 'Médico Faltou',          desc: 'Ausência registrada'                 },
+  { key: 'Remarcação Adm',    bg: '#7C3AED', fg: '#fff',    label: 'Remarcação Adm',         desc: 'Remarcação administrativa'           },
+  { key: 'Remarcação Médico', bg: '#9333EA', fg: '#fff',    label: 'Remarcação Médico',      desc: 'Remarcação pelo médico'              },
+  { key: 'SEM_PONTO',         bg: '#374151', fg: '#F9A825', label: 'Sem Ponto',              desc: 'HR_ENTRADA vazia — não bateu ponto'  },
+]
+
+const getCfg = (key) =>
+  STATUS_CFG.find(s => s.key === key) ||
+  { bg: T.border, fg: T.text, label: key, desc: '' }
+
+// ─── Status color (para barras/badges) ───────────────────
+const statusColor = (s = '') => {
+  const u = s.toUpperCase()
+  if (u === 'OK')                                           return '#16A34A'
+  if (u === 'ATRASO' && !u.includes('CRÍTICO') && !u.includes('GRAVE')) return '#CA8A04'
+  if (u.includes('CRÍTICO'))                               return '#EA580C'
+  if (u.includes('GRAVE'))                                 return '#DC2626'
+  if (u.includes('FALTA') || u.includes('MÉDICO FAL'))    return '#1D4ED8'
+  if (u.includes('REMARCA'))                               return '#7C3AED'
+  if (u === 'SEM_PONTO')                                   return '#F9A825'
+  return T.muted
+}
+
+// ─── Helpers ─────────────────────────────────────────────
 const parseHM = (v) => {
   if (!v && v !== 0) return 0
   if (typeof v === 'number') return v * 24
-  const s    = String(v).trim()
+  const s = String(v).trim()
   const sign = s.startsWith('-') ? -1 : 1
   if (s.includes(':')) {
-    const parts = s.replace('-','').split(':').map(Number)
-    return sign * ((parts[0] || 0) + (parts[1] || 0) / 60)
+    const p = s.replace('-','').split(':').map(Number)
+    return sign * ((p[0]||0) + (p[1]||0)/60)
   }
   const n = parseFloat(s.replace(',','.'))
   return isNaN(n) ? 0 : n
@@ -35,69 +64,75 @@ const parseHM = (v) => {
 
 const fmtH = (h) => {
   const abs = Math.abs(h)
-  const hh  = Math.floor(abs)
-  const mm  = Math.round((abs - hh) * 60)
+  const hh = Math.floor(abs), mm = Math.round((abs-hh)*60)
   return `${hh}h${mm > 0 ? ` ${mm}m` : ''}`
 }
 
-const STATUS_COLOR = (s = '') => {
-  const u = s.toUpperCase()
-  if (u.includes('CRÍTICO')) return T.danger
-  if (u.includes('GRAVE'))   return '#FF7A00'
-  if (u.includes('ATRASO'))  return T.warning
-  if (u.includes('FALTA'))   return '#B060FF'
-  if (u.includes('REMARCA')) return T.muted
-  return T.success
-}
-const STATUS_LABEL = (s = '') => {
-  const u = s.toUpperCase()
-  if (u.includes('CRÍTICO')) return 'Crítico'
-  if (u.includes('GRAVE'))   return 'Grave'
-  if (u.includes('ATRASO'))  return 'Atraso'
-  if (u.includes('FALTA'))   return 'Falta'
-  if (u.includes('REMARCA')) return 'Remarcação'
-  return 'OK'
-}
-
-// ─── Data: serial Excel → 'YYYY-MM-DD' ───────────────────
-// Usa métodos UTC para evitar deslocamento de fuso horário (Brasil UTC-3)
-// sem UTC: serial 46153 (11/05) aparece como 10/05 às 21h no horário local
+// Serial Excel → 'YYYY-MM-DD' usando UTC para evitar fuso horário
 const serialToDateStr = (v) => {
   if (!v && v !== 0) return ''
   let d
   if (typeof v === 'number') {
-    // Serial Excel: dias desde 1899-12-30, convertido para ms UTC
     d = new Date(Math.round((v - 25569) * 86400 * 1000))
   } else {
     const s = String(v).trim()
     const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/)
-    if (m) {
-      // dd/mm/yyyy — cria como UTC explícito para evitar fuso
-      d = new Date(Date.UTC(+m[3], +m[2]-1, +m[1]))
-    } else {
-      d = new Date(s)
-    }
+    if (m) d = new Date(Date.UTC(+m[3], +m[2]-1, +m[1]))
+    else    d = new Date(s)
   }
   if (!d || isNaN(d)) return ''
-  // *** USA getUTC* para ler a data correta independente do fuso ***
   const dd = String(d.getUTCDate()).padStart(2,'0')
   const mm = String(d.getUTCMonth()+1).padStart(2,'0')
   return `${d.getUTCFullYear()}-${mm}-${dd}`
 }
 
-// ─── Filtro por período — baseado nas datas da própria base ─
+// Timedelta do Excel (fração de dia ou string hh:mm:ss) → horas inteiras
+const tdToHour = (v) => {
+  if (v === null || v === undefined || v === '') return -1
+  if (typeof v === 'number') return Math.floor(v * 24)
+  const s = String(v).trim()
+  if (!s || s === 'NaT') return -1
+  const m = s.match(/(\d+):(\d+)/)
+  return m ? parseInt(m[1], 10) : -1
+}
+
+// Parseia timestamp da célula de verificação "dd/mm/yyyy hh:mm:ss"
+const parseVerifTimestamp = (raw) => {
+  if (!raw) return null
+  const s = String(raw).trim()
+  // Formato que vem da planilha: "05/12/2026 09:06:07" (dd/mm errado ou mm/dd?)
+  // Conforme o usuário: "05/12/2026" está errado, correto é "12/05/2026"
+  // Ou seja: a planilha grava como mm/dd/yyyy mas deve ser dd/mm/yyyy
+  // Detecta: se mês > 12 -> interpretar como dd/mm, senão tentar ambos
+  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{2}:\d{2}:\d{2})$/)
+  if (!m) return s
+  const p1 = parseInt(m[1]), p2 = parseInt(m[2]), year = m[3], time = m[4]
+  let day, month
+  if (p1 > 12) {
+    // p1 é dia com certeza
+    day = p1; month = p2
+  } else if (p2 > 12) {
+    // p2 é dia com certeza → formato mm/dd
+    day = p2; month = p1
+  } else {
+    // Ambíguos: assume que a planilha grava mm/dd (como visto no bug)
+    day = p2; month = p1
+  }
+  return `${String(day).padStart(2,'0')}/${String(month).padStart(2,'0')}/${year} ${time}`
+}
+
+// buildFilter — usa datas da própria base
 const buildFilter = (allDates, período) => {
   if (período === 'TODOS' || !allDates.length) return () => true
-  const sorted  = [...allDates].sort()
-  const maxDate = sorted[sorted.length - 1]   // mais recente
+  const sorted = [...allDates].sort()
+  const maxDate = sorted[sorted.length - 1]
 
-  if (período === 'DIA') {
-    return (ds) => ds === maxDate
-  }
+  if (período === 'DIA') return (ds) => ds === maxDate
+
   if (período === 'SEMANA') {
-    const cutoff = new Date(maxDate + 'T00:00:00Z')
-    cutoff.setUTCDate(cutoff.getUTCDate() - 6)
-    const cutStr = `${cutoff.getUTCFullYear()}-${String(cutoff.getUTCMonth()+1).padStart(2,'0')}-${String(cutoff.getUTCDate()).padStart(2,'0')}`
+    const c = new Date(maxDate + 'T00:00:00Z')
+    c.setUTCDate(c.getUTCDate() - 6)
+    const cutStr = `${c.getUTCFullYear()}-${String(c.getUTCMonth()+1).padStart(2,'0')}-${String(c.getUTCDate()).padStart(2,'0')}`
     return (ds) => ds >= cutStr && ds <= maxDate
   }
   if (período === 'MÊS') {
@@ -108,103 +143,134 @@ const buildFilter = (allDates, período) => {
 }
 
 // ─── Sub-components ───────────────────────────────────────
-function HBar({ label, value, max, color, unit = '', rank, sub }) {
-  const pct = max > 0 ? (value / max) * 100 : 0
+function Badge({ label, color, bg }) {
   return (
-    <div style={{ marginBottom: 14 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4, gap: 8 }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, minWidth: 0 }}>
-          {rank != null && (
-            <span style={{ fontSize: 11, fontWeight: 700, flexShrink: 0, marginTop: 1,
-              color: rank < 3 ? T.danger : T.muted, minWidth: 22 }}>#{rank + 1}</span>
-          )}
-          <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 13, color: T.text, fontWeight: 500,
-              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</div>
-            {sub && <div style={{ fontSize: 10, color: T.muted, marginTop: 1 }}>{sub}</div>}
-          </div>
-        </div>
-        <span style={{ fontSize: 13, fontWeight: 700, color, flexShrink: 0 }}>{value}{unit}</span>
-      </div>
-      <div style={{ background: T.border, borderRadius: 6, height: 6, overflow: 'hidden' }}>
-        <div style={{ height: '100%', borderRadius: 6, background: color,
-          width: `${pct}%`, transition: 'width .6s ease' }} />
-      </div>
-    </div>
+    <span style={{
+      fontSize: 10.5, fontWeight: 700, padding: '3px 10px', borderRadius: 99,
+      background: bg || color + '22', color, whiteSpace: 'nowrap', letterSpacing: '.04em',
+    }}>{label}</span>
   )
 }
 
-function StatCard({ icon, label, value, sub, accent }) {
+function SH({ children }) {
   return (
-    <div style={{
-      background: T.card, border: `1px solid ${T.border}`, borderRadius: 16,
-      padding: '22px 24px', display: 'flex', flexDirection: 'column', gap: 10,
-      position: 'relative', overflow: 'hidden',
-    }}>
-      <div style={{ position: 'absolute', top: -20, right: -20, width: 90, height: 90,
-        borderRadius: '50%', background: accent, opacity: .07 }} />
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <span style={{ fontSize: 22 }}>{icon}</span>
-        <span style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase',
-          letterSpacing: '.08em', fontWeight: 600 }}>{label}</span>
-      </div>
-      <div style={{ fontSize: 40, fontWeight: 800, color: T.text,
-        lineHeight: 1, letterSpacing: '-1px' }}>{value}</div>
-      {sub && <div style={{ fontSize: 12, color: T.sub }}>{sub}</div>}
-    </div>
-  )
-}
-
-function SectionHeader({ children }) {
-  return (
-    <h2 style={{ fontSize: 14, fontWeight: 700, textTransform: 'uppercase',
-      letterSpacing: '.12em', color: T.sub, marginBottom: 18, marginTop: 0 }}>
-      {children}
-    </h2>
+    <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase',
+      letterSpacing: '.12em', color: T.muted, marginBottom: 14 }}>{children}</div>
   )
 }
 
 function Card({ children, style = {} }) {
   return (
     <div style={{ background: T.card, border: `1px solid ${T.border}`,
-      borderRadius: 16, padding: 24, ...style }}>{children}</div>
+      borderRadius: 16, padding: 22, ...style }}>{children}</div>
   )
 }
 
-function Donut({ segments, size = 120 }) {
-  const r = 46, cx = 60, cy = 60, circ = 2 * Math.PI * r
-  const total = segments.reduce((a, s) => a + s.value, 0) || 1
-  let cum = 0
+function StatCard({ icon, label, value, sub, accent }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 120 120">
-      <circle cx={cx} cy={cy} r={r} fill="none" stroke={T.border} strokeWidth="14" />
-      {segments.map((seg, i) => {
-        const dash = (seg.value / total) * circ
-        const off  = circ - cum * circ / total
-        cum += seg.value
-        return (
-          <circle key={i} cx={cx} cy={cy} r={r} fill="none"
-            stroke={seg.color} strokeWidth="14"
-            strokeDasharray={`${dash} ${circ - dash}`}
-            strokeDashoffset={off}
-            strokeLinecap="round" transform="rotate(-90 60 60)" />
-        )
-      })}
-      <text x="60" y="56" textAnchor="middle" fontSize="16" fontWeight="800" fill={T.text}>
-        {total.toLocaleString('pt-BR')}
-      </text>
-      <text x="60" y="70" textAnchor="middle" fontSize="8" fill={T.muted}>registros</text>
-    </svg>
+    <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 16,
+      padding: '20px 22px', display: 'flex', flexDirection: 'column', gap: 8,
+      position: 'relative', overflow: 'hidden' }}>
+      <div style={{ position: 'absolute', top: -20, right: -20, width: 80, height: 80,
+        borderRadius: '50%', background: accent, opacity: .07 }} />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <span style={{ fontSize: 20 }}>{icon}</span>
+        <span style={{ fontSize: 11, color: T.muted, textTransform: 'uppercase',
+          letterSpacing: '.08em', fontWeight: 600 }}>{label}</span>
+      </div>
+      <div style={{ fontSize: 36, fontWeight: 800, color: T.text, lineHeight: 1 }}>{value}</div>
+      {sub && <div style={{ fontSize: 11, color: T.sub }}>{sub}</div>}
+    </div>
   )
 }
 
-function Badge({ label, color }) {
+function HBar({ label, value, max, color, unit='', rank, sub }) {
+  const pct = max > 0 ? (value/max)*100 : 0
   return (
-    <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px',
-      borderRadius: 20, background: color + '22', color, whiteSpace: 'nowrap' }}>{label}</span>
+    <div style={{ marginBottom: 13 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4, gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, minWidth: 0 }}>
+          {rank != null && (
+            <span style={{ fontSize: 10, fontWeight: 700, flexShrink: 0, marginTop: 2,
+              color: rank < 3 ? T.danger : T.muted, minWidth: 20 }}>#{rank+1}</span>
+          )}
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 12.5, color: T.text, fontWeight: 500,
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</div>
+            {sub && <div style={{ fontSize: 10, color: T.muted, marginTop: 1 }}>{sub}</div>}
+          </div>
+        </div>
+        <span style={{ fontSize: 13, fontWeight: 700, color, flexShrink: 0 }}>{value}{unit}</span>
+      </div>
+      <div style={{ background: T.border, borderRadius: 99, height: 6, overflow: 'hidden' }}>
+        <div style={{ height: '100%', borderRadius: 99, background: color,
+          width: `${pct}%`, transition: 'width .6s' }} />
+      </div>
+    </div>
   )
 }
 
+// ─── Gráfico de Status (imagem 1) ────────────────────────
+function StatusChart({ data, total }) {
+  if (!data.length) return <div style={{ color: T.muted, fontSize: 13 }}>Sem dados</div>
+
+  return (
+    <div>
+      {/* Barra empilhada visual */}
+      <div style={{ display: 'flex', borderRadius: 10, overflow: 'hidden', height: 28, marginBottom: 20 }}>
+        {data.map(s => {
+          const pct = total > 0 ? (s.count / total) * 100 : 0
+          if (pct < .3) return null
+          const cfg = getCfg(s.key)
+          return (
+            <div key={s.key} title={`${cfg.label}: ${s.count} (${pct.toFixed(1)}%)`}
+              style={{ width: `${pct}%`, background: cfg.bg, transition: 'width .6s',
+                display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              {pct > 5 && (
+                <span style={{ fontSize: 9, fontWeight: 800, color: cfg.fg, whiteSpace: 'nowrap' }}>
+                  {pct.toFixed(0)}%
+                </span>
+              )}
+            </div>
+          )
+        })}
+      </div>
+
+      {/* Cards de cada status */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+        {data.map(s => {
+          const cfg  = getCfg(s.key)
+          const pct  = total > 0 ? ((s.count / total) * 100).toFixed(1) : '0.0'
+          return (
+            <div key={s.key} style={{
+              background: cfg.bg + '18',
+              border: `1px solid ${cfg.bg}55`,
+              borderRadius: 12, padding: '12px 14px',
+              display: 'flex', flexDirection: 'column', gap: 6,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <div style={{ width: 10, height: 10, borderRadius: 3, background: cfg.bg, flexShrink: 0 }} />
+                <span style={{ fontSize: 10, fontWeight: 700, color: cfg.fg || T.text,
+                  textTransform: 'uppercase', letterSpacing: '.06em', lineHeight: 1.2 }}>
+                  {cfg.label}
+                </span>
+              </div>
+              <div style={{ fontSize: 26, fontWeight: 900, color: cfg.bg, lineHeight: 1 }}>
+                {s.count.toLocaleString('pt-BR')}
+              </div>
+              <div style={{ fontSize: 10, color: T.muted }}>{pct}% do total</div>
+              {cfg.desc && (
+                <div style={{ fontSize: 9.5, color: T.sub, lineHeight: 1.4 }}>{cfg.desc}</div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// ─── Período selector ────────────────────────────────────
 const PERIODOS = [
   { key: 'TODOS',  label: 'Todos'  },
   { key: 'DIA',    label: 'Ontem'  },
@@ -234,12 +300,14 @@ function PeriodoSelector({ value, onChange, infoLabel }) {
 
 // ─── Main ─────────────────────────────────────────────────
 export default function Home() {
-  const [dados,   setDados]   = useState([])
-  const [uf,      setUf]      = useState('TODOS')
-  const [status,  setStatus]  = useState('TODOS')
-  const [loading, setLoading] = useState(false)
-  const [search,  setSearch]  = useState('')
-  const [período, setPeriodo] = useState('TODOS')
+  const [dados,      setDados]      = useState([])
+  const [uf,         setUf]         = useState('TODOS')
+  const [statusFilt, setStatusFilt] = useState('TODOS')
+  const [loading,    setLoading]    = useState(false)
+  const [search,     setSearch]     = useState('')
+  const [período,    setPeriodo]    = useState('TODOS')
+  const [horaFilt,   setHoraFilt]   = useState('TODAS') // ← NOVO: filtro hora
+  const [verifTs,    setVerifTs]    = useState('')       // timestamp verificação
 
   const handleUpload = async (e) => {
     const file = e.target.files[0]
@@ -248,196 +316,179 @@ export default function Home() {
     const buf  = await file.arrayBuffer()
     const wb   = XLSX.read(buf, { type: 'buffer' })
     const ws   = wb.Sheets[wb.SheetNames[0]]
+    // Lê timestamp da linha 2 (índice 1), coluna D (índice 3) — raw
+    const rawAll = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true })
+    const tsRaw  = rawAll[1]?.[3] || rawAll[1]?.[4] || ''
+    setVerifTs(parseVerifTimestamp(String(tsRaw)))
+
     const json = XLSX.utils.sheet_to_json(ws, { range: 3, defval: '' })
     setDados(json)
-    setUf('TODOS'); setStatus('TODOS'); setSearch(''); setPeriodo('TODOS')
+    setUf('TODOS'); setStatusFilt('TODOS'); setSearch('')
+    setPeriodo('TODOS'); setHoraFilt('TODAS')
     setLoading(false)
   }
 
-  // ── Detecção de colunas ───────────────────────────────
+  // ── Detecção de colunas
   const cols = useMemo(() => {
     if (!dados.length) return {}
-    const k    = Object.keys(dados[0])
+    const k = Object.keys(dados[0])
     const find = (...terms) =>
       k.find(c => terms.some(t => c.toLowerCase() === t.toLowerCase())) ||
       k.find(c => terms.some(t => c.toLowerCase().includes(t.toLowerCase()))) || ''
     return {
-      unidade: find('NM_LOCAL', 'UNIDADE'),
-      medico:  find('NM_MEDICO', 'MEDICO'),
-      esp:     find('DS_ESPECIALIDADE', 'ESPECIALIDADE'),
-      status:  find('STATUS'),
-      espera:  find('TEMPO_DE_ESPERA'),
-      qtPacts: find('QT_PACIENTES_AGUARDANDO'),
-      uf:      find('UF'),
-      cidade:  find('CIDADE'),
-      data:    find('DATA_AGENDA', 'DATA'),
+      unidade:   find('NM_LOCAL', 'UNIDADE'),
+      medico:    find('NM_MEDICO'),
+      esp:       find('DS_ESPECIALIDADE', 'ESPECIALIDADE'),
+      status:    find('STATUS'),
+      espera:    find('TEMPO_DE_ESPERA'),
+      qtPacts:   find('QT_PACIENTES_AGUARDANDO'),
+      uf:        find('UF'),
+      cidade:    find('CIDADE'),
+      data:      find('DATA_AGENDA', 'DATA'),
+      hrInicio:  find('HR_INICIO'),
+      hrEntrada: find('HR_ENTRADA'),
     }
   }, [dados])
 
-  // ── Adiciona _dateStr a cada linha ───────────────────
-  const dadosComData = useMemo(() =>
-    dados.map(d => ({ ...d, _dateStr: serialToDateStr(d[cols.data]) })),
-    [dados, cols.data])
+  // ── Adiciona _dateStr, _hora, _semPonto a cada linha
+  const dadosRich = useMemo(() => dados.map(d => {
+    const hrInicioRaw = d[cols.hrInicio]
+    const hrEntRaw    = d[cols.hrEntrada]
+    const semPonto    = (hrEntRaw === '' || hrEntRaw === null || hrEntRaw === undefined ||
+                         String(hrEntRaw).trim() === '' || String(hrEntRaw).trim() === 'NaT')
+    return {
+      ...d,
+      _dateStr:  serialToDateStr(d[cols.data]),
+      _hora:     tdToHour(hrInicioRaw),
+      _semPonto: semPonto,
+      // Normaliza status: sem ponto → 'SEM_PONTO'
+      _statusNorm: semPonto ? 'SEM_PONTO' : String(d[cols.status] || '').trim(),
+    }
+  }), [dados, cols])
 
-  // ── Todas as datas únicas presentes na base ──────────
   const allDates = useMemo(() =>
-    [...new Set(dadosComData.map(d => d._dateStr).filter(Boolean))].sort(),
-    [dadosComData])
+    [...new Set(dadosRich.map(d => d._dateStr).filter(Boolean))].sort(),
+    [dadosRich])
 
-  // ── Função de filtro para o período ─────────────────
-  const periodoFn = useMemo(() =>
-    buildFilter(allDates, período), [allDates, período])
+  const periodoFn = useMemo(() => buildFilter(allDates, período), [allDates, período])
 
-  // ── Label da data acompanha o filtro — usa datas reais dos dados filtrados
+  // Horas disponíveis
+  const horasDisp = useMemo(() => {
+    const hs = [...new Set(dadosRich.filter(d => d._hora >= 0).map(d => d._hora))].sort((a,b) => a-b)
+    return hs
+  }, [dadosRich])
+
+  // ── Label período
   const períodoLabel = useMemo(() => {
-    if (!allDates.length) return `${dados.length.toLocaleString('pt-BR')} reg.`
+    if (!allDates.length) return ''
     const sorted  = [...allDates].sort()
-    const maxDate = sorted[sorted.length - 1]   // data mais recente da base
-    const minDate = sorted[0]                    // data mais antiga da base
+    const maxDate = sorted[sorted.length - 1]
+    const minDate = sorted[0]
     const fmt     = (s) => s.split('-').reverse().join('/')
-
-    if (período === 'TODOS') {
-      // Mostra o range completo de datas da base
-      return minDate === maxDate
-        ? `${fmt(maxDate)}`
-        : `${fmt(minDate)} → ${fmt(maxDate)}`
-    }
-    if (período === 'DIA') {
-      // Ontem = dia mais recente da base
-      return `Ontem · ${fmt(maxDate)}`
-    }
+    if (período === 'TODOS')  return `${fmt(minDate)} → ${fmt(maxDate)}`
+    if (período === 'DIA')    return `Ontem · ${fmt(maxDate)}`
     if (período === 'SEMANA') {
-      // 7 dias a partir do mais recente — usa as datas que realmente existem no filtro
       const c = new Date(maxDate + 'T00:00:00Z')
       c.setUTCDate(c.getUTCDate() - 6)
-      const cutStr = `${c.getUTCFullYear()}-${String(c.getUTCMonth()+1).padStart(2,'0')}-${String(c.getUTCDate()).padStart(2,'0')}`
-      // Pega a data mais antiga que está dentro da semana
-      const semanaMin = sorted.find(d => d >= cutStr) || cutStr
-      return `${fmt(semanaMin)} → ${fmt(maxDate)}`
+      const cs = `${c.getUTCFullYear()}-${String(c.getUTCMonth()+1).padStart(2,'0')}-${String(c.getUTCDate()).padStart(2,'0')}`
+      const sm = sorted.find(d => d >= cs) || cs
+      return `${fmt(sm)} → ${fmt(maxDate)}`
     }
     if (período === 'MÊS') {
-      const mesAno  = maxDate.slice(0,7)
-      const mesMin  = sorted.find(d => d.slice(0,7) === mesAno) || maxDate
-      const [y, m]  = maxDate.split('-')
-      const nome    = new Date(+y, +m-1).toLocaleString('pt-BR', { month: 'long' })
-      return `${nome.charAt(0).toUpperCase()+nome.slice(1)} · ${fmt(mesMin)} → ${fmt(maxDate)}`
+      const ma  = maxDate.slice(0,7)
+      const sm  = sorted.find(d => d.slice(0,7) === ma) || maxDate
+      const [y,m] = maxDate.split('-')
+      const nome  = new Date(+y, +m-1).toLocaleString('pt-BR', { month: 'long' })
+      return `${nome.charAt(0).toUpperCase()+nome.slice(1)} · ${fmt(sm)} → ${fmt(maxDate)}`
     }
     return ''
-  }, [allDates, período, dados.length])
+  }, [allDates, período])
 
-  // ── Filtra por período ───────────────────────────────
-  const dadosPorPeriodo = useMemo(() =>
-    dadosComData.filter(d => periodoFn(d._dateStr)),
-    [dadosComData, periodoFn])
-
-  // ── Filtros UF/status/busca ──────────────────────────
-  const ufs = useMemo(() =>
-    [...new Set(dadosPorPeriodo.map(d => String(d[cols.uf]||'').trim()).filter(Boolean))].sort(),
-    [dadosPorPeriodo, cols])
-  const statuses = useMemo(() =>
-    [...new Set(dadosPorPeriodo.map(d => String(d[cols.status]||'').trim()).filter(Boolean))].sort(),
-    [dadosPorPeriodo, cols])
-
+  // ── Filtro encadeado: período → hora → UF → status → busca
   const filtered = useMemo(() => {
-    let r = dadosPorPeriodo
-    if (uf !== 'TODOS')     r = r.filter(d => String(d[cols.uf]||'').trim() === uf)
-    if (status !== 'TODOS') r = r.filter(d => String(d[cols.status]||'').trim() === status)
-    if (search)             r = r.filter(d =>
-      [d[cols.unidade], d[cols.medico], d[cols.esp], d[cols.cidade]]
+    let r = dadosRich.filter(d => periodoFn(d._dateStr))
+    if (horaFilt !== 'TODAS')     r = r.filter(d => d._hora === Number(horaFilt))
+    if (uf !== 'TODOS')           r = r.filter(d => String(d[cols.uf]||'').trim() === uf)
+    if (statusFilt !== 'TODOS')   r = r.filter(d => d._statusNorm === statusFilt)
+    if (search)                   r = r.filter(d =>
+      [d[cols.unidade], d[cols.medico], d[cols.esp]]
         .some(v => String(v||'').toLowerCase().includes(search.toLowerCase())))
     return r
-  }, [dadosPorPeriodo, uf, status, search, cols])
+  }, [dadosRich, periodoFn, horaFilt, uf, statusFilt, search, cols])
 
-  // ── KPIs ─────────────────────────────────────────────
+  const ufs      = useMemo(() => [...new Set(filtered.map(d => String(d[cols.uf]||'').trim()).filter(Boolean))].sort(), [filtered, cols])
+  const statuses = useMemo(() => [...new Set(dadosRich.filter(d => periodoFn(d._dateStr)).map(d => d._statusNorm).filter(Boolean))].sort(), [dadosRich, periodoFn])
+
+  // ── KPIs
   const totalRegistros = filtered.length
   const totalUnidades  = new Set(filtered.map(d => d[cols.unidade]).filter(Boolean)).size
-  // Médicos únicos por nome
   const totalMedicos   = new Set(filtered.map(d => String(d[cols.medico]||'').trim()).filter(Boolean)).size
-  const emAtraso       = filtered.filter(d => String(d[cols.status]||'').toUpperCase().includes('ATRASO')).length
+  const emAtraso       = filtered.filter(d => ['ATRASO','ATRASO CRÍTICO','ATRASO GRAVE'].includes(d._statusNorm)).length
   const taxaAtraso     = totalRegistros > 0 ? ((emAtraso/totalRegistros)*100).toFixed(1) : 0
-  const totalEspera    = filtered.reduce((a,d) => a + parseHM(d[cols.espera]), 0)
-  const mediaEspera    = totalRegistros > 0 ? totalEspera / totalRegistros : 0
   const totalPacAguard = filtered.reduce((a,d) => a + (Number(d[cols.qtPacts])||0), 0)
+  const totalEspera    = filtered.reduce((a,d) => a + parseHM(d[cols.espera]), 0)
+  const mediaEspera    = totalRegistros > 0 ? totalEspera/totalRegistros : 0
 
-  // ── Status breakdown ──────────────────────────────────
+  // ── Status breakdown para o gráfico (inclui SEM_PONTO)
   const statusBreakdown = useMemo(() => {
     const m = {}
-    filtered.forEach(d => { const s = String(d[cols.status]||'OK').trim(); m[s] = (m[s]||0)+1 })
-    return Object.entries(m).map(([label,value]) => ({ label, value, color: STATUS_COLOR(label) }))
-      .sort((a,b) => b.value - a.value)
+    filtered.forEach(d => { const s = d._statusNorm||'OK'; m[s] = (m[s]||0)+1 })
+    return Object.entries(m)
+      .map(([key, count]) => ({ key, count }))
+      .sort((a,b) => {
+        const order = ['OK','ATRASO','ATRASO CRÍTICO','ATRASO GRAVE','Falta Médica','Remarcação Adm','Remarcação Médico','SEM_PONTO']
+        return (order.indexOf(a.key)||99) - (order.indexOf(b.key)||99)
+      })
+  }, [filtered])
+
+  // ── Médicos em atraso (para tabela)
+  const medicosAtraso = useMemo(() => {
+    const m = {}
+    filtered
+      .filter(d => ['ATRASO','ATRASO CRÍTICO','ATRASO GRAVE'].includes(d._statusNorm))
+      .forEach(d => {
+        const nome   = String(d[cols.medico]||'').trim()
+        const unid   = String(d[cols.unidade]||'').trim()
+        const status = d._statusNorm
+        if (!nome) return
+        const k = `${nome}||${unid}`
+        if (!m[k]) m[k] = { nome, unid, status, pacts: 0, count: 0 }
+        m[k].pacts += Number(d[cols.qtPacts])||0
+        m[k].count++
+        // prioriza status mais grave
+        const order = ['ATRASO GRAVE','ATRASO CRÍTICO','ATRASO']
+        if (order.indexOf(status) < order.indexOf(m[k].status)) m[k].status = status
+      })
+    return Object.values(m).sort((a,b) => {
+      const order = ['ATRASO GRAVE','ATRASO CRÍTICO','ATRASO']
+      return order.indexOf(a.status) - order.indexOf(b.status) || b.pacts - a.pacts
+    })
   }, [filtered, cols])
 
-  // ── Top unidades por atraso ───────────────────────────
-  const topUnidadesAtraso = useMemo(() => {
+  // ── Médicos sem ponto
+  const medicosSemPonto = useMemo(() => {
     const m = {}
-    filtered.filter(d => String(d[cols.status]||'').toUpperCase().includes('ATRASO'))
+    filtered
+      .filter(d => d._semPonto)
+      .forEach(d => {
+        const nome = String(d[cols.medico]||'').trim()
+        const unid = String(d[cols.unidade]||'').trim()
+        if (!nome) return
+        const k = `${nome}||${unid}`
+        if (!m[k]) m[k] = { nome, unid, pacts: 0, count: 0, status: d._statusNorm }
+        m[k].pacts += Number(d[cols.qtPacts])||0
+        m[k].count++
+      })
+    return Object.values(m).sort((a,b) => b.pacts - a.pacts)
+  }, [filtered, cols])
+
+  // ── Top unidades atraso
+  const topUnidades = useMemo(() => {
+    const m = {}
+    filtered.filter(d => ['ATRASO','ATRASO CRÍTICO','ATRASO GRAVE'].includes(d._statusNorm))
       .forEach(d => { const u = d[cols.unidade]||'Sem Unidade'; m[u] = (m[u]||0)+1 })
     return Object.entries(m).map(([nome,total]) => ({ nome, total }))
-      .sort((a,b) => b.total-a.total).slice(0,10)
-  }, [filtered, cols])
-
-  // ── Top médicos — CORRIGIDO ───────────────────────────
-  // Agrupa por nome de médico. Cada combinação nome+dia+unidade = 1 agenda.
-  const topMedicos = useMemo(() => {
-    const m = {}
-    filtered.forEach(d => {
-      const med    = String(d[cols.medico]||'').trim()
-      if (!med) return
-      const espH   = Math.max(0, parseHM(d[cols.espera]))
-      const dateS  = d._dateStr || ''
-      const unid   = String(d[cols.unidade]||'').trim()
-      const agKey  = `${dateS}||${unid}`   // 1 agenda = 1 dia + 1 unidade
-
-      if (!m[med]) m[med] = { med, totalEspera: 0, agendasSet: new Set(), pacts: 0 }
-      m[med].totalEspera += espH
-      m[med].agendasSet.add(agKey)
-      m[med].pacts += Number(d[cols.qtPacts])||0
-    })
-    return Object.values(m)
-      .filter(x => x.totalEspera > 0)
-      .map(x => ({
-        med:     x.med,
-        total:   parseFloat(x.totalEspera.toFixed(1)),
-        agendas: x.agendasSet.size,
-        pacts:   x.pacts,
-      }))
-      .sort((a,b) => b.total - a.total)
-      .slice(0,10)
-  }, [filtered, cols])
-
-  // ── Especialidades ─────────────────────────────────────
-  const espBreak = useMemo(() => {
-    const m = {}
-    filtered.forEach(d => { const e = d[cols.esp]||'Outro'; m[e] = (m[e]||0)+1 })
-    return Object.entries(m).map(([nome,total]) => ({ nome,total }))
       .sort((a,b) => b.total-a.total).slice(0,8)
-  }, [filtered, cols])
-  const maxEsp = espBreak[0]?.total || 1
-
-  // ── UF breakdown ──────────────────────────────────────
-  const ufBreak = useMemo(() => {
-    const m = {}
-    filtered.forEach(d => { const u = String(d[cols.uf]||'?').trim(); m[u] = (m[u]||0)+1 })
-    return Object.entries(m).map(([nome,total]) => ({ nome,total }))
-      .sort((a,b) => b.total-a.total).slice(0,8)
-  }, [filtered, cols])
-  const maxUF = ufBreak[0]?.total || 1
-
-  // ── Impacto fila — CORRIGIDO: médicos únicos por nome ─
-  const impactoFila = useMemo(() => {
-    const m = {}
-    filtered.forEach(d => {
-      const s = String(d[cols.status]||'').toUpperCase()
-      if (!s.includes('ATRASO')) return
-      const u   = d[cols.unidade]||'Sem Unidade'
-      const med = String(d[cols.medico]||'').trim()
-      if (!m[u]) m[u] = { unidade: u, medicosSet: new Set(), pacientes: 0 }
-      if (med) m[u].medicosSet.add(med)
-      m[u].pacientes += Number(d[cols.qtPacts])||0
-    })
-    return Object.values(m)
-      .map(x => ({ unidade: x.unidade, medicos: x.medicosSet.size, pacientes: x.pacientes }))
-      .sort((a,b) => b.pacientes - a.pacientes).slice(0,8)
   }, [filtered, cols])
 
   const hasData = dados.length > 0
@@ -446,46 +497,48 @@ export default function Home() {
     <div style={{ background: T.bg, minHeight: '100vh',
       fontFamily: "'DM Sans','Segoe UI',sans-serif", color: T.text }}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700;800&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700;800;900&display=swap');
         *{box-sizing:border-box;margin:0;padding:0}
-        ::-webkit-scrollbar{width:6px;background:${T.bg}}
+        ::-webkit-scrollbar{width:5px;background:${T.bg}}
         ::-webkit-scrollbar-thumb{background:${T.border};border-radius:3px}
         select option{background:${T.surface};color:${T.text}}
-        .btn-upload:hover{opacity:.9;transform:translateY(-1px)}
-        .row-table:hover{background:#162033!important}
+        .ubtn:hover{opacity:.9;transform:translateY(-1px)}
+        .trow:hover td{background:#0e1b2c!important}
         input::placeholder{color:${T.muted}}
       `}</style>
 
       {/* ── Topbar ── */}
       <div style={{
         background: T.surface, borderBottom: `1px solid ${T.border}`,
-        padding: '0 40px', display: 'flex', alignItems: 'center',
-        justifyContent: 'space-between', height: 64, position: 'sticky', top: 0, zIndex: 100,
+        padding: '0 36px', height: 62, display: 'flex', alignItems: 'center',
+        justifyContent: 'space-between', position: 'sticky', top: 0, zIndex: 100,
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={{
             width: 32, height: 32, borderRadius: 8, fontSize: 16,
             background: `linear-gradient(135deg,${T.accent},${T.accentB})`,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>🏥</div>
           <div>
-            <div style={{ fontSize: 15, fontWeight: 700 }}>Monitor Hospitalar</div>
-            <div style={{ fontSize: 11, color: T.muted }}>Atrasos Médicos · Operacional</div>
+            <div style={{ fontSize: 14, fontWeight: 700 }}>Monitor Hospitalar</div>
+            <div style={{ fontSize: 11, color: T.muted }}>
+              Atrasos Médicos · Operacional
+              {verifTs && <span style={{ marginLeft: 8, color: T.accent }}>· Atualizado: {verifTs}</span>}
+            </div>
           </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           {hasData && (
             <PeriodoSelector
-              value={período}
-              onChange={setPeriodo}
+              value={período} onChange={setPeriodo}
               infoLabel={`${totalRegistros.toLocaleString('pt-BR')} reg. · ${períodoLabel}`}
             />
           )}
-          <label className="btn-upload" style={{
+          <label className="ubtn" style={{
             background: `linear-gradient(135deg,${T.accent},${T.accentB})`,
             color: '#000', fontWeight: 700, fontSize: 13,
-            padding: '9px 20px', borderRadius: 10, cursor: 'pointer', transition: 'all .2s',
+            padding: '8px 18px', borderRadius: 9, cursor: 'pointer', transition: 'all .2s',
           }}>
             {loading ? 'Carregando…' : '+ Carregar Planilha'}
             <input type="file" accept=".xlsx,.xls" style={{ display: 'none' }} onChange={handleUpload} />
@@ -493,45 +546,64 @@ export default function Home() {
         </div>
       </div>
 
-      <div style={{ padding: '32px 40px' }}>
+      <div style={{ padding: '24px 36px' }}>
         {!hasData && (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center',
-            justifyContent: 'center', minHeight: 'calc(100vh - 140px)', gap: 16 }}>
-            <div style={{ fontSize: 56 }}>📋</div>
-            <div style={{ fontSize: 22, fontWeight: 700 }}>Nenhuma planilha carregada</div>
-            <div style={{ color: T.muted, fontSize: 14 }}>Clique em "+ Carregar Planilha" para começar</div>
+          <div style={{ minHeight: 'calc(100vh - 130px)', display: 'flex',
+            flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14 }}>
+            <div style={{ fontSize: 52 }}>📋</div>
+            <div style={{ fontSize: 20, fontWeight: 700 }}>Nenhuma planilha carregada</div>
+            <div style={{ color: T.muted, fontSize: 13 }}>Clique em "+ Carregar Planilha" para começar</div>
           </div>
         )}
 
         {hasData && (<>
+
           {/* ── Filtros ── */}
-          <div style={{ display: 'flex', gap: 12, marginBottom: 28, flexWrap: 'wrap', alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: 10, marginBottom: 22, flexWrap: 'wrap', alignItems: 'center' }}>
             <input value={search} onChange={e => setSearch(e.target.value)}
               placeholder="Buscar unidade, médico, especialidade…"
-              style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 10,
-                color: T.text, fontSize: 13, padding: '9px 14px', outline: 'none', width: 300 }} />
+              style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 9,
+                color: T.text, fontSize: 13, padding: '8px 13px', outline: 'none', width: 280 }} />
+
+            {/* Filtro HORA */}
+            <select value={horaFilt} onChange={e => setHoraFilt(e.target.value)} style={{
+              background: T.card, border: `1px solid ${T.accent}66`, borderRadius: 9,
+              color: T.accent, fontSize: 13, fontWeight: 700, padding: '8px 13px',
+              outline: 'none', cursor: 'pointer' }}>
+              <option value="TODAS">⏰ Todas as horas</option>
+              {horasDisp.map(h => (
+                <option key={h} value={h}>{String(h).padStart(2,'0')}h</option>
+              ))}
+            </select>
+
             <select value={uf} onChange={e => setUf(e.target.value)} style={{
-              background: T.card, border: `1px solid ${T.border}`, borderRadius: 10,
-              color: T.text, fontSize: 13, padding: '9px 14px', outline: 'none', cursor: 'pointer' }}>
+              background: T.card, border: `1px solid ${T.border}`, borderRadius: 9,
+              color: T.text, fontSize: 13, padding: '8px 13px', outline: 'none', cursor: 'pointer' }}>
               <option value="TODOS">Todos os Estados</option>
               {ufs.map(u => <option key={u}>{u}</option>)}
             </select>
-            <select value={status} onChange={e => setStatus(e.target.value)} style={{
-              background: T.card, border: `1px solid ${T.border}`, borderRadius: 10,
-              color: T.text, fontSize: 13, padding: '9px 14px', outline: 'none', cursor: 'pointer' }}>
+
+            <select value={statusFilt} onChange={e => setStatusFilt(e.target.value)} style={{
+              background: T.card, border: `1px solid ${T.border}`, borderRadius: 9,
+              color: T.text, fontSize: 13, padding: '8px 13px', outline: 'none', cursor: 'pointer' }}>
               <option value="TODOS">Todos os Status</option>
-              {statuses.map(s => <option key={s}>{s}</option>)}
+              {statuses.map(s => {
+                const cfg = getCfg(s)
+                return <option key={s} value={s}>{cfg.label}</option>
+              })}
             </select>
-            {(uf !== 'TODOS' || status !== 'TODOS' || search) && (
-              <button onClick={() => { setUf('TODOS'); setStatus('TODOS'); setSearch('') }}
-                style={{ background: 'transparent', border: `1px solid ${T.border}`,
-                  borderRadius: 10, color: T.muted, fontSize: 13,
-                  padding: '9px 14px', cursor: 'pointer' }}>✕ Limpar filtros</button>
+
+            {(uf !== 'TODOS' || statusFilt !== 'TODOS' || search || horaFilt !== 'TODAS') && (
+              <button onClick={() => { setUf('TODOS'); setStatusFilt('TODOS'); setSearch(''); setHoraFilt('TODAS') }}
+                style={{ background: 'transparent', border: `1px solid ${T.border}`, borderRadius: 9,
+                  color: T.muted, fontSize: 13, padding: '8px 13px', cursor: 'pointer' }}>
+                ✕ Limpar
+              </button>
             )}
           </div>
 
           {/* ── KPIs ── */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 16, marginBottom: 24 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14, marginBottom: 20 }}>
             <StatCard icon="🩺" label="Total Registros"
               value={totalRegistros.toLocaleString('pt-BR')}
               sub={`${totalUnidades} unidades · ${totalMedicos} médicos únicos`} accent={T.accent} />
@@ -545,113 +617,123 @@ export default function Home() {
               sub="na fila agora" accent={T.success} />
           </div>
 
-          {/* ── Row 2 ── */}
-          <div style={{ display: 'grid', gridTemplateColumns: '240px 1fr 1fr', gap: 16, marginBottom: 16 }}>
-            <Card style={{ display: 'flex', flexDirection: 'column',
-              alignItems: 'center', justifyContent: 'center', gap: 16 }}>
-              <SectionHeader>Distribuição</SectionHeader>
-              <Donut size={130} segments={statusBreakdown.map(s => ({ value: s.value, color: s.color }))} />
-              <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 7 }}>
-                {statusBreakdown.slice(0,5).map(s => (
-                  <div key={s.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                      <div style={{ width: 8, height: 8, borderRadius: '50%', background: s.color }} />
-                      <span style={{ fontSize: 12, color: T.sub }}>{STATUS_LABEL(s.label)}</span>
-                    </div>
-                    <span style={{ fontSize: 12, fontWeight: 700, color: s.color }}>
-                      {s.value.toLocaleString('pt-BR')}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </Card>
+          {/* ── GRÁFICO DE STATUS ── */}
+          <Card style={{ marginBottom: 18 }}>
+            <SH>📊 Distribuição de Status — {horaFilt !== 'TODAS' ? `${String(horaFilt).padStart(2,'0')}h` : períodoLabel || 'todos os registros'}</SH>
+            <StatusChart data={statusBreakdown} total={totalRegistros} />
+          </Card>
 
-            <Card>
-              <SectionHeader>🔴 Unidades com Mais Atrasos</SectionHeader>
-              {topUnidadesAtraso.slice(0,6).map((u,i) => (
-                <HBar key={u.nome} rank={i} label={u.nome} value={u.total}
-                  max={topUnidadesAtraso[0]?.total||1}
-                  color={i===0 ? T.danger : i===1 ? '#FF7A00' : T.warning}
-                  unit=" atrasos" />
-              ))}
-            </Card>
-
-            <Card>
-              <SectionHeader>📍 Registros por Estado (UF)</SectionHeader>
-              {ufBreak.map(u => (
-                <HBar key={u.nome} label={u.nome} value={u.total} max={maxUF} color={T.accent} />
-              ))}
-            </Card>
-          </div>
-
-          {/* ── Row 3: Médicos CORRIGIDO + Especialidades ── */}
+          {/* ── Médicos em Atraso + Sem Ponto ── */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
-            <Card>
-              <SectionHeader>👨‍⚕️ Médicos com Maior Tempo de Espera (acumulado)</SectionHeader>
-              {topMedicos.map((m,i) => (
-                <HBar key={m.med} rank={i} label={m.med}
-                  value={m.total} max={topMedicos[0]?.total||1}
-                  color={i < 3 ? T.danger : T.warning} unit="h"
-                  sub={`${m.agendas} ${m.agendas===1 ? 'agenda' : 'agendas'} · ${m.pacts.toLocaleString('pt-BR')} pacientes`}
-                />
-              ))}
-              {topMedicos.length === 0 && (
-                <div style={{ color: T.muted, fontSize: 13 }}>Nenhum dado de espera encontrado.</div>
-              )}
-            </Card>
 
+            {/* Médicos em Atraso */}
             <Card>
-              <SectionHeader>🩻 Especialidades com Mais Atendimentos</SectionHeader>
-              {espBreak.map((e,i) => (
-                <HBar key={e.nome} label={e.nome} value={e.total} max={maxEsp}
-                  color={`hsl(${200 + i*18},70%,55%)`} />
-              ))}
-            </Card>
-          </div>
-
-          {/* ── Impacto na Fila — CORRIGIDO: médicos únicos ── */}
-          <Card style={{ marginBottom: 16 }}>
-            <SectionHeader>📊 Impacto na Fila de Espera — Unidades em Atraso</SectionHeader>
-            {impactoFila.length === 0 ? (
-              <div style={{ color: T.muted, fontSize: 13 }}>Nenhum atraso registrado com os filtros atuais.</div>
-            ) : (
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                  <thead>
-                    <tr style={{ borderBottom: `1px solid ${T.border}` }}>
-                      {['Unidade','Médicos Únicos em Atraso','Pacientes Aguardando','Pacientes / Médico','Severidade'].map(h => (
-                        <th key={h} style={{ padding: '10px 14px', textAlign: 'left',
-                          color: T.muted, fontWeight: 600, fontSize: 11,
-                          textTransform: 'uppercase', letterSpacing: '.06em' }}>{h}</th>
+              <SH>🚨 Médicos em Atraso ({medicosAtraso.length})</SH>
+              <div style={{ overflowY: 'auto', maxHeight: 380 }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                  <thead style={{ position: 'sticky', top: 0, background: T.card }}>
+                    <tr>
+                      {['#','Médico','Unidade','Status','Pac.'].map(h => (
+                        <th key={h} style={{ padding: '8px 10px', textAlign: 'left',
+                          borderBottom: `1px solid ${T.border}`, color: T.muted,
+                          fontWeight: 600, fontSize: 10, textTransform: 'uppercase',
+                          letterSpacing: '.07em', whiteSpace: 'nowrap' }}>{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {impactoFila.map(r => {
-                      const ratio = r.medicos > 0 ? (r.pacientes/r.medicos).toFixed(1) : '-'
-                      const sev   = r.medicos >= 5 ? 'Crítico' : r.medicos >= 3 ? 'Alto' : 'Moderado'
-                      const sevC  = r.medicos >= 5 ? T.danger  : r.medicos >= 3 ? T.warning : T.success
+                    {medicosAtraso.slice(0, 30).map((m, i) => {
+                      const cfg = getCfg(m.status)
                       return (
-                        <tr key={r.unidade} className="row-table"
-                          style={{ borderBottom: `1px solid ${T.border}`, transition: 'background .15s' }}>
-                          <td style={{ padding: '12px 14px', fontWeight: 500, color: T.text }}>{r.unidade}</td>
-                          <td style={{ padding: '12px 14px', color: T.danger, fontWeight: 700 }}>{r.medicos}</td>
-                          <td style={{ padding: '12px 14px', color: T.warning, fontWeight: 700 }}>{r.pacientes}</td>
-                          <td style={{ padding: '12px 14px', color: T.sub }}>{ratio}</td>
-                          <td style={{ padding: '12px 14px' }}><Badge label={sev} color={sevC} /></td>
+                        <tr key={`${m.nome}${i}`} className="trow">
+                          <td style={{ padding: '8px 10px', borderBottom: `1px solid ${T.border}`,
+                            color: T.muted, fontSize: 10 }}>{i+1}</td>
+                          <td style={{ padding: '8px 10px', borderBottom: `1px solid ${T.border}`,
+                            fontWeight: 600, color: T.text, whiteSpace: 'nowrap',
+                            maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.nome}</td>
+                          <td style={{ padding: '8px 10px', borderBottom: `1px solid ${T.border}`,
+                            color: T.sub, fontSize: 11, maxWidth: 140,
+                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.unid}</td>
+                          <td style={{ padding: '8px 10px', borderBottom: `1px solid ${T.border}` }}>
+                            <Badge label={cfg.label} color={cfg.bg} bg={cfg.bg+'22'} />
+                          </td>
+                          <td style={{ padding: '8px 10px', borderBottom: `1px solid ${T.border}`,
+                            color: T.warning, fontWeight: 700, textAlign: 'center' }}>{m.pacts}</td>
                         </tr>
                       )
                     })}
                   </tbody>
                 </table>
+                {medicosAtraso.length === 0 && (
+                  <div style={{ color: T.muted, fontSize: 13, padding: 12 }}>Nenhum médico em atraso.</div>
+                )}
               </div>
-            )}
+            </Card>
+
+            {/* Médicos Sem Ponto */}
+            <Card>
+              <SH>🔴 Médicos Sem Ponto ({medicosSemPonto.length}) — HR_ENTRADA vazia</SH>
+              <div style={{ overflowY: 'auto', maxHeight: 380 }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                  <thead style={{ position: 'sticky', top: 0, background: T.card }}>
+                    <tr>
+                      {['#','Médico','Unidade','Status','Pac. Impacto'].map(h => (
+                        <th key={h} style={{ padding: '8px 10px', textAlign: 'left',
+                          borderBottom: `1px solid ${T.border}`, color: T.muted,
+                          fontWeight: 600, fontSize: 10, textTransform: 'uppercase',
+                          letterSpacing: '.07em', whiteSpace: 'nowrap' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {medicosSemPonto.slice(0, 30).map((m, i) => {
+                      const cfg = getCfg(m.status)
+                      return (
+                        <tr key={`${m.nome}${i}`} className="trow">
+                          <td style={{ padding: '8px 10px', borderBottom: `1px solid ${T.border}`,
+                            color: T.muted, fontSize: 10 }}>{i+1}</td>
+                          <td style={{ padding: '8px 10px', borderBottom: `1px solid ${T.border}`,
+                            fontWeight: 600, color: T.text, whiteSpace: 'nowrap',
+                            maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.nome}</td>
+                          <td style={{ padding: '8px 10px', borderBottom: `1px solid ${T.border}`,
+                            color: T.sub, fontSize: 11, maxWidth: 140,
+                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.unid}</td>
+                          <td style={{ padding: '8px 10px', borderBottom: `1px solid ${T.border}` }}>
+                            <Badge label={cfg.label} color={cfg.bg} bg={cfg.bg+'22'} />
+                          </td>
+                          <td style={{ padding: '8px 10px', borderBottom: `1px solid ${T.border}`,
+                            color: T.danger, fontWeight: 700, textAlign: 'center' }}>{m.pacts}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+                {medicosSemPonto.length === 0 && (
+                  <div style={{ color: T.muted, fontSize: 13, padding: 12 }}>Nenhum médico sem ponto.</div>
+                )}
+              </div>
+            </Card>
+          </div>
+
+          {/* ── Top unidades ── */}
+          <Card style={{ marginBottom: 16 }}>
+            <SH>🏥 Unidades com Mais Atrasos</SH>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 48px' }}>
+              {topUnidades.map((u, i) => (
+                <HBar key={u.nome} rank={i} label={u.nome} value={u.total}
+                  max={topUnidades[0]?.total||1}
+                  color={i===0 ? T.danger : i===1 ? '#FF7A00' : T.warning}
+                  unit=" atrasos" />
+              ))}
+            </div>
           </Card>
 
           {/* ── Footer ── */}
-          <div style={{ textAlign: 'center', color: T.muted, fontSize: 11, paddingTop: 8, paddingBottom: 24 }}>
-            Dashboard Monitoramento Hospitalar · {new Date().toLocaleDateString('pt-BR')}
+          <div style={{ textAlign: 'center', color: T.muted, fontSize: 11, paddingBottom: 20 }}>
+            Monitor Hospitalar · {new Date().toLocaleDateString('pt-BR')}
             {período !== 'TODOS' && ` · ${períodoLabel}`}
+            {horaFilt !== 'TODAS' && ` · Hora ${String(horaFilt).padStart(2,'0')}h`}
+            {verifTs && ` · Base: ${verifTs}`}
           </div>
         </>)}
       </div>
