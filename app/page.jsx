@@ -73,7 +73,8 @@ const serialToDateStr = (v) => {
   // Número: serial Excel (dias desde 31/12/1899, com bug Lotus +1 para seriais > 60)
   if (typeof v === 'number') {
     const offsetDays = v > 60 ? 25568 : 25569
-    const d = new Date(Math.round((v - offsetDays) * 86400 * 1000))
+    // Adiciona 12h (43200000ms) para evitar problemas de fuso horário na conversão
+    const d = new Date(Math.round((v - offsetDays) * 86400 * 1000) + 43200000)
     if (!d || isNaN(d)) return ''
     return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`
   }
@@ -98,8 +99,9 @@ const serialToDateStr = (v) => {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
 }
 const todayStr = () => {
+  // Usar UTC para ser consistente com serialToDateStr
   const n = new Date()
-  return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-${String(n.getDate()).padStart(2,'0')}`
+  return `${n.getUTCFullYear()}-${String(n.getUTCMonth()+1).padStart(2,'0')}-${String(n.getUTCDate()).padStart(2,'0')}`
 }
 const buildFilter = (allDates, período, dateFrom, dateTo) => {
   if (!allDates.length) return () => true
@@ -303,11 +305,24 @@ function AusenciasCard({ rows, cols }) {
 }
 
 // ─── ALTERADO: Unidades com Maior Espera + Pacientes Aguardando ──────────────
-function EsperaHoraCard({ rows, cols }) {
+function EsperaHoraCard({ rows, cols, allRawDados, período }) {
   const items = useMemo(() => {
+    // Usar allRawDados para ter acesso a todos os dados do dia correto
+    // Filtrar pelo maior DATA_AGENDA disponível quando período=HOJE
+    // para contornar problemas de conversão de data
+    let fonte = rows
+    if (período === 'HOJE' && allRawDados && allRawDados.length > 0) {
+      // Pegar o maior DATA_AGENDA disponível (= dia mais recente na base)
+      const maxAgenda = Math.max(...allRawDados.map(d => {
+        const v = d[cols.data]; return typeof v === 'number' ? v : 0
+      }).filter(v => v > 0))
+      if (maxAgenda > 0) {
+        fonte = allRawDados.filter(d => d[cols.data] === maxAgenda)
+      }
+    }
     // Agrupar por hora (HR_REGISTRO_ESPERA) — apenas linhas com pac > 0 e espera > 0
     const byHora = {}
-    rows.forEach(d => {
+    fonte.forEach(d => {
       const hrRV = d[cols.hrRegistroEspera]
       const espV = d[cols.espera]
       const pac  = Number(d[cols.qtPacts]) || 0
@@ -1220,7 +1235,7 @@ export default function Home() {
             {/* ── ALTERADO: Maior Espera + Pacientes Aguardando ── */}
             <Card style={{ marginBottom:16 }}>
               <SH>⏳ Espera por Hora do Dia · Maior Espera e Pacientes Aguardando</SH>
-              <EsperaHoraCard rows={dadosPorPeriodo} cols={cols} />
+              <EsperaHoraCard rows={dadosPorPeriodo} cols={cols} allRawDados={dadosComData} período={período} />
             </Card>
 
             {/* ── NOVO: Recorrência de Atraso ── */}
