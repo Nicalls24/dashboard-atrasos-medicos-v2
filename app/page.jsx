@@ -22,7 +22,7 @@ const T = {
   orange:  '#FF7A00',
 }
 
-// ─── Status config (igual à planilha de referência) ───────
+// ─── Status config ─────────────────────────────────────────
 const STATUS_CFG = {
   'OK':                { label: 'OK (Motivo)',          color: '#22C55E', bg: '#14532d' },
   'ATRASO':            { label: 'Atraso 31–45min',      color: '#F59E0B', bg: '#78350f' },
@@ -49,29 +49,21 @@ const getStatusCfg = (s = '') => {
 }
 
 // ─── Helpers ──────────────────────────────────────────────
-const tdToH   = (v) => { try { return v.total_seconds ? v.total_seconds()/3600 : (typeof v==='number' ? v*24 : 0) } catch { return 0 } }
-const parseHM = (v) => {
+const parseEsperaMin = (v) => {
   if (!v && v !== 0) return 0
-  if (typeof v === 'number') return v * 24
-  const s = String(v).trim(), sign = s.startsWith('-') ? -1 : 1
+  if (typeof v === 'number') return v * 24 * 60
+  const s = String(v).trim()
   if (s.includes(':')) {
-    const p = s.replace('-','').split(':').map(Number)
-    return sign * ((p[0]||0) + (p[1]||0)/60)
+    const [h, m] = s.split(':').map(Number)
+    return (h||0)*60 + (m||0)
   }
-  const n = parseFloat(s.replace(',','.'))
-  return isNaN(n) ? 0 : n
-}
-const fmtH = (h) => {
-  const abs=Math.abs(h), hh=Math.floor(abs), mm=Math.round((abs-hh)*60)
-  return `${hh}h${mm>0?` ${mm}m`:''}`
+  return 0
 }
 const fmtMin = (m) => {
   const mm=Math.round(Math.abs(m))
   if (mm < 60) return `${mm}min`
   return `${Math.floor(mm/60)}h${mm%60>0?` ${mm%60}m`:''}`
 }
-
-// ─── Serial Excel → 'YYYY-MM-DD' com UTC para evitar fuso ─
 const serialToDateStr = (v) => {
   if (!v && v !== 0) return ''
   let d
@@ -88,48 +80,6 @@ const serialToDateStr = (v) => {
   const mm=String(d.getUTCMonth()+1).padStart(2,'0')
   return `${d.getUTCFullYear()}-${mm}-${dd}`
 }
-
-// ─── DT_REGISTRO → timestamp legível (formato dd/mm/yyyy) ─
-// A planilha guarda como serial Excel (número), não como string
-const parseDtRegistro = (v, rows) => {
-  // Tenta pegar do campo DT_REGISTRO + HR_REGISTRO_ESPERA ou usa DATA_AGENDA
-  if (!v) return ''
-  if (typeof v === 'number') {
-    // Serial Excel — converte com UTC
-    const d = new Date(Math.round((v - 25569) * 86400 * 1000))
-    if (isNaN(d)) return ''
-    const dd=String(d.getUTCDate()).padStart(2,'0')
-    const mm=String(d.getUTCMonth()+1).padStart(2,'0')
-    const yy=d.getUTCFullYear()
-    return `${dd}/${mm}/${yy}`
-  }
-  const s = String(v).trim()
-  // Se vier como 'mm/dd/yyyy hh:mm:ss' (formato americano errado), corrige
-  const mAm = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}:\d{2}:\d{2})/)
-  if (mAm) {
-    const [,p1,p2,y,time] = mAm
-    // Detecta se está no formato errado: mês > 12 nunca pode ser mês
-    // Se p1 <= 12 e p2 > 12, então p1=mês, p2=dia (formato americano)
-    if (+p2 > 12) return `${p2.padStart(2,'0')}/${p1.padStart(2,'0')}/${y} ${time}`
-    // Se p1 > 12, já é dia no primeiro campo (formato BR correto)
-    return s
-  }
-  return s
-}
-
-// ─── Lê TEMPO_DE_ESPERA: pode vir como fração decimal ou string hh:mm ─
-const parseEsperaMin = (v) => {
-  if (!v && v !== 0) return 0
-  if (typeof v === 'number') return v * 24 * 60  // fração de dia → minutos
-  const s = String(v).trim()
-  if (s.includes(':')) {
-    const [h, m] = s.split(':').map(Number)
-    return (h||0)*60 + (m||0)
-  }
-  return 0
-}
-
-// ─── buildFilter: período baseado nas datas da base ───────
 const todayStr = () => {
   const n = new Date()
   return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-${String(n.getDate()).padStart(2,'0')}`
@@ -143,7 +93,6 @@ const buildFilter = (allDates, período, dateFrom, dateTo) => {
     return (ds) => ds === today
   }
   if (período === 'ONTEM') {
-    // Ontem = dia anterior ao maxDate da base
     const ref = new Date(maxDate + 'T00:00:00Z')
     ref.setUTCDate(ref.getUTCDate() - 1)
     const ontem = `${ref.getUTCFullYear()}-${String(ref.getUTCMonth()+1).padStart(2,'0')}-${String(ref.getUTCDate()).padStart(2,'0')}`
@@ -168,7 +117,7 @@ const buildFilter = (allDates, período, dateFrom, dateTo) => {
     const to   = dateTo   || maxDate
     return (ds) => ds >= from && ds <= to
   }
-  return () => true  // sem filtro
+  return () => true
 }
 
 // ─── Sub-components ───────────────────────────────────────
@@ -225,34 +174,6 @@ function Card({ children, style={} }) {
     borderRadius:16, padding:22, ...style }}>{children}</div>
 }
 
-function Badge({ label, color }) {
-  return <span style={{ fontSize:11, fontWeight:700, padding:'3px 9px',
-    borderRadius:20, background:color+'22', color, whiteSpace:'nowrap' }}>{label}</span>
-}
-
-function Donut({ segments, size=120 }) {
-  const r=46, cx=60, cy=60, circ=2*Math.PI*r
-  const total = segments.reduce((a,s)=>a+s.value,0)||1
-  let cum=0
-  return (
-    <svg width={size} height={size} viewBox="0 0 120 120">
-      <circle cx={cx} cy={cy} r={r} fill="none" stroke={T.border} strokeWidth="14" />
-      {segments.map((seg,i)=>{
-        const dash=(seg.value/total)*circ, off=circ-cum*circ/total
-        cum+=seg.value
-        return <circle key={i} cx={cx} cy={cy} r={r} fill="none"
-          stroke={seg.color} strokeWidth="14"
-          strokeDasharray={`${dash} ${circ-dash}`}
-          strokeDashoffset={off} strokeLinecap="round" transform="rotate(-90 60 60)" />
-      })}
-      <text x="60" y="56" textAnchor="middle" fontSize="16" fontWeight="800" fill={T.text}>
-        {total.toLocaleString('pt-BR')}</text>
-      <text x="60" y="70" textAnchor="middle" fontSize="8" fill={T.muted}>registros</text>
-    </svg>
-  )
-}
-
-// ─── Gráfico moderno de STATUS (tipo planilha referência) ─
 function StatusDashboard({ breakdown, total }) {
   const order = ['OK','ATRASO','ATRASO CRÍTICO','ATRASO GRAVE','Falta Médica',
                  'Remarcação Adm','Remarcação Médico','Remarcação médico','SEM PONTO']
@@ -276,7 +197,6 @@ function StatusDashboard({ breakdown, total }) {
             borderRadius:14, padding:'16px 18px',
             position:'relative', overflow:'hidden',
           }}>
-            {/* Barra de progresso na base */}
             <div style={{ position:'absolute', bottom:0, left:0, height:3,
               width:`${barW}%`, background:cfg.color, borderRadius:'0 0 0 14px',
               transition:'width .6s ease' }} />
@@ -298,7 +218,6 @@ function StatusDashboard({ breakdown, total }) {
   )
 }
 
-// ─── Gráfico Sem Ponto / Ausências ────────────────────────
 function AusenciasCard({ rows, cols }) {
   const items = useMemo(() => {
     const m = {}
@@ -306,18 +225,14 @@ function AusenciasCard({ rows, cols }) {
       const entrada = d[cols.hrEntrada]
       const isVazio = !entrada || entrada === '' || entrada === 'NaT'
       if (!isVazio) return
-
       const med    = String(d[cols.medico]||'').trim() || 'Sem Nome'
       const status = String(d[cols.status]||'').trim()
       const motivo = String(d[cols.motivoCancelamento]||'').trim()
       const unid   = String(d[cols.unidade]||'').trim()
       const pacts  = Number(d[cols.qtPacts])||0
-
-      // Classificação
       let tipo
       if (motivo) tipo = motivo
       else        tipo = 'Sem Ponto Registrado'
-
       const key = `${med}||${unid}`
       if (!m[key]) m[key] = { med, unid, status, tipo, pacts: 0, agendas: 0 }
       m[key].pacts   += pacts
@@ -371,7 +286,6 @@ function AusenciasCard({ rows, cols }) {
   )
 }
 
-// ─── Gráfico Motivo do Impacto na Espera ─────────────────
 function ImpactoEsperaCard({ rows, cols }) {
   const items = useMemo(() => {
     const m = {}
@@ -388,7 +302,6 @@ function ImpactoEsperaCard({ rows, cols }) {
     return Object.values(m)
       .filter(x => x.totalEspMin > 0 || x.pacts > 0)
       .map(x => {
-        // Motivo predominante
         const topStatus = Object.entries(x.statusMap)
           .sort((a,b)=>b[1]-a[1])[0]?.[0] || 'OK'
         const allOK = Object.keys(x.statusMap).every(s => s === 'OK')
@@ -439,7 +352,6 @@ function ImpactoEsperaCard({ rows, cols }) {
   )
 }
 
-// ─── Período selector ─────────────────────────────────────
 const PERIODOS = [
   { key:'HOJE',    label:'Hoje'    },
   { key:'ONTEM',   label:'Ontem'   },
@@ -487,11 +399,10 @@ function PeriodoSelector({ value, onChange, infoLabel, dateFrom, dateTo, onDateF
   )
 }
 
-
-// ─── Supabase config ─────────────────────────────────────
+// ─── Supabase config ──────────────────────────────────────
 const SB_URL = 'https://fwdvzsywudpieqlqnxkp.supabase.co'
 const SB_KEY = 'sb_publishable_x32NVeFMKLK9kLJfdunngg_GfxpTo1P'
-const CHUNK_SIZE = 4000   // linhas por chunk
+const PAGE_SIZE = 1000  // rows per page from hospital_dados
 
 const sbFetch = (path, opts = {}) => {
   const isWrite = opts.method && ['POST','PATCH','PUT','DELETE'].includes(opts.method)
@@ -501,6 +412,7 @@ const sbFetch = (path, opts = {}) => {
       'Authorization': `Bearer ${SB_KEY}`,
       'Content-Type':  'application/json',
       ...(isWrite ? { 'Prefer': 'return=minimal' } : {}),
+      'Range-Unit': 'items',
       ...opts.headers,
     },
     ...opts,
@@ -513,14 +425,14 @@ const rowDateStr = (r) => {
   return serialToDateStr(v)
 }
 
-// ─── Main ─────────────────────────────────────────────────
+// ─── Main ──────────────────────────────────────────────────
 export default function Home() {
   const [dados,       setDados]       = useState([])
   const [uf,          setUf]          = useState('TODOS')
   const [status,      setStatus]      = useState('TODOS')
   const [loading,     setLoading]     = useState(false)
   const [storing,     setStoring]     = useState(false)
-  const [storeStatus, setStoreStatus] = useState('')   // mensagem de progresso
+  const [storeStatus, setStoreStatus] = useState('')
   const [search,      setSearch]      = useState('')
   const [período,     setPeriodo]     = useState('TODOS')
   const [horaFilt,    setHoraFilt]    = useState('TODAS')
@@ -530,48 +442,109 @@ export default function Home() {
   const [storageInfo, setStorageInfo] = useState({ dias: 0, total: 0 })
   const [initLoading, setInitLoading] = useState(true)
 
-  // ── Carrega TODOS os chunks do Supabase ao abrir ───────
+  // ── Carrega dados de hospital_dados ao iniciar ─────────
   useEffect(() => {
     const loadFromSupabase = async () => {
       try {
         setStoreStatus('Conectando ao Supabase…')
 
-        // 1. Busca metadados (timestamp)
-        const metaRes = await sbFetch('mh_meta?select=ts&id=eq.1')
-        if (metaRes.ok) {
-          const meta = await metaRes.json()
-          if (meta[0]?.ts) setTimestamp(meta[0].ts)
-        } else {
-          const txt = await metaRes.text()
-          setStoreStatus(`Erro meta ${metaRes.status}: ${txt.slice(0,120)}`)
-          setInitLoading(false)
-          return
+        // 1. Busca timestamp do meta (se existir)
+        try {
+          const metaRes = await sbFetch('mh_meta?select=ts&id=eq.1')
+          if (metaRes.ok) {
+            const meta = await metaRes.json()
+            if (meta[0]?.ts) setTimestamp(meta[0].ts)
+          }
+        } catch(e) { /* ignora erro de meta */ }
+
+        // 2. Carrega todos os dados de hospital_dados com paginação
+        setStoreStatus('Carregando dados do Supabase…')
+        let allRows = []
+        let offset = 0
+
+        while (true) {
+          const res = await sbFetch(
+            `hospital_dados?select=dados&limit=${PAGE_SIZE}&offset=${offset}`,
+            { headers: { 'Range': `${offset}-${offset + PAGE_SIZE - 1}` } }
+          )
+
+          if (!res.ok) {
+            // Se a tabela não tem coluna "dados", tenta buscar tudo direto
+            const res2 = await sbFetch(
+              `hospital_dados?limit=${PAGE_SIZE}&offset=${offset}`
+            )
+            if (!res2.ok) {
+              const txt = await res2.text()
+              setStoreStatus(`Erro ${res2.status}: ${txt.slice(0,120)}`)
+              setInitLoading(false)
+              return
+            }
+            const batch2 = await res2.json()
+            if (!Array.isArray(batch2) || batch2.length === 0) break
+            allRows = allRows.concat(batch2)
+            setStoreStatus(`Carregando… ${allRows.length} linhas`)
+            if (batch2.length < PAGE_SIZE) break
+            offset += PAGE_SIZE
+            continue
+          }
+
+          const batch = await res.json()
+          if (!Array.isArray(batch) || batch.length === 0) break
+
+          // Se cada item tem campo "dados" (JSON embutido), extrai
+          const rows = batch[0]?.dados !== undefined
+            ? batch.flatMap(item => {
+                try {
+                  const d = typeof item.dados === 'string' ? JSON.parse(item.dados) : item.dados
+                  return Array.isArray(d) ? d : [d]
+                } catch { return [] }
+              })
+            : batch
+
+          allRows = allRows.concat(rows)
+          setStoreStatus(`Carregando… ${allRows.length} linhas`)
+          if (batch.length < PAGE_SIZE) break
+          offset += PAGE_SIZE
         }
 
-        // 2. Busca todos os chunks com paginação via limit/offset
-        setStoreStatus('Buscando dados…')
+        if (allRows.length > 0) {
+          const diasSet = new Set(allRows.map(rowDateStr).filter(Boolean))
+          setDados(allRows)
+          setStorageInfo({ dias: diasSet.size, total: allRows.length })
+          setPeriodo('MES') // Padrão: mostra o mês disponível
+          setStoreStatus(`☁ ${diasSet.size} dias · ${allRows.length.toLocaleString('pt-BR')} registros`)
+          setTimeout(() => setStoreStatus(''), 4000)
+        } else {
+          // Tenta fallback para mh_chunks se hospital_dados estiver vazia
+          await loadFromChunks()
+          return
+        }
+      } catch (e) {
+        console.error('Supabase load error:', e)
+        setStoreStatus(`Erro: ${e.message}`)
+        // Tenta fallback para mh_chunks
+        try { await loadFromChunks() } catch(e2) {}
+      }
+      setInitLoading(false)
+    }
+
+    // Fallback: carrega de mh_chunks (estrutura antiga)
+    const loadFromChunks = async () => {
+      try {
         let allChunks = [], offset = 0
-        const pageSize = 500
         while (true) {
           const r = await sbFetch(
-            `mh_chunks?select=data_agenda,chunk_idx,rows_json&order=data_agenda.asc,chunk_idx.asc&limit=${pageSize}&offset=${offset}`
+            `mh_chunks?select=data_agenda,chunk_idx,rows_json&order=data_agenda.asc,chunk_idx.asc&limit=500&offset=${offset}`
           )
-          if (!r.ok) {
-            const txt = await r.text()
-            setStoreStatus(`Erro chunks ${r.status}: ${txt.slice(0,120)}`)
-            setInitLoading(false)
-            return
-          }
+          if (!r.ok) break
           const batch = await r.json()
           if (!Array.isArray(batch) || batch.length === 0) break
           allChunks = allChunks.concat(batch)
-          setStoreStatus(`Carregando… ${allChunks.length} chunks`)
-          if (batch.length < pageSize) break
-          offset += pageSize
+          setStoreStatus(`Carregando chunks… ${allChunks.length}`)
+          if (batch.length < 500) break
+          offset += 500
         }
-
         if (allChunks.length > 0) {
-          setStoreStatus(`Processando ${allChunks.length} chunks…`)
           let allRows = []
           for (const c of allChunks) {
             try { allRows = allRows.concat(JSON.parse(c.rows_json)) } catch(e) {}
@@ -579,39 +552,49 @@ export default function Home() {
           const diasSet = new Set(allChunks.map(c => c.data_agenda))
           setDados(allRows)
           setStorageInfo({ dias: diasSet.size, total: allRows.length })
-          setPeriodo('HOJE')
+          setPeriodo('MES')
           setStoreStatus(`☁ ${diasSet.size} dias · ${allRows.length.toLocaleString('pt-BR')} registros`)
           setTimeout(() => setStoreStatus(''), 4000)
         } else {
-          setStoreStatus('Supabase vazio — carregue uma planilha')
-          setTimeout(() => setStoreStatus(''), 4000)
+          setStoreStatus('Nenhum dado encontrado — carregue uma planilha')
+          setTimeout(() => setStoreStatus(''), 5000)
         }
-      } catch (e) {
-        console.error('Supabase load error:', e)
-        setStoreStatus(`Erro: ${e.message}`)
+      } catch(e) {
+        setStoreStatus(`Erro chunks: ${e.message}`)
       }
       setInitLoading(false)
     }
+
     loadFromSupabase()
   }, [])
 
-  // ── Salva no Supabase (upsert por data) ───────────────
+  // ── Salva no Supabase (hospital_dados — upsert por lote) ─
   const saveToSupabase = useCallback(async (newRows, ts) => {
     setStoring(true)
     try {
-      // Datas dos novos dados
+      // Estratégia: salva na tabela hospital_dados linha a linha em lotes
+      // Detecta se a tabela tem coluna "dados" ou é row-per-row
+      const BATCH = 500
       const newDates = [...new Set(newRows.map(rowDateStr).filter(Boolean))]
+
+      // Remove linhas existentes com as datas da nova planilha
       setStoreStatus(`Removendo ${newDates.length} dia(s) antigo(s)…`)
 
-      // Apaga chunks das datas que vieram na nova planilha (upsert por data)
-      for (const date of newDates) {
-        await sbFetch(
-          `mh_chunks?data_agenda=eq.${date}`,
-          { method: 'DELETE' }
-        )
-      }
+      // Tenta primeiro com mh_chunks (compatibilidade)
+      let usedChunks = false
+      try {
+        const testMeta = await sbFetch('mh_meta?select=id&id=eq.1')
+        if (testMeta.ok) {
+          const metaData = await testMeta.json()
+          if (metaData.length > 0) usedChunks = true
+        }
+      } catch(e) {}
 
-      // Agrupa novas linhas por data e insere em chunks
+      // Salva em mh_chunks (método existente que funciona)
+      const CHUNK_SIZE = 4000
+      for (const date of newDates) {
+        await sbFetch(`mh_chunks?data_agenda=eq.${date}`, { method: 'DELETE' })
+      }
       const byDate = {}
       newRows.forEach(r => {
         const ds = rowDateStr(r)
@@ -619,8 +602,6 @@ export default function Home() {
         if (!byDate[ds]) byDate[ds] = []
         byDate[ds].push(r)
       })
-
-      let inserted = 0
       const datesSorted = Object.keys(byDate).sort()
       for (const date of datesSorted) {
         const rows = byDate[date]
@@ -639,31 +620,63 @@ export default function Home() {
               uploaded_at:  new Date().toISOString(),
             }),
           })
-          inserted += slice.length
         }
       }
 
-      // Atualiza metadados (timestamp)
+      // Atualiza timestamp
       await sbFetch('mh_meta?id=eq.1', {
         method: 'PATCH',
         headers: { 'Prefer': 'return=minimal' },
         body: JSON.stringify({ ts: ts, updated_at: new Date().toISOString() }),
       })
 
-      // Recarrega tudo do Supabase com paginação
-      setStoreStatus('Recarregando dados completos…')
+      // Também tenta salvar em hospital_dados se existir
+      try {
+        const hdTest = await sbFetch('hospital_dados?limit=1')
+        if (hdTest.ok) {
+          // Apaga linhas com datas novas e reinsere
+          // Detecta estrutura da tabela
+          const sample = await hdTest.json()
+          const hasVerifTs = Array.isArray(sample) && sample[0]?.verif_ts !== undefined
+          const hasDados   = Array.isArray(sample) && sample[0]?.dados !== undefined
+
+          if (hasVerifTs || hasDados) {
+            // Tabela tem estrutura específica — salva como JSON embutido
+            setStoreStatus('Sincronizando hospital_dados…')
+            const verif_ts = ts
+            const datas_do_snapshot = newDates
+            const chunks = []
+            for (let i = 0; i < newRows.length; i += BATCH) {
+              chunks.push(newRows.slice(i, i + BATCH))
+            }
+            for (const chunk of chunks) {
+              await sbFetch('hospital_dados', {
+                method: 'POST',
+                headers: { 'Prefer': 'return=minimal' },
+                body: JSON.stringify({
+                  verif_ts,
+                  dados: JSON.stringify(chunk),
+                  datas_do_snapshot,
+                }),
+              })
+            }
+          }
+        }
+      } catch(e) { /* ignora erro de hospital_dados */ }
+
+      // Recarrega tudo
+      setStoreStatus('Recarregando…')
       let reloadChunks = [], rOffset = 0
-      const rPageSize = 500
       while (true) {
         const r = await sbFetch(
-          `mh_chunks?select=data_agenda,chunk_idx,rows_json&order=data_agenda.asc,chunk_idx.asc&limit=${rPageSize}&offset=${rOffset}`
+          `mh_chunks?select=data_agenda,chunk_idx,rows_json&order=data_agenda.asc,chunk_idx.asc&limit=500&offset=${rOffset}`
         )
         if (!r.ok) break
         const batch = await r.json()
         if (!Array.isArray(batch) || batch.length === 0) break
         reloadChunks = reloadChunks.concat(batch)
-        if (batch.length < rPageSize) break
-        rOffset += rPageSize
+        if (batch.length < 500) break
+        rOffset += 500
       }
       if (reloadChunks.length > 0) {
         let allRows = []
@@ -675,17 +688,16 @@ export default function Home() {
         setStorageInfo({ dias: diasSet.size, total: allRows.length })
       }
 
-      setInitLoading(false)
       setStoreStatus('✓ Salvo no Supabase')
       setTimeout(() => setStoreStatus(''), 3000)
     } catch (e) {
       console.error('Supabase save error:', e)
-      setStoreStatus('⚠ Erro ao salvar no Supabase — dados visíveis localmente')
+      setStoreStatus('⚠ Erro ao salvar — dados visíveis localmente')
     }
     setStoring(false)
   }, [])
 
-  // ── Limpar todos os dados do Supabase ─────────────────
+  // ── Limpar dados ──────────────────────────────────────
   const clearStorage = async () => {
     if (!confirm('Apagar TODOS os dados do Supabase? Isso não pode ser desfeito.')) return
     setStoring(true)
@@ -708,26 +720,20 @@ export default function Home() {
     const file = e.target.files[0]
     if (!file) return
     setLoading(true)
-
     const now = new Date()
     const pad = n => String(n).padStart(2,'0')
     const ts = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()} ` +
                `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`
     setTimestamp(ts)
-
     const buf  = await file.arrayBuffer()
     const wb   = XLSX.read(buf, { type:'buffer' })
     const ws   = wb.Sheets[wb.SheetNames[0]]
     const json = XLSX.utils.sheet_to_json(ws, { range:3, defval:'' })
-
     setUf('TODOS'); setStatus('TODOS'); setSearch('')
-    setPeriodo('HOJE'); setHoraFilt('TODAS'); setDateFrom(''); setDateTo('')
-    // Mostra os dados imediatamente na tela enquanto salva em background
+    setPeriodo('MES'); setHoraFilt('TODAS'); setDateFrom(''); setDateTo('')
     setDados(json)
     setInitLoading(false)
     setLoading(false)
-
-    // Salva no Supabase em background (não bloqueia a tela)
     saveToSupabase(json, ts)
   }
 
@@ -756,11 +762,10 @@ export default function Home() {
     }
   }, [dados])
 
-  // ── Pré-processa: dateStr + hora ─────────────────────
+  // ── Pré-processa: dateStr + hora ──────────────────────
   const dadosComData = useMemo(() => {
     if (!dados.length) return []
     return dados.map(d => {
-      // Hora de HR_INICIO
       const hrV = d[cols.hrInicio]
       let hora = 99
       if (typeof hrV === 'number') hora = Math.floor(hrV * 24)
@@ -772,7 +777,6 @@ export default function Home() {
     })
   }, [dados, cols])
 
-  // ── Datas únicas + filtro período ───────────────────
   const allDates = useMemo(() =>
     [...new Set(dadosComData.map(d=>d._dateStr).filter(Boolean))].sort(),
     [dadosComData])
@@ -783,13 +787,11 @@ export default function Home() {
     dadosComData.filter(d => periodoFn(d._dateStr)),
     [dadosComData, periodoFn])
 
-  // ── Horas disponíveis ────────────────────────────────
   const horasDisp = useMemo(() => {
     const hs = [...new Set(dadosPorPeriodo.map(d=>d._hora).filter(h=>h>=0&&h<=23))].sort((a,b)=>a-b)
     return hs
   }, [dadosPorPeriodo])
 
-  // ── Filtros UF / status / busca / hora ───────────────
   const ufs = useMemo(() =>
     [...new Set(dadosPorPeriodo.map(d=>String(d[cols.uf]||'').trim()).filter(Boolean))].sort(),
     [dadosPorPeriodo, cols])
@@ -808,7 +810,7 @@ export default function Home() {
     return r
   }, [dadosPorPeriodo, uf, status, horaFilt, search, cols])
 
-  // ── KPIs ─────────────────────────────────────────────
+  // ── KPIs ──────────────────────────────────────────────
   const totalRegistros = filtered.length
   const totalUnidades  = new Set(filtered.map(d=>d[cols.unidade]).filter(Boolean)).size
   const totalMedicos   = new Set(filtered.map(d=>String(d[cols.medico]||'').trim()).filter(Boolean)).size
@@ -822,14 +824,12 @@ export default function Home() {
     return !e || e === '' || e === 'NaT'
   }).length
 
-  // ── Status breakdown ─────────────────────────────────
   const statusBreakdown = useMemo(() => {
     const m = {}
     filtered.forEach(d => { const s=String(d[cols.status]||'OK').trim(); m[s]=(m[s]||0)+1 })
     return m
   }, [filtered, cols])
 
-  // ── Top unidades por atraso ───────────────────────────
   const topUnidadesAtraso = useMemo(() => {
     const m = {}
     filtered.filter(d=>String(d[cols.status]||'').toUpperCase().includes('ATRASO'))
@@ -838,7 +838,6 @@ export default function Home() {
       .sort((a,b)=>b.total-a.total).slice(0,8)
   }, [filtered, cols])
 
-  // ── Top médicos por espera ────────────────────────────
   const topMedicos = useMemo(() => {
     const m = {}
     filtered.forEach(d => {
@@ -856,7 +855,6 @@ export default function Home() {
       .sort((a,b)=>b.totalMin-a.totalMin).slice(0,10)
   }, [filtered, cols])
 
-  // ── Especialidades ─────────────────────────────────────
   const espBreak = useMemo(() => {
     const m = {}
     filtered.forEach(d=>{ const e=d[cols.esp]||'Outro'; m[e]=(m[e]||0)+1 })
@@ -865,7 +863,6 @@ export default function Home() {
   }, [filtered, cols])
   const maxEsp = espBreak[0]?.total||1
 
-  // ── UF breakdown ──────────────────────────────────────
   const ufBreak = useMemo(() => {
     const m = {}
     filtered.forEach(d=>{ const u=String(d[cols.uf]||'?').trim(); m[u]=(m[u]||0)+1 })
@@ -874,7 +871,6 @@ export default function Home() {
   }, [filtered, cols])
   const maxUF = ufBreak[0]?.total||1
 
-  // ── Label período ─────────────────────────────────────
   const períodoLabel = useMemo(() => {
     if (!allDates.length) return ''
     const sorted=[...allDates].sort(), max=sorted[sorted.length-1]
@@ -908,8 +904,10 @@ export default function Home() {
     return ''
   }, [allDates, período, dateFrom, dateTo])
 
-  const hasData = dados.length > 0
-  const isInit  = initLoading
+  // Quantos dados tem no período selecionado (para decidir se mostra "vazio")
+  const hasData    = dados.length > 0
+  const isInit     = initLoading
+  const hasFiltred = filtered.length > 0
 
   return (
     <div style={{ background:T.bg, minHeight:'100vh',
@@ -948,12 +946,11 @@ export default function Home() {
         <div style={{ display:'flex', alignItems:'center', gap:10, flexWrap:'wrap' }}>
           {hasData && (
             <>
-              <PeriodoSelector value={período} onChange={p=>{setPeriodo(p);setHoraFilt('TODAS');setDateFrom('');setDateTo('')}}
+              <PeriodoSelector value={período}
+                onChange={p=>{setPeriodo(p);setHoraFilt('TODAS');setDateFrom('');setDateTo('')}}
                 infoLabel={`${totalRegistros.toLocaleString('pt-BR')} reg.${períodoLabel ? ' · '+períodoLabel : ''}`}
                 dateFrom={dateFrom} dateTo={dateTo} onDateFrom={setDateFrom} onDateTo={setDateTo}
                 allDates={allDates} />
-
-              {/* Filtro de hora */}
               <select value={horaFilt} onChange={e=>setHoraFilt(e.target.value)} style={{
                 background:T.card, border:`1px solid ${T.border}`, borderRadius:9,
                 color:T.text, fontSize:12, padding:'7px 11px', outline:'none', cursor:'pointer' }}>
@@ -972,7 +969,6 @@ export default function Home() {
             </div>
           )}
 
-          {/* Supabase status */}
           <div style={{ fontSize:10, textAlign:'right', lineHeight:1.6, minWidth:120 }}>
             {storageInfo.dias > 0 && !storeStatus && (
               <>
@@ -983,15 +979,17 @@ export default function Home() {
               </>
             )}
             {storeStatus && (
-              <div style={{ color:T.warning, fontWeight:600 }}>{storeStatus}</div>
+              <div style={{ color: storeStatus.startsWith('☁') || storeStatus.startsWith('✓') ? T.success : T.warning, fontWeight:600 }}>{storeStatus}</div>
             )}
           </div>
+
           {storageInfo.dias > 0 && !storing && (
             <button onClick={clearStorage} title="Apagar todos os dados do Supabase"
               style={{ background:'transparent', border:`1px solid ${T.danger}44`,
                 borderRadius:9, color:T.danger, fontSize:11, padding:'7px 11px',
                 cursor:'pointer', whiteSpace:'nowrap' }}>🗑 Limpar</button>
           )}
+
           <label className="btn-upload" style={{
             background: storing
               ? T.border
@@ -1009,12 +1007,12 @@ export default function Home() {
 
       <div style={{ padding:'28px 36px' }}>
 
-        {/* ── Empty / Loading ── */}
+        {/* ── Loading inicial ── */}
         {isInit && (
           <div style={{ display:'flex', flexDirection:'column', alignItems:'center',
             justifyContent:'center', minHeight:'calc(100vh - 140px)', gap:16 }}>
             <div style={{ fontSize:40 }}>⏳</div>
-            <div style={{ fontSize:18, color:T.muted }}>Conectando ao Supabase…</div>
+            <div style={{ fontSize:18, color:T.muted }}>Carregando dados do Supabase…</div>
             {storeStatus && (
               <div style={{ fontSize:13, color:T.warning, maxWidth:600, textAlign:'center',
                 background:T.card, padding:'12px 20px', borderRadius:10,
@@ -1022,6 +1020,8 @@ export default function Home() {
             )}
           </div>
         )}
+
+        {/* ── Sem dados ── */}
         {!isInit && !hasData && (
           <div style={{ display:'flex', flexDirection:'column', alignItems:'center',
             justifyContent:'center', minHeight:'calc(100vh - 140px)', gap:16 }}>
@@ -1046,6 +1046,7 @@ export default function Home() {
           </div>
         )}
 
+        {/* ── Dashboard ── */}
         {!isInit && hasData && (<>
 
           {/* ── Filtros ── */}
@@ -1074,107 +1075,135 @@ export default function Home() {
             )}
           </div>
 
-          {/* ── KPIs ── */}
-          <div style={{ display:'grid', gridTemplateColumns:'repeat(5,1fr)', gap:14, marginBottom:22 }}>
-            <StatCard icon="🩺" label="Total Registros"
-              value={totalRegistros.toLocaleString('pt-BR')}
-              sub={`${totalUnidades} unidades · ${totalMedicos} médicos`} accent={T.accent} />
-            <StatCard icon="⚠️" label="Em Atraso"
-              value={emAtraso.toLocaleString('pt-BR')}
-              sub={`${taxaAtraso}% do total`} accent={T.danger} />
-            <StatCard icon="⏱️" label="Espera Média"
-              value={fmtMin(mediaEsperaMin)} sub="por atendimento" accent={T.warning} />
-            <StatCard icon="👥" label="Pacientes Aguardando"
-              value={totalPacAguard.toLocaleString('pt-BR')}
-              sub="na fila agora" accent={T.success} />
-            <StatCard icon="🚫" label="Sem Ponto"
-              value={semPontoCount.toLocaleString('pt-BR')}
-              sub="HR_ENTRADA vazia" accent={T.purple} />
-          </div>
-
-          {/* ── GRÁFICO STATUS (NOVO — tipo planilha de referência) ── */}
-          <Card style={{ marginBottom:18 }}>
-            <SH>📊 Distribuição de Status — Visão Operacional</SH>
-            <StatusDashboard breakdown={statusBreakdown} total={totalRegistros} />
-          </Card>
-
-          {/* ── Row: Unidades + UFs ── */}
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16, marginBottom:16 }}>
-            <Card>
-              <SH>🔴 Unidades com Mais Atrasos</SH>
-              {topUnidadesAtraso.map((u,i)=>(
-                <HBar key={u.nome} rank={i} label={u.nome} value={u.total}
-                  max={topUnidadesAtraso[0]?.total||1}
-                  color={i===0?T.danger:i===1?'#FF7A00':T.warning}
-                  unit=" atrasos" />
-              ))}
-              {!topUnidadesAtraso.length && <div style={{color:T.muted,fontSize:13}}>Nenhum atraso.</div>}
-            </Card>
-            <Card>
-              <SH>📍 Registros por Estado (UF)</SH>
-              {ufBreak.map(u=>(
-                <HBar key={u.nome} label={u.nome} value={u.total} max={maxUF} color={T.accent} />
-              ))}
-            </Card>
-          </div>
-
-          {/* ── Médicos com Maior Espera ── */}
-          <Card style={{ marginBottom:16 }}>
-            <SH>👨‍⚕️ Médicos com Maior Tempo de Espera (acumulado)</SH>
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16 }}>
+          {/* ── Aviso se período sem dados ── */}
+          {!hasFiltred && (
+            <div style={{ background:T.card, border:`1px solid ${T.warning}44`, borderRadius:14,
+              padding:'20px 24px', marginBottom:20, display:'flex', alignItems:'center', gap:14 }}>
+              <span style={{ fontSize:28 }}>📅</span>
               <div>
-                {topMedicos.slice(0,5).map((m,i)=>(
-                  <HBar key={m.med} rank={i} label={m.med}
-                    value={fmtMin(m.totalMin)} max={topMedicos[0]?.totalMin||1}
-                    color={i<3?T.danger:T.warning}
-                    sub={`${m.agendas} ${m.agendas===1?'agenda':'agendas'} · ${m.pacts.toLocaleString('pt-BR')} pacientes`}
-                  />
-                ))}
+                <div style={{ fontWeight:700, color:T.warning, marginBottom:4 }}>
+                  Sem registros no período selecionado
+                </div>
+                <div style={{ fontSize:13, color:T.muted }}>
+                  Os dados disponíveis vão de{' '}
+                  <strong style={{color:T.sub}}>{allDates[0]?.split('-').reverse().join('/')}</strong>
+                  {' '}até{' '}
+                  <strong style={{color:T.sub}}>{allDates[allDates.length-1]?.split('-').reverse().join('/')}</strong>.
+                  Selecione "Mês" ou "Ano" para ver todos os dados.
+                </div>
               </div>
-              <div>
-                {topMedicos.slice(5,10).map((m,i)=>(
-                  <HBar key={m.med} rank={i+5} label={m.med}
-                    value={fmtMin(m.totalMin)} max={topMedicos[0]?.totalMin||1}
-                    color={T.warning}
-                    sub={`${m.agendas} ${m.agendas===1?'agenda':'agendas'} · ${m.pacts.toLocaleString('pt-BR')} pacientes`}
-                  />
+              <button onClick={()=>setPeriodo('MES')} style={{
+                marginLeft:'auto', background:`linear-gradient(135deg,${T.accent},${T.accentB})`,
+                color:'#000', fontWeight:700, fontSize:12, padding:'8px 16px',
+                borderRadius:8, border:'none', cursor:'pointer', whiteSpace:'nowrap' }}>
+                Ver Mês Completo
+              </button>
+            </div>
+          )}
+
+          {hasFiltred && (<>
+            {/* ── KPIs ── */}
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(5,1fr)', gap:14, marginBottom:22 }}>
+              <StatCard icon="🩺" label="Total Registros"
+                value={totalRegistros.toLocaleString('pt-BR')}
+                sub={`${totalUnidades} unidades · ${totalMedicos} médicos`} accent={T.accent} />
+              <StatCard icon="⚠️" label="Em Atraso"
+                value={emAtraso.toLocaleString('pt-BR')}
+                sub={`${taxaAtraso}% do total`} accent={T.danger} />
+              <StatCard icon="⏱️" label="Espera Média"
+                value={fmtMin(mediaEsperaMin)} sub="por atendimento" accent={T.warning} />
+              <StatCard icon="👥" label="Pacientes Aguardando"
+                value={totalPacAguard.toLocaleString('pt-BR')}
+                sub="na fila agora" accent={T.success} />
+              <StatCard icon="🚫" label="Sem Ponto"
+                value={semPontoCount.toLocaleString('pt-BR')}
+                sub="HR_ENTRADA vazia" accent={T.purple} />
+            </div>
+
+            {/* ── Status ── */}
+            <Card style={{ marginBottom:18 }}>
+              <SH>📊 Distribuição de Status — Visão Operacional</SH>
+              <StatusDashboard breakdown={statusBreakdown} total={totalRegistros} />
+            </Card>
+
+            {/* ── Unidades + UFs ── */}
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16, marginBottom:16 }}>
+              <Card>
+                <SH>🔴 Unidades com Mais Atrasos</SH>
+                {topUnidadesAtraso.map((u,i)=>(
+                  <HBar key={u.nome} rank={i} label={u.nome} value={u.total}
+                    max={topUnidadesAtraso[0]?.total||1}
+                    color={i===0?T.danger:i===1?'#FF7A00':T.warning}
+                    unit=" atrasos" />
                 ))}
+                {!topUnidadesAtraso.length && <div style={{color:T.muted,fontSize:13}}>Nenhum atraso.</div>}
+              </Card>
+              <Card>
+                <SH>📍 Registros por Estado (UF)</SH>
+                {ufBreak.map(u=>(
+                  <HBar key={u.nome} label={u.nome} value={u.total} max={maxUF} color={T.accent} />
+                ))}
+              </Card>
+            </div>
+
+            {/* ── Médicos com Maior Espera ── */}
+            <Card style={{ marginBottom:16 }}>
+              <SH>👨‍⚕️ Médicos com Maior Tempo de Espera (acumulado)</SH>
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16 }}>
+                <div>
+                  {topMedicos.slice(0,5).map((m,i)=>(
+                    <HBar key={m.med} rank={i} label={m.med}
+                      value={fmtMin(m.totalMin)} max={topMedicos[0]?.totalMin||1}
+                      color={i<3?T.danger:T.warning}
+                      sub={`${m.agendas} ${m.agendas===1?'agenda':'agendas'} · ${m.pacts.toLocaleString('pt-BR')} pacientes`}
+                    />
+                  ))}
+                </div>
+                <div>
+                  {topMedicos.slice(5,10).map((m,i)=>(
+                    <HBar key={m.med} rank={i+5} label={m.med}
+                      value={fmtMin(m.totalMin)} max={topMedicos[0]?.totalMin||1}
+                      color={T.warning}
+                      sub={`${m.agendas} ${m.agendas===1?'agenda':'agendas'} · ${m.pacts.toLocaleString('pt-BR')} pacientes`}
+                    />
+                  ))}
+                </div>
               </div>
-            </div>
-            {!topMedicos.length && <div style={{color:T.muted,fontSize:13}}>Nenhum dado de espera.</div>}
-          </Card>
+              {!topMedicos.length && <div style={{color:T.muted,fontSize:13}}>Nenhum dado de espera.</div>}
+            </Card>
 
-          {/* ── AUSÊNCIAS / SEM PONTO (NOVO) ── */}
-          <Card style={{ marginBottom:16 }}>
-            <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:16 }}>
-              <SH style={{ marginBottom:0 }}>🚫 Médicos Ausentes — Sem Ponto Registrado</SH>
-              <span style={{ fontSize:11, color:T.muted, marginLeft:'auto' }}>
-                HR_ENTRADA vazia · {semPontoCount} ocorrências
-              </span>
-            </div>
-            <AusenciasCard rows={filtered} cols={cols} />
-          </Card>
+            {/* ── Ausências ── */}
+            <Card style={{ marginBottom:16 }}>
+              <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:16 }}>
+                <SH style={{ marginBottom:0 }}>🚫 Médicos Ausentes — Sem Ponto Registrado</SH>
+                <span style={{ fontSize:11, color:T.muted, marginLeft:'auto' }}>
+                  HR_ENTRADA vazia · {semPontoCount} ocorrências
+                </span>
+              </div>
+              <AusenciasCard rows={filtered} cols={cols} />
+            </Card>
 
-          {/* ── MOTIVO DO IMPACTO NA ESPERA (NOVO) ── */}
-          <Card style={{ marginBottom:16 }}>
-            <SH>⏳ Motivo do Impacto na Espera — Unidades com Maior Tempo</SH>
-            <ImpactoEsperaCard rows={filtered} cols={cols} />
-          </Card>
+            {/* ── Impacto na Espera ── */}
+            <Card style={{ marginBottom:16 }}>
+              <SH>⏳ Motivo do Impacto na Espera — Unidades com Maior Tempo</SH>
+              <ImpactoEsperaCard rows={filtered} cols={cols} />
+            </Card>
 
-          {/* ── Especialidades ── */}
-          <Card style={{ marginBottom:16 }}>
-            <SH>🩻 Especialidades com Mais Atendimentos</SH>
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16 }}>
-              <div>{espBreak.slice(0,4).map((e,i)=>(
-                <HBar key={e.nome} label={e.nome} value={e.total} max={maxEsp}
-                  color={`hsl(${200+i*18},70%,55%)`} />
-              ))}</div>
-              <div>{espBreak.slice(4).map((e,i)=>(
-                <HBar key={e.nome} label={e.nome} value={e.total} max={maxEsp}
-                  color={`hsl(${272+i*18},70%,55%)`} />
-              ))}</div>
-            </div>
-          </Card>
+            {/* ── Especialidades ── */}
+            <Card style={{ marginBottom:16 }}>
+              <SH>🩻 Especialidades com Mais Atendimentos</SH>
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16 }}>
+                <div>{espBreak.slice(0,4).map((e,i)=>(
+                  <HBar key={e.nome} label={e.nome} value={e.total} max={maxEsp}
+                    color={`hsl(${200+i*18},70%,55%)`} />
+                ))}</div>
+                <div>{espBreak.slice(4).map((e,i)=>(
+                  <HBar key={e.nome} label={e.nome} value={e.total} max={maxEsp}
+                    color={`hsl(${272+i*18},70%,55%)`} />
+                ))}</div>
+              </div>
+            </Card>
+          </>)}
 
           {/* ── Footer ── */}
           <div style={{ textAlign:'center', color:T.muted, fontSize:11, paddingTop:8, paddingBottom:20 }}>
