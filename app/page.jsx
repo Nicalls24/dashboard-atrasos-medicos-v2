@@ -306,37 +306,32 @@ function AusenciasCard({ rows, cols }) {
 
 // ─── ALTERADO: Unidades com Maior Espera + Pacientes Aguardando ──────────────
 function EsperaHoraCard({ rows, cols, allRawDados, período }) {
-  const items = useMemo(() => {
-    // Usar allRawDados para ter acesso a todos os dados do dia correto
-    // Filtrar pelo maior DATA_AGENDA disponível quando período=HOJE
-    // para contornar problemas de conversão de data
+  const [expanded, setExpanded] = useState(null)
+
+  const byHora = useMemo(() => {
     let fonte = rows
     if (período === 'HOJE' && allRawDados && allRawDados.length > 0) {
-      // Pegar o maior DATA_AGENDA disponível (= dia mais recente na base)
-      const maxAgenda = Math.max(...allRawDados.map(d => {
-        const v = d[cols.data]; return typeof v === 'number' ? v : 0
-      }).filter(v => v > 0))
-      if (maxAgenda > 0) {
-        fonte = allRawDados.filter(d => d[cols.data] === maxAgenda)
-      }
+      const maxAgenda = Math.max(...allRawDados
+        .map(d => { const v = d[cols.data]; return typeof v === 'number' ? v : 0 })
+        .filter(v => v > 0))
+      if (maxAgenda > 0) fonte = allRawDados.filter(d => d[cols.data] === maxAgenda)
     }
-    // Agrupar por hora (HR_REGISTRO_ESPERA) — apenas linhas com pac > 0 e espera > 0
-    const byHora = {}
+
+    const map = {}
     fonte.forEach(d => {
       const hrRV = d[cols.hrRegistroEspera]
       const espV = d[cols.espera]
       const pac  = Number(d[cols.qtPacts]) || 0
+      const unid = String(d[cols.unidade] || '').trim() || 'Sem Unidade'
       if (!hrRV || hrRV === '') return
       if (pac <= 0) return
 
-      // Converter hrRV para hora inteira
       let h = null
       if (typeof hrRV === 'number') h = Math.round(hrRV * 24)
       else if (typeof hrRV === 'string' && hrRV.includes(':')) h = parseInt(hrRV)
       else if (typeof hrRV === 'string') { const n = Number(hrRV); if (!isNaN(n) && n > 0 && n < 1) h = Math.round(n * 24) }
       if (h === null || h < 0 || h > 23) return
 
-      // Converter espera para minutos
       let espMin = 0
       if (typeof espV === 'number') espMin = espV * 24 * 60
       else if (typeof espV === 'string' && espV.includes(':')) {
@@ -344,75 +339,141 @@ function EsperaHoraCard({ rows, cols, allRawDados, período }) {
       } else if (typeof espV === 'string') { const n = Number(espV); if (!isNaN(n)) espMin = n * 24 * 60 }
       if (espMin <= 0) return
 
-      if (!byHora[h]) byHora[h] = { hora: h, esperaMax: 0, esperaTotal: 0, pac: 0, count: 0 }
-      if (espMin > byHora[h].esperaMax) byHora[h].esperaMax = espMin
-      byHora[h].esperaTotal += espMin
-      byHora[h].pac += pac
-      byHora[h].count += 1
-    })
-    return Object.values(byHora).sort((a,b) => a.hora - b.hora)
-  }, [rows, cols])
+      if (!map[h]) map[h] = { hora: h, totalPac: 0, maxEspera: 0, unidades: {} }
+      map[h].totalPac += pac
+      if (espMin > map[h].maxEspera) map[h].maxEspera = espMin
 
-  if (!items.length) return (
+      if (!map[h].unidades[unid]) map[h].unidades[unid] = { esperaMax: 0, pac: 0 }
+      if (espMin > map[h].unidades[unid].esperaMax) map[h].unidades[unid].esperaMax = espMin
+      map[h].unidades[unid].pac += pac
+    })
+
+    return Object.values(map)
+      .map(h => ({
+        ...h,
+        ranking: Object.entries(h.unidades)
+          .map(([nome, v]) => ({ nome, ...v }))
+          .sort((a, b) => b.esperaMax - a.esperaMax)
+          .slice(0, 10)
+      }))
+      .sort((a, b) => a.hora - b.hora)
+  }, [rows, cols, allRawDados, período])
+
+  if (!byHora.length) return (
     <div style={{ color:T.muted, fontSize:13 }}>Sem dados de espera nos filtros atuais.</div>
   )
 
-  const maxEspera = Math.max(...items.map(x => x.esperaMax), 1)
-  const maxPac    = Math.max(...items.map(x => x.pac), 1)
+  const maxEspGlobal = Math.max(...byHora.map(x => x.maxEspera), 1)
 
   return (
     <div>
-      {/* Legenda */}
-      <div style={{ display:'flex', gap:20, marginBottom:16, fontSize:11, color:T.muted }}>
-        <span style={{ display:'flex', alignItems:'center', gap:5 }}>
-          <span style={{ width:10, height:10, borderRadius:2, background:T.danger, display:'inline-block' }}/>
-          Maior espera do horário
-        </span>
-        <span style={{ display:'flex', alignItems:'center', gap:5 }}>
-          <span style={{ width:10, height:10, borderRadius:2, background:T.accent, display:'inline-block' }}/>
-          Pacientes aguardando
-        </span>
-      </div>
+      {byHora.map(h => {
+        const isOpen    = expanded === h.hora
+        const espColor  = h.maxEspera > 120 ? T.danger : h.maxEspera > 60 ? T.warning : T.success
+        const barW      = (h.maxEspera / maxEspGlobal) * 100
 
-      {/* Grid de horas */}
-      <div style={{ display:'grid', gridTemplateColumns:'44px 1fr 1fr 60px 60px', gap:'6px 10px', alignItems:'center' }}>
-        {/* Header */}
-        <div style={{ fontSize:10, color:T.muted, fontWeight:600 }}>HORA</div>
-        <div style={{ fontSize:10, color:T.muted, fontWeight:600 }}>MAIOR ESPERA</div>
-        <div style={{ fontSize:10, color:T.muted, fontWeight:600 }}>PAC. AGUARDANDO</div>
-        <div style={{ fontSize:10, color:T.muted, fontWeight:600, textAlign:'right' }}>ESPERA</div>
-        <div style={{ fontSize:10, color:T.muted, fontWeight:600, textAlign:'right' }}>PAC.</div>
+        return (
+          <div key={h.hora} style={{ marginBottom: 6 }}>
+            {/* Header clicável da hora */}
+            <div onClick={() => setExpanded(isOpen ? null : h.hora)}
+              style={{
+                display:'flex', alignItems:'center', gap:12,
+                background: isOpen ? '#1a2a3f' : T.card,
+                border:`1px solid ${isOpen ? T.accent+'44' : T.border}`,
+                borderRadius: isOpen ? '12px 12px 0 0' : 12,
+                padding:'10px 16px', cursor:'pointer',
+                transition:'all .15s',
+              }}>
+              {/* Hora */}
+              <span style={{ fontSize:13, fontWeight:700, color:T.sub, minWidth:36 }}>
+                {String(h.hora).padStart(2,'0')}h
+              </span>
+              {/* Barra de espera */}
+              <div style={{ flex:1, background:T.border, borderRadius:4, height:8, overflow:'hidden' }}>
+                <div style={{ height:'100%', borderRadius:4, background:espColor,
+                  width:`${barW}%`, transition:'width .5s ease' }} />
+              </div>
+              {/* Maior espera */}
+              <span style={{ fontSize:12, fontWeight:700, color:espColor, minWidth:60, textAlign:'right' }}>
+                {fmtMin(h.maxEspera)}
+              </span>
+              {/* Total pac */}
+              <span style={{ fontSize:12, color:T.accent, fontWeight:700, minWidth:70, textAlign:'right' }}>
+                👥 {h.totalPac.toLocaleString('pt-BR')}
+              </span>
+              {/* Nº unidades */}
+              <span style={{ fontSize:11, color:T.muted, minWidth:80, textAlign:'right' }}>
+                {h.ranking.length} unid.
+              </span>
+              {/* Chevron */}
+              <span style={{ fontSize:12, color:T.muted, transform: isOpen ? 'rotate(180deg)' : 'none',
+                transition:'transform .2s' }}>▾</span>
+            </div>
 
-        {items.map(r => {
-          const pctEsp = (r.esperaMax / maxEspera) * 100
-          const pctPac = (r.pac / maxPac) * 100
-          const espColor = r.esperaMax > 120 ? T.danger : r.esperaMax > 60 ? T.warning : T.success
-          return [
-            // Hora
-            <div key={`h${r.hora}`} style={{ fontSize:12, fontWeight:700, color:T.sub }}>
-              {String(r.hora).padStart(2,'0')}h
-            </div>,
-            // Barra espera
-            <div key={`be${r.hora}`} style={{ background:T.border, borderRadius:4, height:8, overflow:'hidden' }}>
-              <div style={{ height:'100%', borderRadius:4, background:espColor,
-                width:`${pctEsp}%`, transition:'width .5s ease' }} />
-            </div>,
-            // Barra pac
-            <div key={`bp${r.hora}`} style={{ background:T.border, borderRadius:4, height:8, overflow:'hidden' }}>
-              <div style={{ height:'100%', borderRadius:4, background:T.accent,
-                width:`${pctPac}%`, transition:'width .5s ease', opacity:.8 }} />
-            </div>,
-            // Valor espera
-            <div key={`ve${r.hora}`} style={{ fontSize:11, fontWeight:700, color:espColor, textAlign:'right' }}>
-              {fmtMin(r.esperaMax)}
-            </div>,
-            // Valor pac
-            <div key={`vp${r.hora}`} style={{ fontSize:11, fontWeight:600, color:T.accent, textAlign:'right' }}>
-              {r.pac.toLocaleString('pt-BR')}
-            </div>,
-          ]
-        })}
-      </div>
+            {/* Detalhe expansível */}
+            {isOpen && (
+              <div style={{
+                background:'#0d1825',
+                border:`1px solid ${T.accent+'44'}`,
+                borderTop:'none',
+                borderRadius:'0 0 12px 12px',
+                padding:'4px 0 8px',
+              }}>
+                {/* Sub-header */}
+                <div style={{
+                  display:'grid',
+                  gridTemplateColumns:'1fr 140px 80px 80px',
+                  gap:8, padding:'6px 16px 8px',
+                  borderBottom:`1px solid ${T.border}`,
+                }}>
+                  {['UNIDADE','ESPERA','PAC.',''].map((lbl,i) => (
+                    <span key={i} style={{ fontSize:10, color:T.muted, fontWeight:600,
+                      textAlign: i > 0 ? 'right' : 'left' }}>{lbl}</span>
+                  ))}
+                </div>
+                {h.ranking.map((u, i) => {
+                  const uColor = u.esperaMax > 120 ? T.danger : u.esperaMax > 60 ? T.warning : T.success
+                  const maxU   = h.ranking[0]?.esperaMax || 1
+                  const pct    = (u.esperaMax / maxU) * 100
+                  return (
+                    <div key={u.nome} style={{
+                      display:'grid',
+                      gridTemplateColumns:'1fr 140px 80px 30px',
+                      gap:8, padding:'8px 16px',
+                      borderBottom: i < h.ranking.length-1 ? `1px solid ${T.border}22` : 'none',
+                      alignItems:'center',
+                    }}>
+                      {/* Nome */}
+                      <div style={{ fontSize:12, color:T.text, fontWeight:500,
+                        overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                        {u.nome}
+                      </div>
+                      {/* Barra + tempo */}
+                      <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                        <div style={{ flex:1, background:T.border, borderRadius:3, height:5, overflow:'hidden' }}>
+                          <div style={{ height:'100%', borderRadius:3, background:uColor,
+                            width:`${pct}%` }} />
+                        </div>
+                        <span style={{ fontSize:11, fontWeight:700, color:uColor, minWidth:48, textAlign:'right' }}>
+                          {fmtMin(u.esperaMax)}
+                        </span>
+                      </div>
+                      {/* Pac */}
+                      <div style={{ fontSize:12, fontWeight:700, color:T.accent, textAlign:'right' }}>
+                        {u.pac.toLocaleString('pt-BR')}
+                      </div>
+                      {/* Rank */}
+                      <div style={{ fontSize:10, color: i < 3 ? T.danger : T.muted, textAlign:'right' }}>
+                        #{i+1}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )
+      })}
     </div>
   )
 }
