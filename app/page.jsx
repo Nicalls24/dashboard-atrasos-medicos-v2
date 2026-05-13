@@ -491,7 +491,7 @@ function PeriodoSelector({ value, onChange, infoLabel, dateFrom, dateTo, onDateF
 // ─── Supabase config ─────────────────────────────────────
 const SB_URL = 'https://fwdvzsywudpieqlqnxkp.supabase.co'
 const SB_KEY = 'sb_publishable_x32NVeFMKLK9kLJfdunngg_GfxpTo1P'
-const CHUNK_SIZE = 1000   // linhas por chunk
+const CHUNK_SIZE = 4000   // linhas por chunk
 
 const sbFetch = (path, opts = {}) =>
   fetch(`${SB_URL}/rest/v1/${path}`, {
@@ -541,21 +541,28 @@ export default function Home() {
           if (meta[0]?.timestamp) setTimestamp(meta[0].timestamp)
         }
 
-        // 2. Busca todos os chunks ordenados
-        const chunksRes = await sbFetch(
-          'monitor_hospitalar_chunks?select=data_agenda,chunk_idx,rows_json,total_linhas&order=data_agenda.asc,chunk_idx.asc'
-        )
-        if (!chunksRes.ok) throw new Error('Erro ao buscar chunks')
-        const chunks = await chunksRes.json()
+        // 2. Busca todos os chunks com paginação (Supabase retorna até 1000 por request)
+        let allChunks = [], page = 0, pageSize = 500
+        while (true) {
+          const from = page * pageSize
+          const to   = from + pageSize - 1
+          const r = await sbFetch(
+            `monitor_hospitalar_chunks?select=data_agenda,chunk_idx,rows_json&order=data_agenda.asc,chunk_idx.asc`,
+            { headers: { 'Range': `${from}-${to}`, 'Range-Unit': 'items' } }
+          )
+          if (!r.ok) break
+          const batch = await r.json()
+          allChunks = allChunks.concat(batch)
+          if (batch.length < pageSize) break
+          page++
+        }
 
-        if (chunks.length > 0) {
-          // Reconstrói array de linhas
+        if (allChunks.length > 0) {
           let allRows = []
-          for (const c of chunks) {
-            const rows = JSON.parse(c.rows_json)
-            allRows = allRows.concat(rows)
+          for (const c of allChunks) {
+            try { allRows = allRows.concat(JSON.parse(c.rows_json)) } catch(e) {}
           }
-          const diasSet = new Set(chunks.map(c => c.data_agenda))
+          const diasSet = new Set(allChunks.map(c => c.data_agenda))
           setDados(allRows)
           setStorageInfo({ dias: diasSet.size, total: allRows.length })
           setPeriodo('HOJE')
@@ -627,26 +634,37 @@ export default function Home() {
         body: JSON.stringify({ timestamp: ts, updated_at: new Date().toISOString() }),
       })
 
-      // Recarrega tudo do Supabase para ter a visão completa (histórico + novo)
+      // Recarrega tudo do Supabase com paginação
       setStoreStatus('Recarregando dados completos…')
-      const allChunksRes = await sbFetch(
-        'monitor_hospitalar_chunks?select=data_agenda,chunk_idx,rows_json&order=data_agenda.asc,chunk_idx.asc'
-      )
-      if (allChunksRes.ok) {
-        const allChunks = await allChunksRes.json()
+      let reloadChunks = [], rPage = 0, rPageSize = 500
+      while (true) {
+        const from = rPage * rPageSize, to = from + rPageSize - 1
+        const r = await sbFetch(
+          'monitor_hospitalar_chunks?select=data_agenda,chunk_idx,rows_json&order=data_agenda.asc,chunk_idx.asc',
+          { headers: { 'Range': `${from}-${to}`, 'Range-Unit': 'items' } }
+        )
+        if (!r.ok) break
+        const batch = await r.json()
+        reloadChunks = reloadChunks.concat(batch)
+        if (batch.length < rPageSize) break
+        rPage++
+      }
+      if (reloadChunks.length > 0) {
         let allRows = []
-        for (const c of allChunks) allRows = allRows.concat(JSON.parse(c.rows_json))
-        const diasSet = new Set(allChunks.map(c => c.data_agenda))
+        for (const c of reloadChunks) {
+          try { allRows = allRows.concat(JSON.parse(c.rows_json)) } catch(e) {}
+        }
+        const diasSet = new Set(reloadChunks.map(c => c.data_agenda))
         setDados(allRows)
         setStorageInfo({ dias: diasSet.size, total: allRows.length })
       }
 
+      setInitLoading(false)
       setStoreStatus('✓ Salvo no Supabase')
       setTimeout(() => setStoreStatus(''), 3000)
     } catch (e) {
       console.error('Supabase save error:', e)
-      setStoreStatus('Erro ao salvar — dados carregados localmente')
-      setDados(newRows)
+      setStoreStatus('⚠ Erro ao salvar no Supabase — dados visíveis localmente')
     }
     setStoring(false)
   }, [])
@@ -688,9 +706,13 @@ export default function Home() {
 
     setUf('TODOS'); setStatus('TODOS'); setSearch('')
     setPeriodo('HOJE'); setHoraFilt('TODAS'); setDateFrom(''); setDateTo('')
+    // Mostra os dados imediatamente na tela enquanto salva em background
+    setDados(json)
+    setInitLoading(false)
     setLoading(false)
 
-    await saveToSupabase(json, ts)
+    // Salva no Supabase em background (não bloqueia a tela)
+    saveToSupabase(json, ts)
   }
 
   // ── Detecção de colunas ──────────────────────────────
