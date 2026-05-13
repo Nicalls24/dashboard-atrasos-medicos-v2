@@ -296,25 +296,19 @@ function MaiorEsperaCard({ rows, cols, horaFilt }) {
 
     const hrAlvo = horaFilt !== 'TODAS' ? Number(horaFilt) : null
 
-    // Para cada unidade: achar o snapshot correto
-    // Só considera snapshots onde existe ao menos 1 registro com pac > 0
-    // Se há filtro de hora → snapshot exato daquela hora
-    // Se não há filtro    → snapshot mais recente com pac > 0 na base
+    // 1ª passagem: definir qual snapshot usar por unidade (só por hora, sem filtro de pac)
+    // Se há filtro de hora → exatamente aquela hora
+    // Se não há filtro    → snapshot mais recente disponível na base por unidade
     const hrAlvoPorUnid = {}
     rows.forEach(d => {
       const unid  = String(d[cols.unidade]||'').trim() || 'Sem Unidade'
       const hrReg = d._hrReg
-      const pacts = Number(d[cols.qtPacts])||0
       if (hrReg === null) return
       if (hrAlvo !== null) {
-        // filtro de hora ativo: exatamente aquela hora, mas só se tiver pac
-        if (hrReg === hrAlvo && pacts > 0) hrAlvoPorUnid[unid] = hrAlvo
+        if (hrReg === hrAlvo) hrAlvoPorUnid[unid] = hrAlvo
       } else {
-        // sem filtro: snapshot mais recente que tenha pac > 0
-        if (pacts > 0) {
-          if (hrAlvoPorUnid[unid] === undefined || hrReg > hrAlvoPorUnid[unid]) {
-            hrAlvoPorUnid[unid] = hrReg
-          }
+        if (hrAlvoPorUnid[unid] === undefined || hrReg > hrAlvoPorUnid[unid]) {
+          hrAlvoPorUnid[unid] = hrReg
         }
       }
     })
