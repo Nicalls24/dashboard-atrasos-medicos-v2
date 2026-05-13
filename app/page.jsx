@@ -72,7 +72,11 @@ const serialToDateStr = (v) => {
   if (!v && v !== 0) return ''
   let d
   if (typeof v === 'number') {
-    d = new Date(Math.round((v - 25569) * 86400 * 1000))
+    // Excel serial: dias desde 31/12/1899 (epoch = 25569 dias antes de 01/01/1970 UTC)
+    // Mas o Excel conta 1 dia extra por bug do Lotus 1-2-3 (29/02/1900 inexistente)
+    // Para seriais modernos (> 60): offset correto é 25568 em vez de 25569
+    const offsetDays = v > 60 ? 25568 : 25569
+    d = new Date(Math.round((v - offsetDays) * 86400 * 1000))
   } else {
     const s = String(v).trim()
     const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/)
