@@ -286,30 +286,22 @@ function AusenciasCard({ rows, cols }) {
   )
 }
 
-function ImpactoEsperaCard({ rows, cols }) {
+// ─── ALTERADO: Unidades com Maior Espera + Pacientes Aguardando ──────────────
+function MaiorEsperaCard({ rows, cols }) {
   const items = useMemo(() => {
     const m = {}
     rows.forEach(d => {
       const unid   = String(d[cols.unidade]||'').trim() || 'Sem Unidade'
-      const status = String(d[cols.status]||'').trim()
       const espMin = parseEsperaMin(d[cols.espera])
       const pacts  = Number(d[cols.qtPacts])||0
-      if (!m[unid]) m[unid] = { unid, totalEspMin:0, pacts:0, statusMap:{} }
-      m[unid].totalEspMin += espMin
-      m[unid].pacts       += pacts
-      m[unid].statusMap[status] = (m[unid].statusMap[status]||0) + 1
+      if (!m[unid]) m[unid] = { unid, totalEspMin: 0, pacAguardando: 0, registros: 0 }
+      m[unid].totalEspMin   += espMin
+      m[unid].pacAguardando += pacts
+      m[unid].registros     += 1
     })
     return Object.values(m)
-      .filter(x => x.totalEspMin > 0 || x.pacts > 0)
-      .map(x => {
-        const topStatus = Object.entries(x.statusMap)
-          .sort((a,b)=>b[1]-a[1])[0]?.[0] || 'OK'
-        const allOK = Object.keys(x.statusMap).every(s => s === 'OK')
-        const motivo = allOK ? 'Fluxo Médico Normal' : (getStatusCfg(topStatus).label)
-        const motivoColor = allOK ? T.success : getStatusCfg(topStatus).color
-        return { ...x, motivo, motivoColor, topStatus }
-      })
-      .sort((a,b) => b.totalEspMin - a.totalEspMin)
+      .filter(x => x.totalEspMin > 0 || x.pacAguardando > 0)
+      .sort((a, b) => b.totalEspMin - a.totalEspMin)
       .slice(0, 10)
   }, [rows, cols])
 
@@ -318,36 +310,223 @@ function ImpactoEsperaCard({ rows, cols }) {
   )
 
   const maxMin = items[0]?.totalEspMin || 1
+  const maxPac = Math.max(...items.map(x => x.pacAguardando), 1)
 
   return (
     <div>
-      {items.map((r, i) => (
-        <div key={r.unid} style={{ marginBottom:16 }}>
-          <div style={{ display:'flex', justifyContent:'space-between',
-            alignItems:'flex-start', marginBottom:6, gap:8 }}>
-            <div style={{ display:'flex', alignItems:'flex-start', gap:8, minWidth:0 }}>
-              <span style={{ fontSize:11, fontWeight:700, color: i<3?T.danger:T.muted,
-                minWidth:22, flexShrink:0, marginTop:1 }}>#{i+1}</span>
-              <div style={{ minWidth:0 }}>
-                <div style={{ fontSize:13, color:T.text, fontWeight:500,
-                  overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{r.unid}</div>
-                <div style={{ display:'flex', alignItems:'center', gap:6, marginTop:3 }}>
-                  <div style={{ width:7, height:7, borderRadius:'50%', background:r.motivoColor, flexShrink:0 }} />
-                  <span style={{ fontSize:11, color:r.motivoColor, fontWeight:600 }}>{r.motivo}</span>
-                  <span style={{ fontSize:10, color:T.muted }}>· {r.pacts} pacientes</span>
+      {items.map((r, i) => {
+        const barEspPct = (r.totalEspMin / maxMin) * 100
+        const barPacPct = (r.pacAguardando / maxPac) * 100
+        const espColor  = i < 3 ? T.danger : T.warning
+        const pacColor  = i < 3 ? '#FF7A50' : T.accent
+
+        return (
+          <div key={r.unid} style={{ marginBottom: 18 }}>
+            {/* Header linha */}
+            <div style={{ display:'flex', justifyContent:'space-between',
+              alignItems:'flex-start', marginBottom: 6, gap: 8 }}>
+              <div style={{ display:'flex', alignItems:'flex-start', gap: 8, minWidth: 0 }}>
+                <span style={{ fontSize:11, fontWeight:700,
+                  color: i < 3 ? T.danger : T.muted,
+                  minWidth:22, flexShrink:0, marginTop:1 }}>#{i+1}</span>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize:13, color:T.text, fontWeight:500,
+                    overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                    {r.unid}
+                  </div>
+                  <div style={{ display:'flex', alignItems:'center', gap: 10, marginTop: 3 }}>
+                    <span style={{ fontSize:10, color:T.muted }}>
+                      {r.registros} {r.registros === 1 ? 'registro' : 'registros'}
+                    </span>
+                    <span style={{ fontSize:10, color: pacColor, fontWeight:700 }}>
+                      👥 {r.pacAguardando.toLocaleString('pt-BR')} aguardando
+                    </span>
+                  </div>
                 </div>
               </div>
+              <span style={{ fontSize:13, fontWeight:700, color: espColor, flexShrink:0 }}>
+                {fmtMin(r.totalEspMin)}
+              </span>
             </div>
-            <span style={{ fontSize:13, fontWeight:700, color:i<3?T.danger:T.warning,
-              flexShrink:0 }}>{fmtMin(r.totalEspMin)}</span>
+
+            {/* Barra de espera */}
+            <div style={{ marginBottom: 4 }}>
+              <div style={{ background:T.border, borderRadius:6, height:6, overflow:'hidden' }}>
+                <div style={{ height:'100%', borderRadius:6, background: espColor,
+                  width:`${barEspPct}%`, transition:'width .6s ease' }} />
+              </div>
+            </div>
+
+            {/* Barra de pacientes aguardando */}
+            <div style={{ display:'flex', alignItems:'center', gap: 6 }}>
+              <span style={{ fontSize:9, color: T.muted, minWidth: 80 }}>Pac. aguardando</span>
+              <div style={{ flex:1, background:T.border, borderRadius:4, height:4, overflow:'hidden' }}>
+                <div style={{ height:'100%', borderRadius:4, background: pacColor,
+                  width:`${barPacPct}%`, transition:'width .6s ease', opacity:.8 }} />
+              </div>
+              <span style={{ fontSize:10, color: pacColor, fontWeight:600, minWidth:28, textAlign:'right' }}>
+                {r.pacAguardando}
+              </span>
+            </div>
           </div>
-          <div style={{ background:T.border, borderRadius:6, height:6, overflow:'hidden' }}>
-            <div style={{ height:'100%', borderRadius:6,
-              background: i<3 ? T.danger : T.warning,
-              width:`${(r.totalEspMin/maxMin)*100}%`, transition:'width .6s ease' }} />
-          </div>
-        </div>
-      ))}
+        )
+      })}
+    </div>
+  )
+}
+
+// ─── NOVO: Recorrência de Atraso por Unidade ─────────────────────────────────
+function RecorrenciaAtrasoCard({ rows, cols }) {
+  const items = useMemo(() => {
+    const m = {}
+    rows.forEach(d => {
+      const unid   = String(d[cols.unidade]||'').trim() || 'Sem Unidade'
+      const status = String(d[cols.status]||'').trim()
+      const dateS  = d._dateStr || ''
+      const isAtraso = status.toUpperCase().includes('ATRASO')
+      if (!m[unid]) m[unid] = {
+        unid,
+        totalAtrasos: 0,
+        totalRegistros: 0,
+        diasComAtraso: new Set(),
+        atrasoGrave: 0,
+        atrasoCritico: 0,
+        atrasoNormal: 0,
+      }
+      m[unid].totalRegistros += 1
+      if (isAtraso) {
+        m[unid].totalAtrasos += 1
+        if (dateS) m[unid].diasComAtraso.add(dateS)
+        const su = status.toUpperCase()
+        if (su.includes('GRAVE'))    m[unid].atrasoGrave    += 1
+        else if (su.includes('CRÍT') || su.includes('CRIT')) m[unid].atrasoCritico += 1
+        else                          m[unid].atrasoNormal   += 1
+      }
+    })
+
+    return Object.values(m)
+      .filter(x => x.totalAtrasos > 0)
+      .map(x => ({
+        ...x,
+        diasComAtraso: x.diasComAtraso.size,
+        taxaAtraso: x.totalRegistros > 0 ? (x.totalAtrasos / x.totalRegistros) * 100 : 0,
+      }))
+      // Ordenar por dias com atraso desc, depois por total
+      .sort((a, b) => b.diasComAtraso - a.diasComAtraso || b.totalAtrasos - a.totalAtrasos)
+      .slice(0, 10)
+  }, [rows, cols])
+
+  if (!items.length) return (
+    <div style={{ color:T.muted, fontSize:13 }}>Nenhum atraso registrado no período.</div>
+  )
+
+  const maxDias    = items[0]?.diasComAtraso || 1
+  const maxAtrasos = Math.max(...items.map(x => x.totalAtrasos), 1)
+
+  return (
+    <div style={{ overflowX:'auto' }}>
+      <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12.5 }}>
+        <thead>
+          <tr style={{ borderBottom:`1px solid ${T.border}` }}>
+            {['#','Unidade','Dias c/ Atraso','Total Atrasos','Taxa','Composição'].map(h => (
+              <th key={h} style={{ padding:'9px 12px', textAlign:'left', color:T.muted,
+                fontWeight:600, fontSize:10.5, textTransform:'uppercase',
+                letterSpacing:'.06em', whiteSpace:'nowrap' }}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((r, i) => {
+            const diasPct    = (r.diasComAtraso / maxDias) * 100
+            const atrasosPct = (r.totalAtrasos / maxAtrasos) * 100
+            const rowColor   = i < 3 ? T.danger : i < 6 ? T.warning : T.muted
+            // Composição: proporção dos tipos
+            const total = r.atrasoGrave + r.atrasoCritico + r.atrasoNormal || 1
+            const graveW    = (r.atrasoGrave    / total) * 100
+            const criticoW  = (r.atrasoCritico  / total) * 100
+            const normalW   = (r.atrasoNormal   / total) * 100
+
+            return (
+              <tr key={r.unid} className="row-table"
+                style={{ borderBottom:`1px solid ${T.border}22`, transition:'background .15s' }}>
+                <td style={{ padding:'10px 12px', color: rowColor, fontWeight:700, fontSize:12 }}>
+                  #{i+1}
+                </td>
+                <td style={{ padding:'10px 12px', minWidth:180, maxWidth:260 }}>
+                  <div style={{ fontWeight:600, color:T.text, fontSize:12.5,
+                    overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                    {r.unid}
+                  </div>
+                  <div style={{ fontSize:10, color:T.muted, marginTop:2 }}>
+                    {r.totalRegistros} registros totais
+                  </div>
+                </td>
+                {/* Dias com atraso + mini-barra */}
+                <td style={{ padding:'10px 12px', minWidth:130 }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                    <span style={{ fontWeight:800, color: rowColor, fontSize:14, minWidth:20 }}>
+                      {r.diasComAtraso}
+                    </span>
+                    <div style={{ flex:1, background:T.border, borderRadius:4, height:5, overflow:'hidden', minWidth:60 }}>
+                      <div style={{ height:'100%', borderRadius:4, background: rowColor,
+                        width:`${diasPct}%`, transition:'width .6s ease' }} />
+                    </div>
+                  </div>
+                  <div style={{ fontSize:10, color:T.muted, marginTop:2 }}>
+                    {r.diasComAtraso === 1 ? 'dia único' : 'dias distintos'}
+                  </div>
+                </td>
+                {/* Total atrasos */}
+                <td style={{ padding:'10px 12px', minWidth:120 }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                    <span style={{ fontWeight:700, color: rowColor, fontSize:13, minWidth:24 }}>
+                      {r.totalAtrasos}
+                    </span>
+                    <div style={{ flex:1, background:T.border, borderRadius:4, height:5, overflow:'hidden', minWidth:50 }}>
+                      <div style={{ height:'100%', borderRadius:4, background: rowColor, opacity:.7,
+                        width:`${atrasosPct}%`, transition:'width .6s ease' }} />
+                    </div>
+                  </div>
+                </td>
+                {/* Taxa */}
+                <td style={{ padding:'10px 12px' }}>
+                  <span style={{
+                    fontSize:12, fontWeight:700, padding:'3px 9px', borderRadius:20,
+                    background: r.taxaAtraso >= 50 ? T.danger+'22'
+                              : r.taxaAtraso >= 20 ? T.warning+'22' : T.muted+'22',
+                    color: r.taxaAtraso >= 50 ? T.danger
+                         : r.taxaAtraso >= 20 ? T.warning : T.muted,
+                  }}>
+                    {r.taxaAtraso.toFixed(1)}%
+                  </span>
+                </td>
+                {/* Composição de severidade */}
+                <td style={{ padding:'10px 12px', minWidth:140 }}>
+                  <div style={{ display:'flex', height:8, borderRadius:4, overflow:'hidden', gap:1 }}>
+                    {r.atrasoNormal > 0 && (
+                      <div title={`Normal: ${r.atrasoNormal}`}
+                        style={{ width:`${normalW}%`, background: '#F59E0B', borderRadius:'4px 0 0 4px' }} />
+                    )}
+                    {r.atrasoCritico > 0 && (
+                      <div title={`Crítico: ${r.atrasoCritico}`}
+                        style={{ width:`${criticoW}%`, background: '#EF4444' }} />
+                    )}
+                    {r.atrasoGrave > 0 && (
+                      <div title={`Grave: ${r.atrasoGrave}`}
+                        style={{ width:`${graveW}%`, background: '#7C3AED', borderRadius:'0 4px 4px 0' }} />
+                    )}
+                  </div>
+                  <div style={{ display:'flex', gap:8, marginTop:4 }}>
+                    {r.atrasoNormal   > 0 && <span style={{ fontSize:9, color:'#F59E0B' }}>■ {r.atrasoNormal} normal</span>}
+                    {r.atrasoCritico  > 0 && <span style={{ fontSize:9, color:'#EF4444' }}>■ {r.atrasoCritico} crít.</span>}
+                    {r.atrasoGrave    > 0 && <span style={{ fontSize:9, color:'#7C3AED' }}>■ {r.atrasoGrave} grave</span>}
+                  </div>
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
     </div>
   )
 }
@@ -402,7 +581,6 @@ function PeriodoSelector({ value, onChange, infoLabel, dateFrom, dateTo, onDateF
 // ─── Supabase config ──────────────────────────────────────
 const SB_URL = 'https://fwdvzsywudpieqlqnxkp.supabase.co'
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ3ZHZ6c3l3dWRwaWVxbHFueGtwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg1ODcyNzEsImV4cCI6MjA5NDE2MzI3MX0.SkyfE_HVulz_TyQldI6XpENSJAuu6xDgUEDz4vObKYQ'
-const PAGE_SIZE = 10000  // linhas da tabela por página (cada linha tem ~2000 registros)
 
 const sbFetch = (path, opts = {}) => {
   const { headers: extraHeaders, ...restOpts } = opts
@@ -418,7 +596,6 @@ const sbFetch = (path, opts = {}) => {
   })
 }
 
-// Extrai a data (YYYY-MM-DD) de uma linha
 const rowDateStr = (r) => {
   const v = r['DATA_AGENDA'] ?? r[Object.keys(r).find(k => k.includes('DATA')) || ''] ?? ''
   return serialToDateStr(v)
@@ -441,17 +618,12 @@ export default function Home() {
   const [storageInfo, setStorageInfo] = useState({ dias: 0, total: 0 })
   const [initLoading, setInitLoading] = useState(true)
 
-  // ── Carrega dados de hospital_dados ao iniciar ─────────
   useEffect(() => {
     const loadFromSupabase = async () => {
       try {
         setStoreStatus('Carregando dados…')
-
         let allRows = []
         let lastVerifTs = ''
-
-        // Busca TODAS as linhas de uma vez — sem paginação
-        // O Supabase retorna até 1000 linhas por default; usamos range 0-9999 para forçar mais
         const res = await sbFetch(
           `hospital_dados?select=dados,verif_ts&order=id.asc`,
           { headers: { 'Range': '0-9999', 'Range-Unit': 'items' } }
@@ -476,7 +648,6 @@ export default function Home() {
           }
         }
         setStoreStatus(`Processando ${allRows.length} registros…`)
-
         if (allRows.length > 0) {
           if (lastVerifTs) setTimestamp(lastVerifTs)
           const diasSet = new Set(allRows.map(rowDateStr).filter(Boolean))
@@ -486,7 +657,6 @@ export default function Home() {
           setStoreStatus(`☁ ${diasSet.size} dias · ${allRows.length.toLocaleString('pt-BR')} registros`)
           setTimeout(() => setStoreStatus(''), 4000)
         } else {
-          // Tabela vazia — sem erro, só sem dados ainda
           setStoreStatus('')
         }
       } catch (e) {
@@ -495,22 +665,15 @@ export default function Home() {
       }
       setInitLoading(false)
     }
-
     loadFromSupabase()
   }, [])
 
-  // ── Salva no Supabase (só hospital_dados) ────────────
   const saveToSupabase = useCallback(async (newRows, ts) => {
     setStoring(true)
     try {
-      const newDates = [...new Set(newRows.map(rowDateStr).filter(Boolean))]
-      const MAX_ROWS_PER_INSERT = 2000  // linhas por inserção
-
-      // Apaga tudo e reinsere
+      const MAX_ROWS_PER_INSERT = 2000
       setStoreStatus('Limpando dados antigos…')
       await sbFetch('hospital_dados?id=gt.0', { method: 'DELETE' })
-
-      // Agrupa por data
       const byDate = {}
       newRows.forEach(r => {
         const ds = rowDateStr(r)
@@ -518,25 +681,19 @@ export default function Home() {
         if (!byDate[ds]) byDate[ds] = []
         byDate[ds].push(r)
       })
-
       const dates = Object.keys(byDate).sort()
       let savedDays = 0
       for (const date of dates) {
         savedDays++
         const dayRows = byDate[date]
         const chunks = Math.ceil(dayRows.length / MAX_ROWS_PER_INSERT)
-
         for (let ci = 0; ci < chunks; ci++) {
           const slice = dayRows.slice(ci * MAX_ROWS_PER_INSERT, (ci + 1) * MAX_ROWS_PER_INSERT)
           setStoreStatus(`Salvando ${date} parte ${ci+1}/${chunks} (dia ${savedDays}/${dates.length})…`)
           const res = await sbFetch('hospital_dados', {
             method: 'POST',
             headers: { 'Prefer': 'return=minimal' },
-            body: JSON.stringify({
-              verif_ts:       ts,
-              dados:          slice,
-              snapshot_dates: [date],
-            }),
+            body: JSON.stringify({ verif_ts: ts, dados: slice, snapshot_dates: [date] }),
           })
           if (!res.ok) {
             const txt = await res.text()
@@ -546,7 +703,6 @@ export default function Home() {
           }
         }
       }
-
       const diasSet = new Set(dates)
       setStorageInfo({ dias: diasSet.size, total: newRows.length })
       setStoreStatus('✓ Salvo no Supabase')
@@ -558,19 +714,12 @@ export default function Home() {
     setStoring(false)
   }, [])
 
-  // ── Limpar dados ──────────────────────────────────────
   const clearStorage = async () => {
     if (!confirm('Apagar TODOS os dados do Supabase? Isso não pode ser desfeito.')) return
     setStoring(true)
     setStoreStatus('Apagando…')
-    try {
-      await sbFetch('hospital_dados?id=gt.0', { method: 'DELETE' })
-    } catch(e) { console.error(e) }
-    setDados([])
-    setStorageInfo({ dias: 0, total: 0 })
-    setTimestamp('')
-    setStoreStatus('')
-    setStoring(false)
+    try { await sbFetch('hospital_dados?id=gt.0', { method: 'DELETE' }) } catch(e) {}
+    setDados([]); setStorageInfo({ dias:0, total:0 }); setTimestamp(''); setStoreStatus(''); setStoring(false)
   }
 
   const handleUpload = async (e) => {
@@ -588,13 +737,10 @@ export default function Home() {
     const json = XLSX.utils.sheet_to_json(ws, { range:3, defval:'' })
     setUf('TODOS'); setStatus('TODOS'); setSearch('')
     setPeriodo('MES'); setHoraFilt('TODAS'); setDateFrom(''); setDateTo('')
-    setDados(json)
-    setInitLoading(false)
-    setLoading(false)
+    setDados(json); setInitLoading(false); setLoading(false)
     saveToSupabase(json, ts)
   }
 
-  // ── Detecção de colunas ──────────────────────────────
   const cols = useMemo(() => {
     if (!dados.length) return {}
     const k = Object.keys(dados[0])
@@ -619,7 +765,6 @@ export default function Home() {
     }
   }, [dados])
 
-  // ── Pré-processa: dateStr + hora ──────────────────────
   const dadosComData = useMemo(() => {
     if (!dados.length) return []
     return dados.map(d => {
@@ -667,7 +812,6 @@ export default function Home() {
     return r
   }, [dadosPorPeriodo, uf, status, horaFilt, search, cols])
 
-  // ── KPIs ──────────────────────────────────────────────
   const totalRegistros = filtered.length
   const totalUnidades  = new Set(filtered.map(d=>d[cols.unidade]).filter(Boolean)).size
   const totalMedicos   = new Set(filtered.map(d=>String(d[cols.medico]||'').trim()).filter(Boolean)).size
@@ -755,13 +899,10 @@ export default function Home() {
       const ano=max.slice(0,4), anoMin=sorted.find(d=>d.slice(0,4)===ano)||max
       return `Ano ${ano} · ${fmt(anoMin)} → ${fmt(max)}`
     }
-    if (período==='PERIODO' && dateFrom && dateTo) {
-      return `${fmt(dateFrom)} → ${fmt(dateTo)}`
-    }
+    if (período==='PERIODO' && dateFrom && dateTo) return `${fmt(dateFrom)} → ${fmt(dateTo)}`
     return ''
   }, [allDates, período, dateFrom, dateTo])
 
-  // Quantos dados tem no período selecionado (para decidir se mostra "vazio")
   const hasData    = dados.length > 0
   const isInit     = initLoading
   const hasFiltred = filtered.length > 0
@@ -818,14 +959,12 @@ export default function Home() {
               </select>
             </>
           )}
-
           {timestamp && (
             <div style={{ fontSize:10, color:T.muted, textAlign:'right', lineHeight:1.4 }}>
               <div>Verificação ponto</div>
               <div style={{ color:T.sub, fontWeight:600 }}>{timestamp}</div>
             </div>
           )}
-
           <div style={{ fontSize:10, textAlign:'right', lineHeight:1.6, minWidth:120 }}>
             {storageInfo.dias > 0 && !storeStatus && (
               <>
@@ -839,18 +978,14 @@ export default function Home() {
               <div style={{ color: storeStatus.startsWith('☁') || storeStatus.startsWith('✓') ? T.success : T.warning, fontWeight:600 }}>{storeStatus}</div>
             )}
           </div>
-
           {storageInfo.dias > 0 && !storing && (
             <button onClick={clearStorage} title="Apagar todos os dados do Supabase"
               style={{ background:'transparent', border:`1px solid ${T.danger}44`,
                 borderRadius:9, color:T.danger, fontSize:11, padding:'7px 11px',
                 cursor:'pointer', whiteSpace:'nowrap' }}>🗑 Limpar</button>
           )}
-
           <label className="btn-upload" style={{
-            background: storing
-              ? T.border
-              : `linear-gradient(135deg,${T.accent},${T.accentB})`,
+            background: storing ? T.border : `linear-gradient(135deg,${T.accent},${T.accentB})`,
             color:'#000', fontWeight:700, fontSize:13,
             padding:'9px 18px', borderRadius:10, cursor: storing ? 'default' : 'pointer',
             transition:'all .2s', whiteSpace:'nowrap',
@@ -864,7 +999,6 @@ export default function Home() {
 
       <div style={{ padding:'28px 36px' }}>
 
-        {/* ── Loading inicial ── */}
         {isInit && (
           <div style={{ display:'flex', flexDirection:'column', alignItems:'center',
             justifyContent:'center', minHeight:'calc(100vh - 140px)', gap:16 }}>
@@ -878,7 +1012,6 @@ export default function Home() {
           </div>
         )}
 
-        {/* ── Sem dados ── */}
         {!isInit && !hasData && (
           <div style={{ display:'flex', flexDirection:'column', alignItems:'center',
             justifyContent:'center', minHeight:'calc(100vh - 140px)', gap:16 }}>
@@ -903,10 +1036,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* ── Dashboard ── */}
         {!isInit && hasData && (<>
-
-          {/* ── Filtros ── */}
           <div style={{ display:'flex', gap:10, marginBottom:24, flexWrap:'wrap', alignItems:'center' }}>
             <input value={search} onChange={e=>setSearch(e.target.value)}
               placeholder="Buscar unidade, médico, especialidade…"
@@ -932,7 +1062,6 @@ export default function Home() {
             )}
           </div>
 
-          {/* ── Aviso se período sem dados ── */}
           {!hasFiltred && (
             <div style={{ background:T.card, border:`1px solid ${T.warning}44`, borderRadius:14,
               padding:'20px 24px', marginBottom:20, display:'flex', alignItems:'center', gap:14 }}>
@@ -946,7 +1075,6 @@ export default function Home() {
                   <strong style={{color:T.sub}}>{allDates[0]?.split('-').reverse().join('/')}</strong>
                   {' '}até{' '}
                   <strong style={{color:T.sub}}>{allDates[allDates.length-1]?.split('-').reverse().join('/')}</strong>.
-                  Selecione "Mês" ou "Ano" para ver todos os dados.
                 </div>
               </div>
               <button onClick={()=>setPeriodo('MES')} style={{
@@ -1040,10 +1168,23 @@ export default function Home() {
               <AusenciasCard rows={filtered} cols={cols} />
             </Card>
 
-            {/* ── Impacto na Espera ── */}
+            {/* ── ALTERADO: Maior Espera + Pacientes Aguardando ── */}
             <Card style={{ marginBottom:16 }}>
-              <SH>⏳ Motivo do Impacto na Espera — Unidades com Maior Tempo</SH>
-              <ImpactoEsperaCard rows={filtered} cols={cols} />
+              <SH>⏳ Unidades com Maior Tempo de Espera · Pacientes Aguardando</SH>
+              <MaiorEsperaCard rows={filtered} cols={cols} />
+            </Card>
+
+            {/* ── NOVO: Recorrência de Atraso ── */}
+            <Card style={{ marginBottom:16 }}>
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
+                <SH style={{ marginBottom:0 }}>🔁 Unidades que Mais Atrasaram — Recorrência</SH>
+                <div style={{ display:'flex', gap:12, fontSize:10 }}>
+                  <span style={{ color:'#F59E0B' }}>■ Normal 31–45min</span>
+                  <span style={{ color:'#EF4444' }}>■ Crítico 46min–1h30</span>
+                  <span style={{ color:'#7C3AED' }}>■ Grave +1h30</span>
+                </div>
+              </div>
+              <RecorrenciaAtrasoCard rows={filtered} cols={cols} />
             </Card>
 
             {/* ── Especialidades ── */}
@@ -1062,7 +1203,6 @@ export default function Home() {
             </Card>
           </>)}
 
-          {/* ── Footer ── */}
           <div style={{ textAlign:'center', color:T.muted, fontSize:11, paddingTop:8, paddingBottom:20 }}>
             Dashboard Monitoramento Hospitalar · {new Date().toLocaleDateString('pt-BR')}
             {períodoLabel && ` · ${períodoLabel}`}
