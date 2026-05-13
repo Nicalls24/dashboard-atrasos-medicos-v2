@@ -508,38 +508,44 @@ export default function Home() {
   const saveToSupabase = useCallback(async (newRows, ts) => {
     setStoring(true)
     try {
-      const BATCH = 500
       const newDates = [...new Set(newRows.map(rowDateStr).filter(Boolean))]
 
-      // Apaga tudo e reinsere (mais simples e confiável)
+      // Apaga tudo e reinsere
       setStoreStatus('Limpando dados antigos…')
       await sbFetch('hospital_dados?id=gt.0', { method: 'DELETE' })
 
-      // Insere em lotes — usa os nomes EXATOS das colunas do Supabase:
-      // id (serial), uploaded_at (timestamptz), verif_ts (text),
-      // dados (jsonb), snapshot_dates (text[])
-      const totalChunks = Math.ceil(newRows.length / BATCH)
-      for (let ci = 0; ci < totalChunks; ci++) {
-        const slice = newRows.slice(ci * BATCH, (ci + 1) * BATCH)
-        setStoreStatus(`Salvando lote ${ci + 1}/${totalChunks}…`)
+      // Agrupa por data — 1 linha no Supabase por dia
+      const byDate = {}
+      newRows.forEach(r => {
+        const ds = rowDateStr(r)
+        if (!ds) return
+        if (!byDate[ds]) byDate[ds] = []
+        byDate[ds].push(r)
+      })
+
+      const dates = Object.keys(byDate).sort()
+      let saved = 0
+      for (const date of dates) {
+        saved++
+        setStoreStatus(`Salvando ${date} (${saved}/${dates.length})…`)
         const res = await sbFetch('hospital_dados', {
           method: 'POST',
           headers: { 'Prefer': 'return=minimal' },
           body: JSON.stringify({
             verif_ts:       ts,
-            dados:          slice,      // jsonb — array direto (sem stringify)
-            snapshot_dates: newDates,   // text[] — nome real da coluna
+            dados:          byDate[date],  // array do dia inteiro
+            snapshot_dates: [date],
           }),
         })
         if (!res.ok) {
           const txt = await res.text()
-          setStoreStatus(`⚠ Erro lote ${ci+1}: ${txt.slice(0,120)}`)
+          setStoreStatus(`⚠ Erro ${date}: ${txt.slice(0,120)}`)
           setStoring(false)
           return
         }
       }
 
-      const diasSet = new Set(newDates)
+      const diasSet = new Set(dates)
       setStorageInfo({ dias: diasSet.size, total: newRows.length })
       setStoreStatus('✓ Salvo no Supabase')
       setTimeout(() => setStoreStatus(''), 3000)
