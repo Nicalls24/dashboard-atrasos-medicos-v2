@@ -509,12 +509,13 @@ export default function Home() {
     setStoring(true)
     try {
       const newDates = [...new Set(newRows.map(rowDateStr).filter(Boolean))]
+      const MAX_ROWS_PER_INSERT = 2000  // linhas por inserção
 
       // Apaga tudo e reinsere
       setStoreStatus('Limpando dados antigos…')
       await sbFetch('hospital_dados?id=gt.0', { method: 'DELETE' })
 
-      // Agrupa por data — 1 linha no Supabase por dia
+      // Agrupa por data
       const byDate = {}
       newRows.forEach(r => {
         const ds = rowDateStr(r)
@@ -524,24 +525,30 @@ export default function Home() {
       })
 
       const dates = Object.keys(byDate).sort()
-      let saved = 0
+      let savedDays = 0
       for (const date of dates) {
-        saved++
-        setStoreStatus(`Salvando ${date} (${saved}/${dates.length})…`)
-        const res = await sbFetch('hospital_dados', {
-          method: 'POST',
-          headers: { 'Prefer': 'return=minimal' },
-          body: JSON.stringify({
-            verif_ts:       ts,
-            dados:          byDate[date],  // array do dia inteiro
-            snapshot_dates: [date],
-          }),
-        })
-        if (!res.ok) {
-          const txt = await res.text()
-          setStoreStatus(`⚠ Erro ${date}: ${txt.slice(0,120)}`)
-          setStoring(false)
-          return
+        savedDays++
+        const dayRows = byDate[date]
+        const chunks = Math.ceil(dayRows.length / MAX_ROWS_PER_INSERT)
+
+        for (let ci = 0; ci < chunks; ci++) {
+          const slice = dayRows.slice(ci * MAX_ROWS_PER_INSERT, (ci + 1) * MAX_ROWS_PER_INSERT)
+          setStoreStatus(`Salvando ${date} parte ${ci+1}/${chunks} (dia ${savedDays}/${dates.length})…`)
+          const res = await sbFetch('hospital_dados', {
+            method: 'POST',
+            headers: { 'Prefer': 'return=minimal' },
+            body: JSON.stringify({
+              verif_ts:       ts,
+              dados:          slice,
+              snapshot_dates: [date],
+            }),
+          })
+          if (!res.ok) {
+            const txt = await res.text()
+            setStoreStatus(`⚠ Erro ${date} parte ${ci+1}: ${txt.slice(0,120)}`)
+            setStoring(false)
+            return
+          }
         }
       }
 
