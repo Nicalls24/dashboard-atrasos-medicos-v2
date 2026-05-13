@@ -101,38 +101,69 @@ const todayStr = () => {
   const n = new Date()
   return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-${String(n.getDate()).padStart(2,'0')}`
 }
-const buildFilter = (allDates, período, dateFrom, dateTo) => {
-  if (!allDates.length) return () => true
-  const sorted  = [...allDates].sort()
-  const maxDate = sorted[sorted.length - 1]
+// Converte DATA_AGENDA (qualquer formato) para serial Excel numérico
+const toSerial = (v) => {
+  if (v === null || v === undefined || v === '') return null
+  if (typeof v === 'number' && v > 1000) return v  // já é serial Excel
+  const s = String(v).trim()
+  // string numérica "46154"
+  if (/^\d{4,6}$/.test(s)) return Number(s)
+  // ISO "2026-05-13..." → converter para serial
+  const isoM = s.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (isoM) {
+    const utcDays = Math.floor(Date.UTC(+isoM[1], +isoM[2]-1, +isoM[3]) / 86400000)
+    return utcDays + 25568
+  }
+  // "dd/mm/yyyy"
+  const brM = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/)
+  if (brM) {
+    const utcDays = Math.floor(Date.UTC(+brM[3], +brM[2]-1, +brM[1]) / 86400000)
+    return utcDays + 25568
+  }
+  return null
+}
+// Serial de hoje baseado na data local do sistema
+const todaySerial = () => {
+  const n = new Date()
+  return Math.floor(Date.UTC(n.getFullYear(), n.getMonth(), n.getDate()) / 86400000) + 25568
+}
+// Serial de uma data relativa (ontem, X dias atrás)
+const offsetSerial = (serial, days) => serial + days
+const buildFilter = (allSerials, período, dateFrom, dateTo) => {
+  if (!allSerials.length) return () => true
+  const sorted    = [...allSerials].sort((a,b)=>a-b)
+  const maxSerial = sorted[sorted.length - 1]
   if (período === 'HOJE') {
-    const today = todayStr()
-    return (ds) => ds === today
+    const s = todaySerial()
+    return (serial) => serial === s
   }
   if (período === 'ONTEM') {
-    const ref = new Date(maxDate + 'T00:00:00Z')
-    ref.setUTCDate(ref.getUTCDate() - 1)
-    const ontem = `${ref.getUTCFullYear()}-${String(ref.getUTCMonth()+1).padStart(2,'0')}-${String(ref.getUTCDate()).padStart(2,'0')}`
-    return (ds) => ds === ontem
+    const s = todaySerial() - 1
+    return (serial) => serial === s
   }
   if (período === 'SEMANA') {
-    const c = new Date(maxDate + 'T00:00:00Z')
-    c.setUTCDate(c.getUTCDate() - 6)
-    const cut = `${c.getUTCFullYear()}-${String(c.getUTCMonth()+1).padStart(2,'0')}-${String(c.getUTCDate()).padStart(2,'0')}`
-    return (ds) => ds >= cut && ds <= maxDate
+    const cut = maxSerial - 6
+    return (serial) => serial >= cut && serial <= maxSerial
   }
   if (período === 'MES') {
-    const mes = maxDate.slice(0,7)
-    return (ds) => ds.slice(0,7) === mes
+    // mesmo mês do maxSerial
+    const maxDate = new Date((maxSerial - 25568) * 86400000)
+    const y = maxDate.getUTCFullYear(), m = maxDate.getUTCMonth()
+    const firstOfMonth = Math.floor(Date.UTC(y,m,1)/86400000) + 25568
+    const firstOfNext  = Math.floor(Date.UTC(y,m+1,1)/86400000) + 25568
+    return (serial) => serial >= firstOfMonth && serial < firstOfNext
   }
   if (período === 'ANO') {
-    const ano = maxDate.slice(0,4)
-    return (ds) => ds.slice(0,4) === ano
+    const maxDate = new Date((maxSerial - 25568) * 86400000)
+    const y = maxDate.getUTCFullYear()
+    const firstOfYear = Math.floor(Date.UTC(y,0,1)/86400000) + 25568
+    const firstOfNext = Math.floor(Date.UTC(y+1,0,1)/86400000) + 25568
+    return (serial) => serial >= firstOfYear && serial < firstOfNext
   }
   if (período === 'PERIODO') {
-    const from = dateFrom || sorted[0]
-    const to   = dateTo   || maxDate
-    return (ds) => ds >= from && ds <= to
+    const from = dateFrom ? (Math.floor(Date.UTC(...dateFrom.split('-').map((v,i)=>i===1?+v-1:+v))/86400000)+25568) : sorted[0]
+    const to   = dateTo   ? (Math.floor(Date.UTC(...dateTo.split('-').map((v,i)=>i===1?+v-1:+v))/86400000)+25568) : maxSerial
+    return (serial) => serial >= from && serial <= to
   }
   return () => true
 }
@@ -656,6 +687,10 @@ const rowDateStr = (r) => {
   const v = r['DATA_AGENDA'] ?? r[Object.keys(r).find(k => k.includes('DATA')) || ''] ?? ''
   return serialToDateStr(v)
 }
+const rowSerial = (r) => {
+  const v = r['DATA_AGENDA'] ?? r[Object.keys(r).find(k => k.includes('DATA')) || ''] ?? ''
+  return toSerial(v)
+}
 
 // ─── Main ──────────────────────────────────────────────────
 export default function Home() {
@@ -852,18 +887,24 @@ export default function Home() {
           }
         }
       }
-      return { ...d, _dateStr: serialToDateStr(d[cols.data]), _hora: hora, _hrReg: hrReg }
+      const _serial = toSerial(d[cols.data])
+      return { ...d, _dateSerial: _serial, _dateStr: serialToDateStr(d[cols.data]), _hora: hora, _hrReg: hrReg }
     })
   }, [dados, cols])
 
-  const allDates = useMemo(() =>
-    [...new Set(dadosComData.map(d=>d._dateStr).filter(Boolean))].sort(),
+  const allSerials = useMemo(() =>
+    [...new Set(dadosComData.map(d=>d._dateSerial).filter(s=>s!=null))].sort((a,b)=>a-b),
     [dadosComData])
 
-  const periodoFn = useMemo(() => buildFilter(allDates, período, dateFrom, dateTo), [allDates, período, dateFrom, dateTo])
+  // allDates: para exibição (períodoLabel) — converter seriais para strings
+  const allDates = useMemo(() =>
+    allSerials.map(s => serialToDateStr(s)).filter(Boolean).sort(),
+    [allSerials])
+
+  const periodoFn = useMemo(() => buildFilter(allSerials, período, dateFrom, dateTo), [allSerials, período, dateFrom, dateTo])
 
   const dadosPorPeriodo = useMemo(() =>
-    dadosComData.filter(d => periodoFn(d._dateStr)),
+    dadosComData.filter(d => d._dateSerial != null && periodoFn(d._dateSerial)),
     [dadosComData, periodoFn])
 
   const horasDisp = useMemo(() => {
