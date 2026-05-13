@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect, useCallback } from 'react'
 import * as XLSX from 'xlsx'
 
 // ─── Palette ──────────────────────────────────────────────
@@ -488,40 +488,209 @@ function PeriodoSelector({ value, onChange, infoLabel, dateFrom, dateTo, onDateF
 }
 
 
+// ─── Supabase config ─────────────────────────────────────
+const SB_URL = 'https://fwdvzsywudpieqlqnxkp.supabase.co'
+const SB_KEY = 'sb_publishable_x32NVeFMKLK9kLJfdunngg_GfxpTo1P'
+const CHUNK_SIZE = 1000   // linhas por chunk
+
+const sbFetch = (path, opts = {}) =>
+  fetch(`${SB_URL}/rest/v1/${path}`, {
+    headers: {
+      'apikey':        SB_KEY,
+      'Authorization': `Bearer ${SB_KEY}`,
+      'Content-Type':  'application/json',
+      'Prefer':        'return=minimal',
+      ...opts.headers,
+    },
+    ...opts,
+  })
+
+// Extrai a data (YYYY-MM-DD) de uma linha
+const rowDateStr = (r) => {
+  const v = r['DATA_AGENDA'] ?? r[Object.keys(r).find(k => k.includes('DATA')) || ''] ?? ''
+  return serialToDateStr(v)
+}
+
 // ─── Main ─────────────────────────────────────────────────
 export default function Home() {
-  const [dados,    setDados]    = useState([])
-  const [uf,       setUf]       = useState('TODOS')
-  const [status,   setStatus]   = useState('TODOS')
-  const [loading,  setLoading]  = useState(false)
-  const [search,   setSearch]   = useState('')
-  const [período,  setPeriodo]  = useState('TODOS')
-  const [horaFilt, setHoraFilt] = useState('TODAS')
-  const [dateFrom,  setDateFrom]  = useState('')
-  const [dateTo,    setDateTo]    = useState('')
-  const [timestamp, setTimestamp] = useState('')
+  const [dados,       setDados]       = useState([])
+  const [uf,          setUf]          = useState('TODOS')
+  const [status,      setStatus]      = useState('TODOS')
+  const [loading,     setLoading]     = useState(false)
+  const [storing,     setStoring]     = useState(false)
+  const [storeStatus, setStoreStatus] = useState('')   // mensagem de progresso
+  const [search,      setSearch]      = useState('')
+  const [período,     setPeriodo]     = useState('TODOS')
+  const [horaFilt,    setHoraFilt]    = useState('TODAS')
+  const [dateFrom,    setDateFrom]    = useState('')
+  const [dateTo,      setDateTo]      = useState('')
+  const [timestamp,   setTimestamp]   = useState('')
+  const [storageInfo, setStorageInfo] = useState({ dias: 0, total: 0 })
+  const [initLoading, setInitLoading] = useState(true)
+
+  // ── Carrega TODOS os chunks do Supabase ao abrir ───────
+  useEffect(() => {
+    const loadFromSupabase = async () => {
+      try {
+        setStoreStatus('Carregando dados do Supabase…')
+
+        // 1. Busca metadados (timestamp)
+        const metaRes = await sbFetch('monitor_hospitalar_meta?select=timestamp&id=eq.1')
+        if (metaRes.ok) {
+          const meta = await metaRes.json()
+          if (meta[0]?.timestamp) setTimestamp(meta[0].timestamp)
+        }
+
+        // 2. Busca todos os chunks ordenados
+        const chunksRes = await sbFetch(
+          'monitor_hospitalar_chunks?select=data_agenda,chunk_idx,rows_json,total_linhas&order=data_agenda.asc,chunk_idx.asc'
+        )
+        if (!chunksRes.ok) throw new Error('Erro ao buscar chunks')
+        const chunks = await chunksRes.json()
+
+        if (chunks.length > 0) {
+          // Reconstrói array de linhas
+          let allRows = []
+          for (const c of chunks) {
+            const rows = JSON.parse(c.rows_json)
+            allRows = allRows.concat(rows)
+          }
+          const diasSet = new Set(chunks.map(c => c.data_agenda))
+          setDados(allRows)
+          setStorageInfo({ dias: diasSet.size, total: allRows.length })
+          setPeriodo('HOJE')
+          setStoreStatus('')
+        } else {
+          setStoreStatus('')
+        }
+      } catch (e) {
+        console.error('Supabase load error:', e)
+        setStoreStatus('Erro ao carregar — verifique a conexão')
+      }
+      setInitLoading(false)
+    }
+    loadFromSupabase()
+  }, [])
+
+  // ── Salva no Supabase (upsert por data) ───────────────
+  const saveToSupabase = useCallback(async (newRows, ts) => {
+    setStoring(true)
+    try {
+      // Datas dos novos dados
+      const newDates = [...new Set(newRows.map(rowDateStr).filter(Boolean))]
+      setStoreStatus(`Removendo ${newDates.length} dia(s) antigo(s)…`)
+
+      // Apaga chunks das datas que vieram na nova planilha (upsert por data)
+      for (const date of newDates) {
+        await sbFetch(
+          `monitor_hospitalar_chunks?data_agenda=eq.${date}`,
+          { method: 'DELETE' }
+        )
+      }
+
+      // Agrupa novas linhas por data e insere em chunks
+      const byDate = {}
+      newRows.forEach(r => {
+        const ds = rowDateStr(r)
+        if (!ds) return
+        if (!byDate[ds]) byDate[ds] = []
+        byDate[ds].push(r)
+      })
+
+      let inserted = 0
+      const datesSorted = Object.keys(byDate).sort()
+      for (const date of datesSorted) {
+        const rows = byDate[date]
+        const totalChunks = Math.ceil(rows.length / CHUNK_SIZE)
+        setStoreStatus(`Salvando ${date} (${rows.length} linhas)…`)
+        for (let ci = 0; ci < totalChunks; ci++) {
+          const slice = rows.slice(ci * CHUNK_SIZE, (ci + 1) * CHUNK_SIZE)
+          await sbFetch('monitor_hospitalar_chunks', {
+            method: 'POST',
+            headers: { 'Prefer': 'resolution=merge-duplicates,return=minimal' },
+            body: JSON.stringify({
+              data_agenda:  date,
+              chunk_idx:    ci,
+              rows_json:    JSON.stringify(slice),
+              total_linhas: slice.length,
+              uploaded_at:  new Date().toISOString(),
+            }),
+          })
+          inserted += slice.length
+        }
+      }
+
+      // Atualiza metadados (timestamp)
+      await sbFetch('monitor_hospitalar_meta?id=eq.1', {
+        method: 'PATCH',
+        headers: { 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ timestamp: ts, updated_at: new Date().toISOString() }),
+      })
+
+      // Recarrega tudo do Supabase para ter a visão completa (histórico + novo)
+      setStoreStatus('Recarregando dados completos…')
+      const allChunksRes = await sbFetch(
+        'monitor_hospitalar_chunks?select=data_agenda,chunk_idx,rows_json&order=data_agenda.asc,chunk_idx.asc'
+      )
+      if (allChunksRes.ok) {
+        const allChunks = await allChunksRes.json()
+        let allRows = []
+        for (const c of allChunks) allRows = allRows.concat(JSON.parse(c.rows_json))
+        const diasSet = new Set(allChunks.map(c => c.data_agenda))
+        setDados(allRows)
+        setStorageInfo({ dias: diasSet.size, total: allRows.length })
+      }
+
+      setStoreStatus('✓ Salvo no Supabase')
+      setTimeout(() => setStoreStatus(''), 3000)
+    } catch (e) {
+      console.error('Supabase save error:', e)
+      setStoreStatus('Erro ao salvar — dados carregados localmente')
+      setDados(newRows)
+    }
+    setStoring(false)
+  }, [])
+
+  // ── Limpar todos os dados do Supabase ─────────────────
+  const clearStorage = async () => {
+    if (!confirm('Apagar TODOS os dados do Supabase? Isso não pode ser desfeito.')) return
+    setStoring(true)
+    setStoreStatus('Apagando…')
+    try {
+      await sbFetch('monitor_hospitalar_chunks?id=gt.0', { method: 'DELETE' })
+      await sbFetch('monitor_hospitalar_meta?id=eq.1', {
+        method: 'PATCH',
+        body: JSON.stringify({ timestamp: '' }),
+      })
+    } catch(e) { console.error(e) }
+    setDados([])
+    setStorageInfo({ dias: 0, total: 0 })
+    setTimestamp('')
+    setStoreStatus('')
+    setStoring(false)
+  }
 
   const handleUpload = async (e) => {
     const file = e.target.files[0]
     if (!file) return
     setLoading(true)
 
-    // Timestamp do upload — formato dd/mm/yyyy hh:mm:ss
     const now = new Date()
     const pad = n => String(n).padStart(2,'0')
-    setTimestamp(
-      `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()} ` +
-      `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`
-    )
+    const ts = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()} ` +
+               `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`
+    setTimestamp(ts)
 
     const buf  = await file.arrayBuffer()
     const wb   = XLSX.read(buf, { type:'buffer' })
     const ws   = wb.Sheets[wb.SheetNames[0]]
     const json = XLSX.utils.sheet_to_json(ws, { range:3, defval:'' })
-    setDados(json)
+
     setUf('TODOS'); setStatus('TODOS'); setSearch('')
     setPeriodo('HOJE'); setHoraFilt('TODAS'); setDateFrom(''); setDateTo('')
     setLoading(false)
+
+    await saveToSupabase(json, ts)
   }
 
   // ── Detecção de colunas ──────────────────────────────
@@ -702,6 +871,7 @@ export default function Home() {
   }, [allDates, período, dateFrom, dateTo])
 
   const hasData = dados.length > 0
+  const isInit  = initLoading
 
   return (
     <div style={{ background:T.bg, minHeight:'100vh',
@@ -764,30 +934,64 @@ export default function Home() {
             </div>
           )}
 
+          {/* Supabase status */}
+          <div style={{ fontSize:10, textAlign:'right', lineHeight:1.6, minWidth:120 }}>
+            {storageInfo.dias > 0 && !storeStatus && (
+              <>
+                <div style={{ color:T.success, fontWeight:700 }}>
+                  ☁ Supabase · {storageInfo.dias} {storageInfo.dias===1?'dia':'dias'}
+                </div>
+                <div style={{ color:T.muted }}>{storageInfo.total.toLocaleString('pt-BR')} registros</div>
+              </>
+            )}
+            {storeStatus && (
+              <div style={{ color:T.warning, fontWeight:600 }}>{storeStatus}</div>
+            )}
+          </div>
+          {storageInfo.dias > 0 && !storing && (
+            <button onClick={clearStorage} title="Apagar todos os dados do Supabase"
+              style={{ background:'transparent', border:`1px solid ${T.danger}44`,
+                borderRadius:9, color:T.danger, fontSize:11, padding:'7px 11px',
+                cursor:'pointer', whiteSpace:'nowrap' }}>🗑 Limpar</button>
+          )}
           <label className="btn-upload" style={{
-            background:`linear-gradient(135deg,${T.accent},${T.accentB})`,
+            background: storing
+              ? T.border
+              : `linear-gradient(135deg,${T.accent},${T.accentB})`,
             color:'#000', fontWeight:700, fontSize:13,
-            padding:'9px 18px', borderRadius:10, cursor:'pointer', transition:'all .2s',
+            padding:'9px 18px', borderRadius:10, cursor: storing ? 'default' : 'pointer',
+            transition:'all .2s', whiteSpace:'nowrap',
           }}>
-            {loading ? 'Carregando…' : '+ Carregar Planilha'}
-            <input type="file" accept=".xlsx,.xls" style={{ display:'none' }} onChange={handleUpload} />
+            {loading ? 'Lendo…' : storing ? 'Salvando…' : '+ Carregar Planilha'}
+            <input type="file" accept=".xlsx,.xls" style={{ display:'none' }}
+              onChange={handleUpload} disabled={loading || storing} />
           </label>
         </div>
       </div>
 
       <div style={{ padding:'28px 36px' }}>
 
-        {/* ── Empty ── */}
-        {!hasData && (
+        {/* ── Empty / Loading ── */}
+        {isInit && (
+          <div style={{ display:'flex', flexDirection:'column', alignItems:'center',
+            justifyContent:'center', minHeight:'calc(100vh - 140px)', gap:16 }}>
+            <div style={{ fontSize:40 }}>⏳</div>
+            <div style={{ fontSize:18, color:T.muted }}>Conectando ao Supabase…</div>
+          </div>
+        )}
+        {!isInit && !hasData && (
           <div style={{ display:'flex', flexDirection:'column', alignItems:'center',
             justifyContent:'center', minHeight:'calc(100vh - 140px)', gap:16 }}>
             <div style={{ fontSize:56 }}>📋</div>
             <div style={{ fontSize:22, fontWeight:700 }}>Nenhuma planilha carregada</div>
-            <div style={{ color:T.muted, fontSize:14 }}>Clique em "+ Carregar Planilha" para começar</div>
+            <div style={{ color:T.muted, fontSize:14, textAlign:'center' }}>
+              Clique em "+ Carregar Planilha" para começar.<br />
+              Os dados ficam salvos — carregue o acumulado de cada dia e o dashboard acumula tudo.
+            </div>
           </div>
         )}
 
-        {hasData && (<>
+        {!isInit && hasData && (<>
 
           {/* ── Filtros ── */}
           <div style={{ display:'flex', gap:10, marginBottom:24, flexWrap:'wrap', alignItems:'center' }}>
