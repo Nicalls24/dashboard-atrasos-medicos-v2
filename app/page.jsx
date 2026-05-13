@@ -448,28 +448,23 @@ export default function Home() {
         setStoreStatus('Carregando dados…')
 
         let allRows = []
-        let offset = 0
         let lastVerifTs = ''
-        const BATCH_SIZE = 500
 
-        while (true) {
-          const from = offset
-          const to   = offset + BATCH_SIZE - 1
-          const res = await sbFetch(
-            `hospital_dados?select=dados,verif_ts&order=id.asc`,
-            { headers: { 'Range': `${from}-${to}`, 'Range-Unit': 'items' } }
-          )
-          // 200 = all results, 206 = partial (more to come)
-          if (!res.ok) {
-            const txt = await res.text()
-            setStoreStatus(`Erro ${res.status}: ${txt.slice(0,120)}`)
-            setInitLoading(false)
-            return
-          }
-          const batch = await res.json()
-          if (!Array.isArray(batch) || batch.length === 0) break
-
-          for (const item of batch) {
+        // Busca TODAS as linhas de uma vez — sem paginação
+        // O Supabase retorna até 1000 linhas por default; usamos range 0-9999 para forçar mais
+        const res = await sbFetch(
+          `hospital_dados?select=dados,verif_ts&order=id.asc`,
+          { headers: { 'Range': '0-9999', 'Range-Unit': 'items' } }
+        )
+        if (!res.ok) {
+          const txt = await res.text()
+          setStoreStatus(`Erro ${res.status}: ${txt.slice(0,120)}`)
+          setInitLoading(false)
+          return
+        }
+        const allItems = await res.json()
+        if (Array.isArray(allItems)) {
+          for (const item of allItems) {
             try {
               const d = item.dados
               if (!d) continue
@@ -479,12 +474,8 @@ export default function Home() {
             } catch(e) {}
             if (item.verif_ts) lastVerifTs = item.verif_ts
           }
-
-          setStoreStatus(`Carregando… ${allRows.length} registros`)
-          // Se retornou menos que o solicitado, acabou
-          if (batch.length < BATCH_SIZE) break
-          offset += BATCH_SIZE
         }
+        setStoreStatus(`Processando ${allRows.length} registros…`)
 
         if (allRows.length > 0) {
           if (lastVerifTs) setTimestamp(lastVerifTs)
