@@ -309,7 +309,8 @@ function MaiorEsperaCard({ rows, cols, horaFilt }) {
       const hrReg = d._hrReg
       if (hrReg === null) return
       if (hrAlvo !== null) {
-        if (hrReg === hrAlvo) hrAlvoPorUnid[unid] = hrAlvo
+        // Usar == para evitar problema de tipo number vs string
+        if (hrReg == hrAlvo) hrAlvoPorUnid[unid] = Number(hrAlvo)
       } else {
         if (hrAlvoPorUnid[unid] === undefined || hrReg > hrAlvoPorUnid[unid]) {
           hrAlvoPorUnid[unid] = hrReg
@@ -319,13 +320,15 @@ function MaiorEsperaCard({ rows, cols, horaFilt }) {
 
     // Agregar somente os registros do snapshot selecionado
     // Regra: só conta espera se tiver pacientes aguardando (pac > 0) E pelo menos 1 agenda
+    let dbg_nohrReg=0, dbg_noUnid=0, dbg_noMatch=0, dbg_noPac=0, dbg_ok=0
     const m = {}
     rows.forEach(d => {
       const unid  = String(d[cols.unidade]||'').trim() || 'Sem Unidade'
       const hrReg = d._hrReg
-      if (hrReg === null) return
-      if (hrAlvoPorUnid[unid] === undefined) return
-      if (hrReg !== hrAlvoPorUnid[unid]) return
+      if (hrReg === null) { dbg_nohrReg++; return }
+      if (hrAlvoPorUnid[unid] === undefined) { dbg_noUnid++; return }
+      // Usar == em vez de === para evitar problema de tipo (number vs string)
+      if (hrReg != hrAlvoPorUnid[unid]) { dbg_noMatch++; return }
 
       const espMin = parseEsperaMin(d[cols.espera])
       const pacts  = Number(d[cols.qtPacts])||0
@@ -349,7 +352,7 @@ function MaiorEsperaCard({ rows, cols, horaFilt }) {
     const totalRows = rows.length
     const withHrReg = rows.filter(d => d._hrReg !== null).length
     const hrRegsUniq = [...new Set(rows.map(d=>d._hrReg).filter(h=>h!==null))].sort((a,b)=>a-b)
-    console.log('[MaiorEspera] rows:', totalRows, '| com _hrReg:', withHrReg, '| horas:', hrRegsUniq, '| hrAlvo:', hrAlvo, '| hrAlvoPorUnid count:', Object.keys(hrAlvoPorUnid).length, '| result:', result.length)
+    console.log('[MaiorEspera] rows:', totalRows, '| com _hrReg:', withHrReg, '| horas:', hrRegsUniq, '| hrAlvo:', hrAlvo, '| hrAlvoPorUnid count:', Object.keys(hrAlvoPorUnid).length, '| result:', result.length, '| dbg: nohrReg:', dbg_nohrReg, 'noUnid:', dbg_noUnid, 'noMatch:', dbg_noMatch, 'noPac:', dbg_noPac, 'ok:', dbg_ok)
     return result
   }, [rows, cols, horaFilt])
 
