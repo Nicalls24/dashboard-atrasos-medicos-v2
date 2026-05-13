@@ -465,7 +465,7 @@ export default function Home() {
 
         while (true) {
           const res = await sbFetch(
-            `hospital_dados?select=dados,verif_ts&order=eu_ia.asc&limit=${PAGE_SIZE}&offset=${offset}`
+            `hospital_dados?select=dados,verif_ts&order=id.asc&limit=${PAGE_SIZE}&offset=${offset}`
           )
 
           if (!res.ok) {
