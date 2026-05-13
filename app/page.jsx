@@ -1,39 +1,55 @@
 'use client'
 
-// ─────────────────────────────────────────────────────────
-//  SUPABASE — substitua pelas suas credenciais
-// ─────────────────────────────────────────────────────────
-const SUPABASE_URL      = 'https://fwdvzsywudpieqlqnxkp.supabase.co'
-const SUPABASE_ANON_KEY = 'sb_publishable_x32NVeFMKLK9kLJfdunngg_GfxpTo1P'
-
-import { useMemo, useState, useEffect, useCallback } from 'react'
+import { useMemo, useState } from 'react'
 import * as XLSX from 'xlsx'
 
 // ─── Palette ──────────────────────────────────────────────
 const T = {
-  bg:      '#06080F', surface: '#0C1220', card:    '#0F1929',
-  card2:   '#0D1525', border:  '#182840', accent:  '#00C6FF',
-  accentB: '#0072FF', danger:  '#FF4D6A', warning: '#FFB340',
-  success: '#00E5A0', text:    '#EDF2FF', muted:   '#4A6A88',
-  sub:     '#7FA8C4',
+  bg:      '#080C14',
+  surface: '#0E1623',
+  card:    '#111A2B',
+  border:  '#1C2D45',
+  accent:  '#00C6FF',
+  accentB: '#0072FF',
+  danger:  '#FF4D6A',
+  warning: '#FFB340',
+  success: '#00E5A0',
+  ok:      '#00E5A0',
+  text:    '#EDF2FF',
+  muted:   '#5A7799',
+  sub:     '#8FADC8',
+  purple:  '#B060FF',
+  orange:  '#FF7A00',
 }
 
-// ─── Status config ────────────────────────────────────────
-const STATUS_CFG = [
-  { key: 'ATRASO',            bg: '#D97706', label: 'Atraso',         desc: '31 min ‹ atraso ‹ 45 min'    },
-  { key: 'ATRASO CRÍTICO',    bg: '#EA580C', label: 'Atraso Crítico', desc: '46 min › atraso ‹ 1h30'      },
-  { key: 'ATRASO GRAVE',      bg: '#DC2626', label: 'Atraso Grave',   desc: 'Atraso › 1h30'               },
-  { key: 'Falta Médica',      bg: '#1D4ED8', label: 'Médico Faltou',  desc: 'Ausência registrada'         },
-  { key: 'Remarcação Adm',    bg: '#7C3AED', label: 'Remarcação Adm', desc: 'Remarcação administrativa'   },
-  { key: 'Remarcação Médico', bg: '#9333EA', label: 'Remanejamento',  desc: 'Remarcação pelo médico'      },
-  { key: 'Remarcação médico', bg: '#9333EA', label: 'Remanejamento',  desc: 'Remarcação pelo médico'      },
-  { key: 'SEM_PONTO',         bg: '#374151', label: 'Sem Ponto',      desc: 'HR_ENTRADA vazia'            },
-  { key: 'OK',                bg: '#059669', label: 'Motivo (OK)',    desc: 'Atendimento dentro do prazo' },
-]
-const getCfg = (key) =>
-  STATUS_CFG.find(s => s.key === key) || { bg: T.muted, label: key, desc: '' }
+// ─── Status config (igual à planilha de referência) ───────
+const STATUS_CFG = {
+  'OK':                { label: 'OK (Motivo)',          color: '#22C55E', bg: '#14532d' },
+  'ATRASO':            { label: 'Atraso 31–45min',      color: '#F59E0B', bg: '#78350f' },
+  'ATRASO CRÍTICO':    { label: 'Atraso Crítico 46min–1h30', color: '#EF4444', bg: '#7f1d1d' },
+  'ATRASO GRAVE':      { label: 'Atraso Grave >1h30',   color: '#7C3AED', bg: '#3b0764' },
+  'Falta Médica':      { label: 'Médico Faltou',        color: '#1D4ED8', bg: '#1e3a8a' },
+  'ERRO DE ABERTURA':  { label: 'Erro de Abertura',     color: '#0891B2', bg: '#164e63' },
+  'SEM PONTO':         { label: 'Sem Ponto',            color: '#6B7280', bg: '#1f2937' },
+  'CONTINUA/PONTO EM ABERTO': { label: 'Continua/Ponto Aberto', color: '#D97706', bg: '#451a03' },
+  'NÃO COBRAR':        { label: 'Não Cobrar',           color: '#9CA3AF', bg: '#374151' },
+  'Remarcação Adm':    { label: 'Remarcação Adm',       color: '#64748B', bg: '#1e293b' },
+  'Remarcação Médico': { label: 'Remarcação Médico',    color: '#64748B', bg: '#1e293b' },
+  'Remarcação médico': { label: 'Remarcação Médico',    color: '#64748B', bg: '#1e293b' },
+}
+const getStatusCfg = (s = '') => {
+  if (STATUS_CFG[s]) return STATUS_CFG[s]
+  const u = s.toUpperCase()
+  if (u.includes('CRÍTICO')) return STATUS_CFG['ATRASO CRÍTICO']
+  if (u.includes('GRAVE'))   return STATUS_CFG['ATRASO GRAVE']
+  if (u.includes('ATRASO'))  return STATUS_CFG['ATRASO']
+  if (u.includes('FALTA'))   return STATUS_CFG['Falta Médica']
+  if (u.includes('REMARCA')) return STATUS_CFG['Remarcação Adm']
+  return { label: s || 'OK', color: T.success, bg: '#0d2a1f' }
+}
 
-// ─── Helpers ─────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────
+const tdToH   = (v) => { try { return v.total_seconds ? v.total_seconds()/3600 : (typeof v==='number' ? v*24 : 0) } catch { return 0 } }
 const parseHM = (v) => {
   if (!v && v !== 0) return 0
   if (typeof v === 'number') return v * 24
@@ -42,53 +58,83 @@ const parseHM = (v) => {
     const p = s.replace('-','').split(':').map(Number)
     return sign * ((p[0]||0) + (p[1]||0)/60)
   }
-  return isNaN(parseFloat(s)) ? 0 : parseFloat(s)
+  const n = parseFloat(s.replace(',','.'))
+  return isNaN(n) ? 0 : n
 }
 const fmtH = (h) => {
-  const a = Math.abs(h), hh = Math.floor(a), mm = Math.round((a-hh)*60)
-  return `${hh}h${mm > 0 ? ` ${mm}m` : ''}`
+  const abs=Math.abs(h), hh=Math.floor(abs), mm=Math.round((abs-hh)*60)
+  return `${hh}h${mm>0?` ${mm}m`:''}`
+}
+const fmtMin = (m) => {
+  const mm=Math.round(Math.abs(m))
+  if (mm < 60) return `${mm}min`
+  return `${Math.floor(mm/60)}h${mm%60>0?` ${mm%60}m`:''}`
 }
 
-// Serial Excel → 'YYYY-MM-DD' via UTC (sem shift de fuso)
+// ─── Serial Excel → 'YYYY-MM-DD' com UTC para evitar fuso ─
 const serialToDateStr = (v) => {
   if (!v && v !== 0) return ''
   let d
   if (typeof v === 'number') {
-    d = new Date(Math.round((v - 25569) * 86400000))
+    d = new Date(Math.round((v - 25569) * 86400 * 1000))
   } else {
     const s = String(v).trim()
     const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/)
-    d = m ? new Date(Date.UTC(+m[3],+m[2]-1,+m[1])) : new Date(s)
+    if (m) d = new Date(Date.UTC(+m[3], +m[2]-1, +m[1]))
+    else    d = new Date(s)
   }
   if (!d || isNaN(d)) return ''
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`
+  const dd=String(d.getUTCDate()).padStart(2,'0')
+  const mm=String(d.getUTCMonth()+1).padStart(2,'0')
+  return `${d.getUTCFullYear()}-${mm}-${dd}`
 }
 
-const tdToHour = (v) => {
-  if (!v && v !== 0) return -1
-  if (typeof v === 'number') return Math.floor(v * 24)
-  const m = String(v).match(/(\d+):(\d+)/)
-  return m ? parseInt(m[1]) : -1
+// ─── DT_REGISTRO → timestamp legível (formato dd/mm/yyyy) ─
+// A planilha guarda como serial Excel (número), não como string
+const parseDtRegistro = (v, rows) => {
+  // Tenta pegar do campo DT_REGISTRO + HR_REGISTRO_ESPERA ou usa DATA_AGENDA
+  if (!v) return ''
+  if (typeof v === 'number') {
+    // Serial Excel — converte com UTC
+    const d = new Date(Math.round((v - 25569) * 86400 * 1000))
+    if (isNaN(d)) return ''
+    const dd=String(d.getUTCDate()).padStart(2,'0')
+    const mm=String(d.getUTCMonth()+1).padStart(2,'0')
+    const yy=d.getUTCFullYear()
+    return `${dd}/${mm}/${yy}`
+  }
+  const s = String(v).trim()
+  // Se vier como 'mm/dd/yyyy hh:mm:ss' (formato americano errado), corrige
+  const mAm = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}:\d{2}:\d{2})/)
+  if (mAm) {
+    const [,p1,p2,y,time] = mAm
+    // Detecta se está no formato errado: mês > 12 nunca pode ser mês
+    // Se p1 <= 12 e p2 > 12, então p1=mês, p2=dia (formato americano)
+    if (+p2 > 12) return `${p2.padStart(2,'0')}/${p1.padStart(2,'0')}/${y} ${time}`
+    // Se p1 > 12, já é dia no primeiro campo (formato BR correto)
+    return s
+  }
+  return s
 }
 
-// Timestamp local dd/mm/yyyy HH:MM:SS
-const nowBRTimestamp = () => {
-  const d = new Date(), p = (n) => String(n).padStart(2,'0')
-  return `${p(d.getDate())}/${p(d.getMonth()+1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
+// ─── Lê TEMPO_DE_ESPERA: pode vir como fração decimal ou string hh:mm ─
+const parseEsperaMin = (v) => {
+  if (!v && v !== 0) return 0
+  if (typeof v === 'number') return v * 24 * 60  // fração de dia → minutos
+  const s = String(v).trim()
+  if (s.includes(':')) {
+    const [h, m] = s.split(':').map(Number)
+    return (h||0)*60 + (m||0)
+  }
+  return 0
 }
 
-// buildFilter — usa datas reais da base, não "hoje" do sistema
+// ─── buildFilter: período baseado nas datas da base ───────
 const buildFilter = (allDates, período) => {
   if (período === 'TODOS' || !allDates.length) return () => true
   const sorted  = [...allDates].sort()
   const maxDate = sorted[sorted.length - 1]
-
-  // Hoje no UTC do sistema
-  const now = new Date()
-  const todayStr = `${now.getUTCFullYear()}-${String(now.getUTCMonth()+1).padStart(2,'0')}-${String(now.getUTCDate()).padStart(2,'0')}`
-
-  if (período === 'HOJE')   return (ds) => ds === todayStr
-  if (período === 'ONTEM')  return (ds) => ds === maxDate  // mais recente da base
+  if (período === 'ONTEM') return (ds) => ds === maxDate
   if (período === 'SEMANA') {
     const c = new Date(maxDate + 'T00:00:00Z')
     c.setUTCDate(c.getUTCDate() - 6)
@@ -96,163 +142,132 @@ const buildFilter = (allDates, período) => {
     return (ds) => ds >= cut && ds <= maxDate
   }
   if (período === 'MÊS') {
-    const mesAno = maxDate.slice(0,7)
-    return (ds) => ds.slice(0,7) === mesAno
+    const mes = maxDate.slice(0,7)
+    return (ds) => ds.slice(0,7) === mes
   }
   return () => true
 }
 
-// ─── Supabase ─────────────────────────────────────────────
-const SB = {
-  headers: {
-    'apikey':        SUPABASE_ANON_KEY,
-    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-    'Content-Type':  'application/json',
-  },
-
-  // Extrai datas únicas de um array de linhas
-  extractDates(rows, colData) {
-    const dates = new Set()
-    rows.forEach(r => {
-      const ds = serialToDateStr(r[colData])
-      if (ds) dates.add(ds)
-    })
-    return [...dates].sort()
-  },
-
-  // ── UPSERT POR DATAS
-  // 1. Identifica quais datas estão no novo upload
-  // 2. Apaga do Supabase apenas os chunks que cobrem ESSAS datas
-  // 3. Insere os novos chunks com essas datas marcadas
-  async upsert(rows, verifTs, colData) {
-    const snapDates = this.extractDates(rows, colData)
-    if (!snapDates.length) throw new Error('Nenhuma data identificada no arquivo')
-
-    // Busca IDs dos chunks que cobrem qualquer uma dessas datas
-    // snapshot_dates é um array, usamos o operador de sobreposição @>
-    // Para cada data, apaga chunks que a contém
-    for (const date of snapDates) {
-      const delRes = await fetch(
-        `${SUPABASE_URL}/rest/v1/hospital_dados?snapshot_dates=cs.{"${date}"}`,
-        { method: 'DELETE', headers: { ...this.headers, 'Prefer': 'return=minimal' } }
-      )
-      // Ignora erros de "nenhum registro" (204 é ok)
-    }
-
-    // Insere novos chunks (1000 linhas cada)
-    const CHUNK = 1000
-    for (let i = 0; i < rows.length; i += CHUNK) {
-      const body = {
-        verif_ts:       verifTs,
-        snapshot_dates: snapDates,   // todas as datas deste arquivo
-        chunk_idx:      Math.floor(i / CHUNK),
-        dados:          rows.slice(i, i + CHUNK),
-      }
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/hospital_dados`, {
-        method: 'POST',
-        headers: { ...this.headers, 'Prefer': 'return=minimal' },
-        body: JSON.stringify(body),
-      })
-      if (!res.ok) {
-        const txt = await res.text()
-        throw new Error(`Supabase POST ${res.status}: ${txt}`)
-      }
-    }
-
-    return { snapDates, chunks: Math.ceil(rows.length / CHUNK) }
-  },
-
-  // ── LOAD: busca TODOS os chunks de TODAS as datas, ordena e concatena
-  // Deduplica por chave composta para evitar dados repetidos entre uploads sobrepostos
-  async loadAll() {
-    // Busca todos os registros ordenados por uploaded_at + chunk_idx
-    const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/hospital_dados?select=verif_ts,uploaded_at,snapshot_dates,chunk_idx,dados&order=uploaded_at.asc,chunk_idx.asc`,
-      { headers: { ...this.headers, 'Prefer': 'return=representation' } }
-    )
-    if (!res.ok) throw new Error(`Supabase load error: ${res.status}`)
-    const chunks = await res.json()
-    if (!chunks?.length) return null
-
-    // Combina todos os dados de todos os chunks em ordem
-    const allRows = chunks.flatMap(c => c.dados || [])
-
-    // Pega o verif_ts mais recente (último upload)
-    const lastVerifTs = chunks[chunks.length - 1]?.verif_ts || ''
-    const lastUpAt    = chunks[chunks.length - 1]?.uploaded_at || ''
-
-    return { dados: allRows, verif_ts: lastVerifTs, uploaded_at: lastUpAt }
-  },
-}
-
 // ─── Sub-components ───────────────────────────────────────
-function SH({ children, style = {} }) {
+function HBar({ label, value, max, color, unit='', rank, sub }) {
+  const pct = max > 0 ? (value/max)*100 : 0
   return (
-    <div style={{ fontSize:10, fontWeight:700, textTransform:'uppercase',
-      letterSpacing:'.12em', color:T.muted, marginBottom:14, ...style }}>{children}</div>
-  )
-}
-function Card({ children, style = {} }) {
-  return (
-    <div style={{ background:T.card, border:`1px solid ${T.border}`,
-      borderRadius:16, padding:20, ...style }}>{children}</div>
-  )
-}
-function StatCard({ icon, label, value, sub, accent, note }) {
-  return (
-    <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:14,
-      padding:'18px 20px', display:'flex', flexDirection:'column', gap:8,
-      position:'relative', overflow:'hidden' }}>
-      <div style={{ position:'absolute', top:-20, right:-20, width:80, height:80,
-        borderRadius:'50%', background:accent, opacity:.07 }} />
-      <div style={{ display:'flex', alignItems:'center', gap:9 }}>
-        <span style={{ fontSize:18 }}>{icon}</span>
-        <span style={{ fontSize:10.5, color:T.muted, textTransform:'uppercase',
-          letterSpacing:'.09em', fontWeight:700 }}>{label}</span>
+    <div style={{ marginBottom: 13 }}>
+      <div style={{ display:'flex', justifyContent:'space-between', marginBottom:4, gap:8 }}>
+        <div style={{ display:'flex', alignItems:'flex-start', gap:8, minWidth:0 }}>
+          {rank!=null && <span style={{ fontSize:11, fontWeight:700, flexShrink:0, marginTop:1,
+            color: rank<3 ? T.danger : T.muted, minWidth:22 }}>#{rank+1}</span>}
+          <div style={{ minWidth:0 }}>
+            <div style={{ fontSize:13, color:T.text, fontWeight:500,
+              overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{label}</div>
+            {sub && <div style={{ fontSize:10, color:T.muted, marginTop:1 }}>{sub}</div>}
+          </div>
+        </div>
+        <span style={{ fontSize:13, fontWeight:700, color, flexShrink:0 }}>{value}{unit}</span>
       </div>
-      <div style={{ fontSize:34, fontWeight:900, color:T.text, lineHeight:1 }}>{value}</div>
-      {sub && <div style={{ fontSize:11, color:T.sub }}>{sub}</div>}
-      {note && (
-        <div style={{ fontSize:10, color:T.muted, fontStyle:'italic',
-          borderTop:`1px solid ${T.border}`, paddingTop:6, marginTop:2 }}>{note}</div>
-      )}
+      <div style={{ background:T.border, borderRadius:6, height:6, overflow:'hidden' }}>
+        <div style={{ height:'100%', borderRadius:6, background:color,
+          width:`${pct}%`, transition:'width .6s ease' }} />
+      </div>
     </div>
   )
 }
 
-function StatusCards({ breakdown, total }) {
-  const ORDER = ['ATRASO','ATRASO CRÍTICO','ATRASO GRAVE','Falta Médica',
-    'Remarcação Adm','Remarcação Médico','Remarcação médico','SEM_PONTO','OK']
-  const sorted = [...breakdown].sort((a,b) => {
-    const ia = ORDER.indexOf(a.key), ib = ORDER.indexOf(b.key)
-    return (ia<0?99:ia) - (ib<0?99:ib)
-  })
+function StatCard({ icon, label, value, sub, accent }) {
   return (
-    <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:12 }}>
-      {sorted.map(s => {
-        const cfg = getCfg(s.key)
-        const pct = total > 0 ? ((s.count/total)*100) : 0
+    <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:16,
+      padding:'20px 22px', display:'flex', flexDirection:'column', gap:8,
+      position:'relative', overflow:'hidden' }}>
+      <div style={{ position:'absolute', top:-20, right:-20, width:80, height:80,
+        borderRadius:'50%', background:accent, opacity:.07 }} />
+      <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+        <span style={{ fontSize:20 }}>{icon}</span>
+        <span style={{ fontSize:11, color:T.muted, textTransform:'uppercase',
+          letterSpacing:'.08em', fontWeight:600 }}>{label}</span>
+      </div>
+      <div style={{ fontSize:36, fontWeight:800, color:T.text,
+        lineHeight:1, letterSpacing:'-1px' }}>{value}</div>
+      {sub && <div style={{ fontSize:11, color:T.sub }}>{sub}</div>}
+    </div>
+  )
+}
+
+function SH({ children }) {
+  return <h2 style={{ fontSize:13, fontWeight:700, textTransform:'uppercase',
+    letterSpacing:'.12em', color:T.sub, marginBottom:16, marginTop:0 }}>{children}</h2>
+}
+
+function Card({ children, style={} }) {
+  return <div style={{ background:T.card, border:`1px solid ${T.border}`,
+    borderRadius:16, padding:22, ...style }}>{children}</div>
+}
+
+function Badge({ label, color }) {
+  return <span style={{ fontSize:11, fontWeight:700, padding:'3px 9px',
+    borderRadius:20, background:color+'22', color, whiteSpace:'nowrap' }}>{label}</span>
+}
+
+function Donut({ segments, size=120 }) {
+  const r=46, cx=60, cy=60, circ=2*Math.PI*r
+  const total = segments.reduce((a,s)=>a+s.value,0)||1
+  let cum=0
+  return (
+    <svg width={size} height={size} viewBox="0 0 120 120">
+      <circle cx={cx} cy={cy} r={r} fill="none" stroke={T.border} strokeWidth="14" />
+      {segments.map((seg,i)=>{
+        const dash=(seg.value/total)*circ, off=circ-cum*circ/total
+        cum+=seg.value
+        return <circle key={i} cx={cx} cy={cy} r={r} fill="none"
+          stroke={seg.color} strokeWidth="14"
+          strokeDasharray={`${dash} ${circ-dash}`}
+          strokeDashoffset={off} strokeLinecap="round" transform="rotate(-90 60 60)" />
+      })}
+      <text x="60" y="56" textAnchor="middle" fontSize="16" fontWeight="800" fill={T.text}>
+        {total.toLocaleString('pt-BR')}</text>
+      <text x="60" y="70" textAnchor="middle" fontSize="8" fill={T.muted}>registros</text>
+    </svg>
+  )
+}
+
+// ─── Gráfico moderno de STATUS (tipo planilha referência) ─
+function StatusDashboard({ breakdown, total }) {
+  const order = ['OK','ATRASO','ATRASO CRÍTICO','ATRASO GRAVE','Falta Médica',
+                 'Remarcação Adm','Remarcação Médico','Remarcação médico','SEM PONTO']
+  const items = order
+    .map(k => ({ k, cfg: getStatusCfg(k), val: breakdown[k]||0 }))
+    .concat(
+      Object.keys(breakdown)
+        .filter(k => !order.includes(k))
+        .map(k => ({ k, cfg: getStatusCfg(k), val: breakdown[k] }))
+    )
+    .filter(x => x.val > 0)
+
+  return (
+    <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(180px,1fr))', gap:12 }}>
+      {items.map(({k, cfg, val}) => {
+        const pct = total > 0 ? ((val/total)*100).toFixed(1) : '0'
+        const barW = total > 0 ? (val/total)*100 : 0
         return (
-          <div key={s.key} style={{
-            background:T.card2, border:`1px solid ${cfg.bg}44`,
-            borderLeft:`4px solid ${cfg.bg}`, borderRadius:12, padding:'16px 18px',
-            display:'flex', flexDirection:'column', gap:8,
+          <div key={k} style={{
+            background: cfg.bg, border:`1px solid ${cfg.color}40`,
+            borderRadius:14, padding:'16px 18px',
+            position:'relative', overflow:'hidden',
           }}>
-            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-              <div style={{ display:'flex', alignItems:'center', gap:7 }}>
-                <div style={{ width:9, height:9, borderRadius:3, background:cfg.bg, flexShrink:0 }} />
-                <span style={{ fontSize:10, fontWeight:800, color:cfg.bg,
-                  textTransform:'uppercase', letterSpacing:'.08em' }}>{cfg.label}</span>
-              </div>
-              <span style={{ fontSize:10, fontWeight:700, color:T.muted,
-                background:T.border, borderRadius:99, padding:'2px 8px' }}>
-                {pct.toFixed(1)}%
-              </span>
+            {/* Barra de progresso na base */}
+            <div style={{ position:'absolute', bottom:0, left:0, height:3,
+              width:`${barW}%`, background:cfg.color, borderRadius:'0 0 0 14px',
+              transition:'width .6s ease' }} />
+            <div style={{ fontSize:10, fontWeight:700, color:cfg.color,
+              textTransform:'uppercase', letterSpacing:'.08em', marginBottom:10 }}>
+              {cfg.label}
             </div>
-            <div style={{ fontSize:32, fontWeight:900, color:cfg.bg, lineHeight:1 }}>
-              {s.count.toLocaleString('pt-BR')}
+            <div style={{ fontSize:36, fontWeight:900, color:cfg.color,
+              lineHeight:1, letterSpacing:'-1px' }}>
+              {val.toLocaleString('pt-BR')}
             </div>
-            <div style={{ fontSize:10.5, color:T.sub }}>{cfg.desc}</div>
+            <div style={{ fontSize:11, color:cfg.color+'99', marginTop:6, fontWeight:600 }}>
+              {pct}% do total
+            </div>
           </div>
         )
       })}
@@ -260,48 +275,70 @@ function StatusCards({ breakdown, total }) {
   )
 }
 
-function MedTable({ rows, tipo }) {
-  if (!rows.length) return (
-    <div style={{ color:T.muted, fontSize:13, padding:'12px 0' }}>
-      Nenhum médico {tipo === 'atraso' ? 'em atraso' : 'sem ponto'}.
-    </div>
+// ─── Gráfico Sem Ponto / Ausências ────────────────────────
+function AusenciasCard({ rows, cols }) {
+  const items = useMemo(() => {
+    const m = {}
+    rows.forEach(d => {
+      const entrada = d[cols.hrEntrada]
+      const isVazio = !entrada || entrada === '' || entrada === 'NaT'
+      if (!isVazio) return
+
+      const med    = String(d[cols.medico]||'').trim() || 'Sem Nome'
+      const status = String(d[cols.status]||'').trim()
+      const motivo = String(d[cols.motivoCancelamento]||'').trim()
+      const unid   = String(d[cols.unidade]||'').trim()
+      const pacts  = Number(d[cols.qtPacts])||0
+
+      // Classificação
+      let tipo
+      if (motivo) tipo = motivo
+      else        tipo = 'Sem Ponto Registrado'
+
+      const key = `${med}||${unid}`
+      if (!m[key]) m[key] = { med, unid, status, tipo, pacts: 0, agendas: 0 }
+      m[key].pacts   += pacts
+      m[key].agendas += 1
+    })
+    return Object.values(m).sort((a,b) => b.pacts - a.pacts).slice(0, 15)
+  }, [rows, cols])
+
+  if (!items.length) return (
+    <div style={{ color:T.muted, fontSize:13 }}>Nenhuma ausência identificada.</div>
   )
+
   return (
-    <div style={{ overflowY:'auto', maxHeight:360 }}>
-      <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12 }}>
-        <thead style={{ position:'sticky', top:0, background:T.card }}>
-          <tr>
-            {['#','Médico','Unidade','Status','Agendas','Pacientes'].map(h => (
-              <th key={h} style={{ padding:'8px 10px', textAlign:'left',
-                borderBottom:`1px solid ${T.border}`, color:T.muted, fontWeight:700,
-                fontSize:10, textTransform:'uppercase', letterSpacing:'.07em',
-                whiteSpace:'nowrap' }}>{h}</th>
+    <div style={{ overflowX:'auto' }}>
+      <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12.5 }}>
+        <thead>
+          <tr style={{ borderBottom:`1px solid ${T.border}` }}>
+            {['#','Médico','Unidade','Status','Motivo/Cancelamento','Agendas','Pac. Impactados'].map(h=>(
+              <th key={h} style={{ padding:'9px 12px', textAlign:'left', color:T.muted,
+                fontWeight:600, fontSize:10.5, textTransform:'uppercase',
+                letterSpacing:'.06em', whiteSpace:'nowrap' }}>{h}</th>
             ))}
           </tr>
         </thead>
         <tbody>
-          {rows.slice(0,40).map((m,i) => {
-            const cfg = getCfg(m.status)
+          {items.map((r, i) => {
+            const cfg = getStatusCfg(r.status)
             return (
-              <tr key={`${m.nome}${i}`}
-                style={{ borderBottom:`1px solid ${T.border}`, transition:'background .1s' }}
-                onMouseEnter={e => e.currentTarget.style.background='#0e1b2c'}
-                onMouseLeave={e => e.currentTarget.style.background='transparent'}>
-                <td style={{ padding:'8px 10px', color:T.muted, fontSize:10 }}>{i+1}</td>
-                <td style={{ padding:'8px 10px', fontWeight:600, color:T.text,
-                  maxWidth:180, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{m.nome}</td>
-                <td style={{ padding:'8px 10px', color:T.sub, fontSize:11,
-                  maxWidth:150, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{m.unid}</td>
-                <td style={{ padding:'8px 10px' }}>
-                  <span style={{ fontSize:10, fontWeight:700, padding:'2px 9px',
-                    borderRadius:99, background:cfg.bg+'22', color:cfg.bg, whiteSpace:'nowrap' }}>
-                    {cfg.label}
-                  </span>
+              <tr key={i} className="row-table"
+                style={{ borderBottom:`1px solid ${T.border}`, transition:'background .15s' }}>
+                <td style={{ padding:'10px 12px', color:T.muted, fontSize:11 }}>{i+1}</td>
+                <td style={{ padding:'10px 12px', fontWeight:600, color:T.text, whiteSpace:'nowrap' }}>{r.med}</td>
+                <td style={{ padding:'10px 12px', color:T.sub, maxWidth:200,
+                  overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{r.unid}</td>
+                <td style={{ padding:'10px 12px' }}>
+                  <span style={{ fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:20,
+                    background:cfg.color+'22', color:cfg.color }}>{r.status}</span>
                 </td>
-                <td style={{ padding:'8px 10px', color:T.accent, fontWeight:700,
-                  textAlign:'center', fontSize:13 }}>{m.agendas}</td>
-                <td style={{ padding:'8px 10px', color:T.warning, fontWeight:700,
-                  textAlign:'center', fontSize:13 }}>{m.pacts}</td>
+                <td style={{ padding:'10px 12px', color:T.sub, maxWidth:220,
+                  overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                  {r.tipo || '—'}
+                </td>
+                <td style={{ padding:'10px 12px', color:T.accent, fontWeight:700, textAlign:'center' }}>{r.agendas}</td>
+                <td style={{ padding:'10px 12px', color:T.warning, fontWeight:700, textAlign:'center' }}>{r.pacts}</td>
               </tr>
             )
           })}
@@ -311,20 +348,89 @@ function MedTable({ rows, tipo }) {
   )
 }
 
+// ─── Gráfico Motivo do Impacto na Espera ─────────────────
+function ImpactoEsperaCard({ rows, cols }) {
+  const items = useMemo(() => {
+    const m = {}
+    rows.forEach(d => {
+      const unid   = String(d[cols.unidade]||'').trim() || 'Sem Unidade'
+      const status = String(d[cols.status]||'').trim()
+      const espMin = parseEsperaMin(d[cols.espera])
+      const pacts  = Number(d[cols.qtPacts])||0
+      if (!m[unid]) m[unid] = { unid, totalEspMin:0, pacts:0, statusMap:{} }
+      m[unid].totalEspMin += espMin
+      m[unid].pacts       += pacts
+      m[unid].statusMap[status] = (m[unid].statusMap[status]||0) + 1
+    })
+    return Object.values(m)
+      .filter(x => x.totalEspMin > 0 || x.pacts > 0)
+      .map(x => {
+        // Motivo predominante
+        const topStatus = Object.entries(x.statusMap)
+          .sort((a,b)=>b[1]-a[1])[0]?.[0] || 'OK'
+        const allOK = Object.keys(x.statusMap).every(s => s === 'OK')
+        const motivo = allOK ? 'Fluxo Médico Normal' : (getStatusCfg(topStatus).label)
+        const motivoColor = allOK ? T.success : getStatusCfg(topStatus).color
+        return { ...x, motivo, motivoColor, topStatus }
+      })
+      .sort((a,b) => b.totalEspMin - a.totalEspMin)
+      .slice(0, 10)
+  }, [rows, cols])
+
+  if (!items.length) return (
+    <div style={{ color:T.muted, fontSize:13 }}>Sem dados de espera nos filtros atuais.</div>
+  )
+
+  const maxMin = items[0]?.totalEspMin || 1
+
+  return (
+    <div>
+      {items.map((r, i) => (
+        <div key={r.unid} style={{ marginBottom:16 }}>
+          <div style={{ display:'flex', justifyContent:'space-between',
+            alignItems:'flex-start', marginBottom:6, gap:8 }}>
+            <div style={{ display:'flex', alignItems:'flex-start', gap:8, minWidth:0 }}>
+              <span style={{ fontSize:11, fontWeight:700, color: i<3?T.danger:T.muted,
+                minWidth:22, flexShrink:0, marginTop:1 }}>#{i+1}</span>
+              <div style={{ minWidth:0 }}>
+                <div style={{ fontSize:13, color:T.text, fontWeight:500,
+                  overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{r.unid}</div>
+                <div style={{ display:'flex', alignItems:'center', gap:6, marginTop:3 }}>
+                  <div style={{ width:7, height:7, borderRadius:'50%', background:r.motivoColor, flexShrink:0 }} />
+                  <span style={{ fontSize:11, color:r.motivoColor, fontWeight:600 }}>{r.motivo}</span>
+                  <span style={{ fontSize:10, color:T.muted }}>· {r.pacts} pacientes</span>
+                </div>
+              </div>
+            </div>
+            <span style={{ fontSize:13, fontWeight:700, color:i<3?T.danger:T.warning,
+              flexShrink:0 }}>{fmtMin(r.totalEspMin)}</span>
+          </div>
+          <div style={{ background:T.border, borderRadius:6, height:6, overflow:'hidden' }}>
+            <div style={{ height:'100%', borderRadius:6,
+              background: i<3 ? T.danger : T.warning,
+              width:`${(r.totalEspMin/maxMin)*100}%`, transition:'width .6s ease' }} />
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ─── Período selector ─────────────────────────────────────
 const PERIODOS = [
   { key:'TODOS',  label:'Todos'  },
-  { key:'HOJE',   label:'Hoje'   },
   { key:'ONTEM',  label:'Ontem'  },
   { key:'SEMANA', label:'Semana' },
   { key:'MÊS',    label:'Mês'    },
 ]
+
 function PeriodoSelector({ value, onChange, infoLabel }) {
   return (
     <div style={{ display:'flex', alignItems:'center', gap:8 }}>
       <div style={{ display:'flex', gap:3, background:T.card,
         border:`1px solid ${T.border}`, borderRadius:10, padding:4 }}>
-        {PERIODOS.map(p => (
-          <button key={p.key} onClick={() => onChange(p.key)} style={{
+        {PERIODOS.map(p=>(
+          <button key={p.key} onClick={()=>onChange(p.key)} style={{
             padding:'6px 13px', borderRadius:7, border:'none',
             fontSize:12, fontWeight:700, cursor:'pointer', transition:'all .15s',
             background: value===p.key
@@ -333,233 +439,208 @@ function PeriodoSelector({ value, onChange, infoLabel }) {
           }}>{p.label}</button>
         ))}
       </div>
-      {infoLabel && <span style={{ fontSize:11, color:T.muted, whiteSpace:'nowrap' }}>{infoLabel}</span>}
+      {infoLabel && <span style={{ fontSize:11, color:T.muted }}>{infoLabel}</span>}
     </div>
   )
 }
 
 // ─── Main ─────────────────────────────────────────────────
 export default function Home() {
-  const [dados,      setDados]      = useState([])
-  const [verifTs,    setVerifTs]    = useState('')
-  const [período,    setPeriodo]    = useState('TODOS')
-  const [horaFilt,   setHoraFilt]   = useState('TODAS')
-  const [uf,         setUf]         = useState('TODOS')
-  const [statusFilt, setStatusFilt] = useState('TODOS')
-  const [search,     setSearch]     = useState('')
-  const [loading,    setLoading]    = useState(false)
-  const [syncing,    setSyncing]    = useState(false)
-  const [sbStatus,   setSbStatus]   = useState('idle') // idle|ok|error
-  const [sbInfo,     setSbInfo]     = useState('')      // info text
+  const [dados,    setDados]    = useState([])
+  const [uf,       setUf]       = useState('TODOS')
+  const [status,   setStatus]   = useState('TODOS')
+  const [loading,  setLoading]  = useState(false)
+  const [search,   setSearch]   = useState('')
+  const [período,  setPeriodo]  = useState('TODOS')
+  const [horaFilt, setHoraFilt] = useState('TODAS')
+  const [timestamp, setTimestamp] = useState('')
 
-  // ── Carrega do Supabase na montagem
-  useEffect(() => {
-    const load = async () => {
-      setSyncing(true)
-      try {
-        const rec = await SB.loadAll()
-        if (rec?.dados?.length) {
-          setDados(rec.dados)
-          setVerifTs(rec.verif_ts || '')
-          setSbStatus('ok')
-          setSbInfo(`${rec.dados.length.toLocaleString('pt-BR')} linhas`)
-        }
-      } catch(e) {
-        console.error('Supabase load:', e)
-        setSbStatus('error')
-        setSbInfo(String(e.message).slice(0,60))
-      } finally { setSyncing(false) }
-    }
-    load()
-  }, [])
+  const handleUpload = async (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+    setLoading(true)
 
-  // ── Detecção de colunas
+    // Timestamp do upload — formato dd/mm/yyyy hh:mm:ss
+    const now = new Date()
+    const pad = n => String(n).padStart(2,'0')
+    setTimestamp(
+      `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()} ` +
+      `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`
+    )
+
+    const buf  = await file.arrayBuffer()
+    const wb   = XLSX.read(buf, { type:'buffer' })
+    const ws   = wb.Sheets[wb.SheetNames[0]]
+    const json = XLSX.utils.sheet_to_json(ws, { range:3, defval:'' })
+    setDados(json)
+    setUf('TODOS'); setStatus('TODOS'); setSearch('')
+    setPeriodo('TODOS'); setHoraFilt('TODAS')
+    setLoading(false)
+  }
+
+  // ── Detecção de colunas ──────────────────────────────
   const cols = useMemo(() => {
     if (!dados.length) return {}
     const k = Object.keys(dados[0])
     const find = (...terms) =>
-      k.find(c => terms.some(t => c.trim() === t)) ||
+      k.find(c => terms.some(t => c === t)) ||
       k.find(c => terms.some(t => c.toLowerCase().includes(t.toLowerCase()))) || ''
     return {
-      unidade:   find('NM_LOCAL','UNIDADE'),
-      medico:    find('NM_MEDICO'),
-      esp:       find('DS_ESPECIALIDADE','ESPECIALIDADE'),
-      status:    find('STATUS'),
-      espera:    find('TEMPO_DE_ESPERA'),
-      qtPacts:   find('QT_PACIENTES_AGUARDANDO',' QT_PACIENTES_AGUARDANDO'),
-      uf:        find('UF'),
-      data:      find('DATA_AGENDA','DATA'),
-      hrInicio:  find('HR_INICIO'),
-      hrEntrada: find('HR_ENTRADA'),
+      unidade:            find('NM_LOCAL','UNIDADE'),
+      medico:             find('NM_MEDICO','MEDICO'),
+      esp:                find('DS_ESPECIALIDADE','ESPECIALIDADE'),
+      status:             find('STATUS'),
+      espera:             find('TEMPO_DE_ESPERA'),
+      qtPacts:            find('QT_PACIENTES_AGUARDANDO','QTS PACTS'),
+      uf:                 find('UF'),
+      cidade:             find('CIDADE'),
+      data:               find('DATA_AGENDA','DATA'),
+      hrInicio:           find('HR_INICIO'),
+      hrEntrada:          find('HR_ENTRADA'),
+      motivoCancelamento: find('MOTIVO_CANCELAMENTO'),
+      dtRegistro:         find('DT_REGISTRO'),
+      hrRegistroEspera:   find('HR_REGISTRO_ESPERA'),
     }
   }, [dados])
 
-  // ── Upload
-  const handleUpload = useCallback(async (e) => {
-    const file = e.target.files[0]
-    if (!file) return
-    setLoading(true)
-    const ts = nowBRTimestamp()   // timestamp do momento do clique
-    setVerifTs(ts)
+  // ── Pré-processa: dateStr + hora ─────────────────────
+  const dadosComData = useMemo(() => {
+    if (!dados.length) return []
+    return dados.map(d => {
+      // Hora de HR_INICIO
+      const hrV = d[cols.hrInicio]
+      let hora = 99
+      if (typeof hrV === 'number') hora = Math.floor(hrV * 24)
+      else if (hrV && typeof hrV === 'string') {
+        const m = hrV.match(/(\d{1,2}):/)
+        if (m) hora = parseInt(m[1])
+      }
+      return { ...d, _dateStr: serialToDateStr(d[cols.data]), _hora: hora }
+    })
+  }, [dados, cols])
 
-    try {
-      const buf  = await file.arrayBuffer()
-      const wb   = XLSX.read(buf, { type:'buffer' })
-      const ws   = wb.Sheets[wb.SheetNames[0]]
-      const json = XLSX.utils.sheet_to_json(ws, { range:3, defval:'' })
-
-      // Identifica a coluna de data antes do upsert
-      const colData = (() => {
-        if (!json.length) return ''
-        const k = Object.keys(json[0])
-        return k.find(c => c.trim() === 'DATA_AGENDA') ||
-               k.find(c => c.toLowerCase().includes('data')) || ''
-      })()
-
-      // Upsert no Supabase: apaga só as datas do novo arquivo, insere novo
-      setSyncing(true)
-      setSbInfo('Atualizando Supabase…')
-      try {
-        const { snapDates, chunks } = await SB.upsert(json, ts, colData)
-
-        // Recarrega tudo do Supabase para ter a visão completa acumulada
-        const rec = await SB.loadAll()
-        if (rec?.dados?.length) {
-          setDados(rec.dados)
-          setSbStatus('ok')
-          setSbInfo(`${rec.dados.length.toLocaleString('pt-BR')} linhas · datas: ${snapDates.map(d=>d.split('-').reverse().join('/')).join(', ')}`)
-        }
-      } catch(e) {
-        console.error('Supabase upsert:', e)
-        // Mesmo com erro no Supabase, mostra os dados locais
-        setDados(json)
-        setSbStatus('error')
-        setSbInfo(`Erro: ${String(e.message).slice(0,50)}`)
-      } finally { setSyncing(false) }
-
-      setPeriodo('TODOS'); setHoraFilt('TODAS')
-      setUf('TODOS'); setStatusFilt('TODOS'); setSearch('')
-
-    } finally { setLoading(false) }
-  }, [])
-
-  // ── Enriquece linhas
-  const dadosRich = useMemo(() => dados.map(d => {
-    const hrEnt    = d[cols.hrEntrada]
-    const semPonto = !hrEnt || String(hrEnt).trim() === '' || String(hrEnt).trim() === 'NaT'
-    return {
-      ...d,
-      _dateStr:    serialToDateStr(d[cols.data]),
-      _hora:       tdToHour(d[cols.hrInicio]),
-      _semPonto:   semPonto,
-      _statusNorm: semPonto ? 'SEM_PONTO' : String(d[cols.status]||'').trim(),
-    }
-  }), [dados, cols])
-
+  // ── Datas únicas + filtro período ───────────────────
   const allDates = useMemo(() =>
-    [...new Set(dadosRich.map(d => d._dateStr).filter(Boolean))].sort(), [dadosRich])
-
-  const horasDisp = useMemo(() =>
-    [...new Set(dadosRich.filter(d => d._hora >= 0).map(d => d._hora))].sort((a,b)=>a-b),
-    [dadosRich])
+    [...new Set(dadosComData.map(d=>d._dateStr).filter(Boolean))].sort(),
+    [dadosComData])
 
   const periodoFn = useMemo(() => buildFilter(allDates, período), [allDates, período])
 
-  const períodoLabel = useMemo(() => {
-    if (!allDates.length) return ''
-    const sorted  = [...allDates].sort()
-    const max = sorted[sorted.length-1], min = sorted[0]
-    const fmt = s => s.split('-').reverse().join('/')
-    const now = new Date()
-    const todayStr = `${now.getUTCFullYear()}-${String(now.getUTCMonth()+1).padStart(2,'0')}-${String(now.getUTCDate()).padStart(2,'0')}`
+  const dadosPorPeriodo = useMemo(() =>
+    dadosComData.filter(d => periodoFn(d._dateStr)),
+    [dadosComData, periodoFn])
 
-    if (período === 'TODOS')  return min===max ? fmt(max) : `${fmt(min)} → ${fmt(max)}`
-    if (período === 'HOJE')   return `Hoje · ${fmt(todayStr)}`
-    if (período === 'ONTEM')  return `Ontem · ${fmt(max)}`
-    if (período === 'SEMANA') {
-      const c = new Date(max+'T00:00:00Z'); c.setUTCDate(c.getUTCDate()-6)
-      const cs = `${c.getUTCFullYear()}-${String(c.getUTCMonth()+1).padStart(2,'0')}-${String(c.getUTCDate()).padStart(2,'0')}`
-      const sm = sorted.find(d=>d>=cs)||cs
-      return `${fmt(sm)} → ${fmt(max)}`
+  // ── Horas disponíveis ────────────────────────────────
+  const horasDisp = useMemo(() => {
+    const hs = [...new Set(dadosPorPeriodo.map(d=>d._hora).filter(h=>h>=0&&h<=23))].sort((a,b)=>a-b)
+    return hs
+  }, [dadosPorPeriodo])
+
+  // ── Filtros UF / status / busca / hora ───────────────
+  const ufs = useMemo(() =>
+    [...new Set(dadosPorPeriodo.map(d=>String(d[cols.uf]||'').trim()).filter(Boolean))].sort(),
+    [dadosPorPeriodo, cols])
+  const statuses = useMemo(() =>
+    [...new Set(dadosPorPeriodo.map(d=>String(d[cols.status]||'').trim()).filter(Boolean))].sort(),
+    [dadosPorPeriodo, cols])
+
+  const filtered = useMemo(() => {
+    let r = dadosPorPeriodo
+    if (uf !== 'TODOS')       r = r.filter(d => String(d[cols.uf]||'').trim() === uf)
+    if (status !== 'TODOS')   r = r.filter(d => String(d[cols.status]||'').trim() === status)
+    if (horaFilt !== 'TODAS') r = r.filter(d => d._hora === Number(horaFilt))
+    if (search)               r = r.filter(d =>
+      [d[cols.unidade], d[cols.medico], d[cols.esp], d[cols.cidade]]
+        .some(v => String(v||'').toLowerCase().includes(search.toLowerCase())))
+    return r
+  }, [dadosPorPeriodo, uf, status, horaFilt, search, cols])
+
+  // ── KPIs ─────────────────────────────────────────────
+  const totalRegistros = filtered.length
+  const totalUnidades  = new Set(filtered.map(d=>d[cols.unidade]).filter(Boolean)).size
+  const totalMedicos   = new Set(filtered.map(d=>String(d[cols.medico]||'').trim()).filter(Boolean)).size
+  const emAtraso       = filtered.filter(d=>String(d[cols.status]||'').toUpperCase().includes('ATRASO')).length
+  const taxaAtraso     = totalRegistros>0 ? ((emAtraso/totalRegistros)*100).toFixed(1) : 0
+  const totalEsperaMin = filtered.reduce((a,d)=>a+parseEsperaMin(d[cols.espera]),0)
+  const mediaEsperaMin = totalRegistros>0 ? totalEsperaMin/totalRegistros : 0
+  const totalPacAguard = filtered.reduce((a,d)=>a+(Number(d[cols.qtPacts])||0),0)
+  const semPontoCount  = filtered.filter(d => {
+    const e = d[cols.hrEntrada]
+    return !e || e === '' || e === 'NaT'
+  }).length
+
+  // ── Status breakdown ─────────────────────────────────
+  const statusBreakdown = useMemo(() => {
+    const m = {}
+    filtered.forEach(d => { const s=String(d[cols.status]||'OK').trim(); m[s]=(m[s]||0)+1 })
+    return m
+  }, [filtered, cols])
+
+  // ── Top unidades por atraso ───────────────────────────
+  const topUnidadesAtraso = useMemo(() => {
+    const m = {}
+    filtered.filter(d=>String(d[cols.status]||'').toUpperCase().includes('ATRASO'))
+      .forEach(d=>{ const u=d[cols.unidade]||'Sem Unidade'; m[u]=(m[u]||0)+1 })
+    return Object.entries(m).map(([nome,total])=>({nome,total}))
+      .sort((a,b)=>b.total-a.total).slice(0,8)
+  }, [filtered, cols])
+
+  // ── Top médicos por espera ────────────────────────────
+  const topMedicos = useMemo(() => {
+    const m = {}
+    filtered.forEach(d => {
+      const med   = String(d[cols.medico]||'').trim(); if(!med) return
+      const espM  = parseEsperaMin(d[cols.espera])
+      const dateS = d._dateStr||''; const unid=String(d[cols.unidade]||'').trim()
+      if(!m[med]) m[med]={ med, totalEspMin:0, agendasSet:new Set(), pacts:0 }
+      m[med].totalEspMin += espM
+      m[med].agendasSet.add(`${dateS}||${unid}`)
+      m[med].pacts += Number(d[cols.qtPacts])||0
+    })
+    return Object.values(m).filter(x=>x.totalEspMin>0)
+      .map(x=>({ med:x.med, totalMin:parseFloat(x.totalEspMin.toFixed(0)),
+        agendas:x.agendasSet.size, pacts:x.pacts }))
+      .sort((a,b)=>b.totalMin-a.totalMin).slice(0,10)
+  }, [filtered, cols])
+
+  // ── Especialidades ─────────────────────────────────────
+  const espBreak = useMemo(() => {
+    const m = {}
+    filtered.forEach(d=>{ const e=d[cols.esp]||'Outro'; m[e]=(m[e]||0)+1 })
+    return Object.entries(m).map(([nome,total])=>({nome,total}))
+      .sort((a,b)=>b.total-a.total).slice(0,8)
+  }, [filtered, cols])
+  const maxEsp = espBreak[0]?.total||1
+
+  // ── UF breakdown ──────────────────────────────────────
+  const ufBreak = useMemo(() => {
+    const m = {}
+    filtered.forEach(d=>{ const u=String(d[cols.uf]||'?').trim(); m[u]=(m[u]||0)+1 })
+    return Object.entries(m).map(([nome,total])=>({nome,total}))
+      .sort((a,b)=>b.total-a.total).slice(0,8)
+  }, [filtered, cols])
+  const maxUF = ufBreak[0]?.total||1
+
+  // ── Label período ─────────────────────────────────────
+  const períodoLabel = useMemo(() => {
+    if (!allDates.length||período==='TODOS') return ''
+    const sorted=[...allDates].sort(), max=sorted[sorted.length-1], min=sorted[0]
+    const fmt=s=>s.split('-').reverse().join('/')
+    if (período==='ONTEM') return `Ontem · ${fmt(max)}`
+    if (período==='SEMANA') {
+      const c=new Date(max+'T00:00:00Z'); c.setUTCDate(c.getUTCDate()-6)
+      const cut=`${c.getUTCFullYear()}-${String(c.getUTCMonth()+1).padStart(2,'0')}-${String(c.getUTCDate()).padStart(2,'0')}`
+      const semMin=sorted.find(d=>d>=cut)||cut
+      return `${fmt(semMin)} → ${fmt(max)}`
     }
-    if (período === 'MÊS') {
-      const ma = max.slice(0,7), sm = sorted.find(d=>d.slice(0,7)===ma)||max
-      const [y,m] = max.split('-')
-      const nome = new Date(+y,+m-1).toLocaleString('pt-BR',{month:'long'})
-      return `${nome.charAt(0).toUpperCase()+nome.slice(1)} · ${fmt(sm)} → ${fmt(max)}`
+    if (período==='MÊS') {
+      const mes=max.slice(0,7), mesMin=sorted.find(d=>d.slice(0,7)===mes)||max
+      const [y,m]=max.split('-')
+      const nome=new Date(+y,+m-1).toLocaleString('pt-BR',{month:'long'})
+      return `${nome.charAt(0).toUpperCase()+nome.slice(1)} · ${fmt(mesMin)} → ${fmt(max)}`
     }
     return ''
   }, [allDates, período])
-
-  const filtered = useMemo(() => {
-    let r = dadosRich.filter(d => periodoFn(d._dateStr))
-    if (horaFilt !== 'TODAS')   r = r.filter(d => d._hora === Number(horaFilt))
-    if (uf !== 'TODOS')         r = r.filter(d => String(d[cols.uf]||'').trim() === uf)
-    if (statusFilt !== 'TODOS') r = r.filter(d => d._statusNorm === statusFilt)
-    if (search) r = r.filter(d =>
-      [d[cols.unidade],d[cols.medico],d[cols.esp]]
-        .some(v => String(v||'').toLowerCase().includes(search.toLowerCase())))
-    return r
-  }, [dadosRich, periodoFn, horaFilt, uf, statusFilt, search, cols])
-
-  const ufs = useMemo(() =>
-    [...new Set(filtered.map(d=>String(d[cols.uf]||'').trim()).filter(Boolean))].sort(),
-    [filtered,cols])
-  const statuses = useMemo(() =>
-    [...new Set(dadosRich.filter(d=>periodoFn(d._dateStr)).map(d=>d._statusNorm).filter(Boolean))].sort(),
-    [dadosRich,periodoFn])
-
-  // KPIs
-  const totalReg   = filtered.length
-  const totalUnid  = new Set(filtered.map(d=>d[cols.unidade]).filter(Boolean)).size
-  const totalMed   = new Set(filtered.map(d=>String(d[cols.medico]||'').trim()).filter(Boolean)).size
-  const emAtraso   = filtered.filter(d=>['ATRASO','ATRASO CRÍTICO','ATRASO GRAVE'].includes(d._statusNorm)).length
-  const semPontoN  = filtered.filter(d=>d._semPonto).length
-  const taxaAtras  = totalReg > 0 ? ((emAtraso/totalReg)*100).toFixed(1) : 0
-  const totalPacs  = filtered.reduce((a,d)=>a+(Number(d[cols.qtPacts])||0),0)
-  const mediaEsp   = totalReg > 0 ? filtered.reduce((a,d)=>a+parseHM(d[cols.espera]),0)/totalReg : 0
-
-  const statusBreak = useMemo(() => {
-    const m = {}
-    filtered.forEach(d => { const s=d._statusNorm||'OK'; m[s]=(m[s]||0)+1 })
-    return Object.entries(m).map(([key,count]) => ({ key, count }))
-  }, [filtered])
-
-  const medicosAtraso = useMemo(() => {
-    const m = {}
-    filtered.filter(d=>['ATRASO','ATRASO CRÍTICO','ATRASO GRAVE'].includes(d._statusNorm))
-      .forEach(d => {
-        const nome=String(d[cols.medico]||'').trim(), unid=String(d[cols.unidade]||'').trim()
-        const status=d._statusNorm
-        if (!nome) return
-        if (!m[nome]) m[nome]={nome,unid,status,pacts:0,agendasSet:new Set()}
-        m[nome].agendasSet.add(`${d._dateStr}||${unid}`)
-        m[nome].pacts+=Number(d[cols.qtPacts])||0
-        const ord=['ATRASO GRAVE','ATRASO CRÍTICO','ATRASO']
-        if(ord.indexOf(status)<ord.indexOf(m[nome].status)) m[nome].status=status
-      })
-    return Object.values(m).map(x=>({...x,agendas:x.agendasSet.size}))
-      .sort((a,b)=>{const o=['ATRASO GRAVE','ATRASO CRÍTICO','ATRASO'];return o.indexOf(a.status)-o.indexOf(b.status)||b.pacts-a.pacts})
-  }, [filtered,cols])
-
-  const medicosSemPonto = useMemo(() => {
-    const m = {}
-    filtered.filter(d=>d._semPonto).forEach(d => {
-      const nome=String(d[cols.medico]||'').trim(), unid=String(d[cols.unidade]||'').trim()
-      if (!nome) return
-      if (!m[nome]) m[nome]={nome,unid,status:d._statusNorm,pacts:0,agendasSet:new Set()}
-      m[nome].agendasSet.add(`${d._dateStr}||${unid}`)
-      m[nome].pacts+=Number(d[cols.qtPacts])||0
-    })
-    return Object.values(m).map(x=>({...x,agendas:x.agendasSet.size})).sort((a,b)=>b.pacts-a.pacts)
-  }, [filtered,cols])
-
-  const topUnidades = useMemo(() => {
-    const m = {}
-    filtered.filter(d=>['ATRASO','ATRASO CRÍTICO','ATRASO GRAVE'].includes(d._statusNorm))
-      .forEach(d=>{const u=d[cols.unidade]||'Sem Unidade';m[u]=(m[u]||0)+1})
-    return Object.entries(m).map(([nome,total])=>({nome,total})).sort((a,b)=>b.total-a.total).slice(0,10)
-  }, [filtered,cols])
 
   const hasData = dados.length > 0
 
@@ -567,194 +648,219 @@ export default function Home() {
     <div style={{ background:T.bg, minHeight:'100vh',
       fontFamily:"'DM Sans','Segoe UI',sans-serif", color:T.text }}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700;800;900&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700;800&display=swap');
         *{box-sizing:border-box;margin:0;padding:0}
-        ::-webkit-scrollbar{width:5px;background:${T.bg}}
+        ::-webkit-scrollbar{width:6px;background:${T.bg}}
         ::-webkit-scrollbar-thumb{background:${T.border};border-radius:3px}
         select option{background:${T.surface};color:${T.text}}
-        .ubtn:hover{opacity:.9;transform:translateY(-1px)}
+        .btn-upload:hover{opacity:.9;transform:translateY(-1px)}
+        .row-table:hover{background:#162033!important}
         input::placeholder{color:${T.muted}}
+        select{appearance:auto}
       `}</style>
 
       {/* ── Topbar ── */}
-      <div style={{ background:T.surface, borderBottom:`1px solid ${T.border}`,
-        padding:'0 36px', height:62, display:'flex', alignItems:'center',
-        justifyContent:'space-between', position:'sticky', top:0, zIndex:100 }}>
-        <div style={{ display:'flex', alignItems:'center', gap:12 }}>
-          <div style={{ width:32, height:32, borderRadius:8, fontSize:16,
+      <div style={{
+        background:T.surface, borderBottom:`1px solid ${T.border}`,
+        padding:'0 36px', display:'flex', alignItems:'center',
+        justifyContent:'space-between', height:64,
+        position:'sticky', top:0, zIndex:100,
+      }}>
+        <div style={{ display:'flex', alignItems:'center', gap:14 }}>
+          <div style={{
+            width:32, height:32, borderRadius:8, fontSize:16,
             background:`linear-gradient(135deg,${T.accent},${T.accentB})`,
-            display:'flex', alignItems:'center', justifyContent:'center' }}>🏥</div>
+            display:'flex', alignItems:'center', justifyContent:'center',
+          }}>🏥</div>
           <div>
-            <div style={{ fontSize:14, fontWeight:700 }}>Monitor Hospitalar</div>
-            <div style={{ fontSize:11, color:T.muted, display:'flex', alignItems:'center', gap:8 }}>
-              <span>Atrasos Médicos · Operacional</span>
-              {verifTs && <span style={{ color:T.accent }}>· Atualizado: {verifTs}</span>}
-              {syncing  && <span style={{ color:T.warning }}>· Sincronizando…</span>}
-              {!syncing && sbStatus==='ok'    && <span style={{ color:T.success }}>· ☁ Supabase ✓{sbInfo ? ` (${sbInfo})` : ''}</span>}
-              {!syncing && sbStatus==='error' && <span style={{ color:T.danger  }}>· ☁ Erro{sbInfo ? `: ${sbInfo}` : ''}</span>}
-            </div>
+            <div style={{ fontSize:15, fontWeight:700 }}>Monitor Hospitalar</div>
+            <div style={{ fontSize:11, color:T.muted }}>Atrasos Médicos · Operacional</div>
           </div>
         </div>
 
         <div style={{ display:'flex', alignItems:'center', gap:10, flexWrap:'wrap' }}>
           {hasData && (
-            <PeriodoSelector value={período} onChange={setPeriodo}
-              infoLabel={`${totalReg.toLocaleString('pt-BR')} reg. · ${períodoLabel}`} />
+            <>
+              <PeriodoSelector value={período} onChange={p=>{setPeriodo(p);setHoraFilt('TODAS')}}
+                infoLabel={`${totalRegistros.toLocaleString('pt-BR')} reg.${períodoLabel ? ' · '+períodoLabel : ''}`} />
+
+              {/* Filtro de hora */}
+              <select value={horaFilt} onChange={e=>setHoraFilt(e.target.value)} style={{
+                background:T.card, border:`1px solid ${T.border}`, borderRadius:9,
+                color:T.text, fontSize:12, padding:'7px 11px', outline:'none', cursor:'pointer' }}>
+                <option value="TODAS">Todas as horas</option>
+                {horasDisp.map(h=>(
+                  <option key={h} value={h}>{String(h).padStart(2,'0')}h</option>
+                ))}
+              </select>
+            </>
           )}
-          <label className="ubtn" style={{
+
+          {timestamp && (
+            <div style={{ fontSize:10, color:T.muted, textAlign:'right', lineHeight:1.4 }}>
+              <div>Verificação ponto</div>
+              <div style={{ color:T.sub, fontWeight:600 }}>{timestamp}</div>
+            </div>
+          )}
+
+          <label className="btn-upload" style={{
             background:`linear-gradient(135deg,${T.accent},${T.accentB})`,
             color:'#000', fontWeight:700, fontSize:13,
-            padding:'8px 18px', borderRadius:9, cursor:'pointer', transition:'all .2s' }}>
-            {loading ? 'Lendo…' : syncing ? 'Salvando…' : '+ Carregar Planilha'}
+            padding:'9px 18px', borderRadius:10, cursor:'pointer', transition:'all .2s',
+          }}>
+            {loading ? 'Carregando…' : '+ Carregar Planilha'}
             <input type="file" accept=".xlsx,.xls" style={{ display:'none' }} onChange={handleUpload} />
           </label>
         </div>
       </div>
 
-      <div style={{ padding:'24px 36px' }}>
-        {!hasData && syncing && (
-          <div style={{ minHeight:'calc(100vh - 130px)', display:'flex', flexDirection:'column',
-            alignItems:'center', justifyContent:'center', gap:14 }}>
-            <div style={{ fontSize:48 }}>⏳</div>
-            <div style={{ fontSize:18, fontWeight:700, color:T.warning }}>Carregando dados do Supabase…</div>
-          </div>
-        )}
-        {!hasData && !syncing && (
-          <div style={{ minHeight:'calc(100vh - 130px)', display:'flex', flexDirection:'column',
-            alignItems:'center', justifyContent:'center', gap:14 }}>
-            <div style={{ fontSize:52 }}>📋</div>
-            <div style={{ fontSize:20, fontWeight:700 }}>Nenhuma planilha carregada</div>
-            <div style={{ color:T.muted, fontSize:13 }}>Clique em "+ Carregar Planilha" para começar</div>
+      <div style={{ padding:'28px 36px' }}>
+
+        {/* ── Empty ── */}
+        {!hasData && (
+          <div style={{ display:'flex', flexDirection:'column', alignItems:'center',
+            justifyContent:'center', minHeight:'calc(100vh - 140px)', gap:16 }}>
+            <div style={{ fontSize:56 }}>📋</div>
+            <div style={{ fontSize:22, fontWeight:700 }}>Nenhuma planilha carregada</div>
+            <div style={{ color:T.muted, fontSize:14 }}>Clique em "+ Carregar Planilha" para começar</div>
           </div>
         )}
 
         {hasData && (<>
-          {/* Filtros */}
-          <div style={{ display:'flex', gap:10, marginBottom:20, flexWrap:'wrap', alignItems:'center' }}>
+
+          {/* ── Filtros ── */}
+          <div style={{ display:'flex', gap:10, marginBottom:24, flexWrap:'wrap', alignItems:'center' }}>
             <input value={search} onChange={e=>setSearch(e.target.value)}
               placeholder="Buscar unidade, médico, especialidade…"
-              style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:9,
-                color:T.text, fontSize:13, padding:'8px 13px', outline:'none', width:270 }} />
-
-            <select value={horaFilt} onChange={e=>setHoraFilt(e.target.value)} style={{
-              background:T.card, border:`1px solid ${T.accent}55`, borderRadius:9,
-              color:T.accent, fontSize:13, fontWeight:700, padding:'8px 12px',
-              outline:'none', cursor:'pointer' }}>
-              <option value="TODAS">⏰ Todas as horas</option>
-              {horasDisp.map(h=><option key={h} value={h}>{String(h).padStart(2,'0')}h</option>)}
-            </select>
-
+              style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:10,
+                color:T.text, fontSize:13, padding:'9px 14px', outline:'none', width:280 }} />
             <select value={uf} onChange={e=>setUf(e.target.value)} style={{
-              background:T.card, border:`1px solid ${T.border}`, borderRadius:9,
-              color:T.text, fontSize:13, padding:'8px 12px', outline:'none', cursor:'pointer' }}>
+              background:T.card, border:`1px solid ${T.border}`, borderRadius:10,
+              color:T.text, fontSize:13, padding:'9px 13px', outline:'none', cursor:'pointer' }}>
               <option value="TODOS">Todos os Estados</option>
               {ufs.map(u=><option key={u}>{u}</option>)}
             </select>
-
-            <select value={statusFilt} onChange={e=>setStatusFilt(e.target.value)} style={{
-              background:T.card, border:`1px solid ${T.border}`, borderRadius:9,
-              color:T.text, fontSize:13, padding:'8px 12px', outline:'none', cursor:'pointer' }}>
+            <select value={status} onChange={e=>setStatus(e.target.value)} style={{
+              background:T.card, border:`1px solid ${T.border}`, borderRadius:10,
+              color:T.text, fontSize:13, padding:'9px 13px', outline:'none', cursor:'pointer' }}>
               <option value="TODOS">Todos os Status</option>
-              {statuses.map(s=><option key={s} value={s}>{getCfg(s).label}</option>)}
+              {statuses.map(s=><option key={s}>{s}</option>)}
             </select>
-
-            {(uf!=='TODOS'||statusFilt!=='TODOS'||search||horaFilt!=='TODAS') && (
-              <button onClick={()=>{setUf('TODOS');setStatusFilt('TODOS');setSearch('');setHoraFilt('TODAS')}}
-                style={{ background:'transparent', border:`1px solid ${T.border}`, borderRadius:9,
-                  color:T.muted, fontSize:13, padding:'8px 13px', cursor:'pointer' }}>✕ Limpar</button>
+            {(uf!=='TODOS'||status!=='TODOS'||search||horaFilt!=='TODAS') && (
+              <button onClick={()=>{setUf('TODOS');setStatus('TODOS');setSearch('');setHoraFilt('TODAS')}}
+                style={{ background:'transparent', border:`1px solid ${T.border}`,
+                  borderRadius:10, color:T.muted, fontSize:13,
+                  padding:'9px 13px', cursor:'pointer' }}>✕ Limpar</button>
             )}
           </div>
 
-          {/* KPIs */}
-          <div style={{ display:'grid', gridTemplateColumns:'repeat(5,1fr)', gap:12, marginBottom:18 }}>
+          {/* ── KPIs ── */}
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(5,1fr)', gap:14, marginBottom:22 }}>
             <StatCard icon="🩺" label="Total Registros"
-              value={totalReg.toLocaleString('pt-BR')}
-              sub={`${totalUnid} unidades · ${totalMed} médicos`} accent={T.accent} />
+              value={totalRegistros.toLocaleString('pt-BR')}
+              sub={`${totalUnidades} unidades · ${totalMedicos} médicos`} accent={T.accent} />
             <StatCard icon="⚠️" label="Em Atraso"
               value={emAtraso.toLocaleString('pt-BR')}
-              sub={`${taxaAtras}% do total`} accent={T.danger} />
-            <StatCard icon="🚫" label="Sem Ponto"
-              value={semPontoN.toLocaleString('pt-BR')}
-              sub="HR_ENTRADA vazia" accent={T.warning} />
+              sub={`${taxaAtraso}% do total`} accent={T.danger} />
             <StatCard icon="⏱️" label="Espera Média"
-              value={fmtH(mediaEsp)} sub="por atendimento" accent="#818CF8"
-              note={mediaEsp === 0 ? 'Sem registros de espera neste filtro — HR_REGISTRO_ESPERA ainda não disponível' : undefined} />
-            <StatCard icon="👥" label="Pacientes na Fila"
-              value={totalPacs.toLocaleString('pt-BR')} sub="aguardando agora" accent={T.success}
-              note={totalPacs === 0 ? 'Sem fila registrada neste filtro — QT_PACIENTES_AGUARDANDO vazio' : undefined} />
+              value={fmtMin(mediaEsperaMin)} sub="por atendimento" accent={T.warning} />
+            <StatCard icon="👥" label="Pacientes Aguardando"
+              value={totalPacAguard.toLocaleString('pt-BR')}
+              sub="na fila agora" accent={T.success} />
+            <StatCard icon="🚫" label="Sem Ponto"
+              value={semPontoCount.toLocaleString('pt-BR')}
+              sub="HR_ENTRADA vazia" accent={T.purple} />
           </div>
 
-          {/* Status */}
+          {/* ── GRÁFICO STATUS (NOVO — tipo planilha de referência) ── */}
           <Card style={{ marginBottom:18 }}>
-            <SH>📊 Distribuição de Status — {períodoLabel}{horaFilt!=='TODAS'?` · ${String(horaFilt).padStart(2,'0')}h`:''}</SH>
-            <StatusCards breakdown={statusBreak} total={totalReg} />
-            {/* Nota explicativa sobre status ausentes */}
-            {statusBreak.length > 0 && (() => {
-              const keys = statusBreak.map(s => s.key)
-              const ausentes = ['ATRASO GRAVE','Falta Médica','Remarcação Adm','Remarcação Médico','SEM_PONTO']
-                .filter(k => !keys.includes(k))
-              if (!ausentes.length) return null
-              return (
-                <div style={{ marginTop:14, padding:'10px 14px',
-                  background:T.border+'55', borderRadius:9,
-                  fontSize:11, color:T.muted, display:'flex', alignItems:'center', gap:8 }}>
-                  <span>ℹ️</span>
-                  <span>
-                    Status sem ocorrências neste filtro (normal): {' '}
-                    <strong style={{ color:T.sub }}>
-                      {ausentes.map(k => getCfg(k).label).join(', ')}
-                    </strong>
-                    . Os dados são reais — não há registros desses status para o período/hora selecionado.
-                  </span>
-                </div>
-              )
-            })()}
+            <SH>📊 Distribuição de Status — Visão Operacional</SH>
+            <StatusDashboard breakdown={statusBreakdown} total={totalRegistros} />
           </Card>
 
-          {/* Tabelas */}
+          {/* ── Row: Unidades + UFs ── */}
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16, marginBottom:16 }}>
             <Card>
-              <SH>🚨 Médicos em Atraso — agendas e pacientes ({medicosAtraso.length})</SH>
-              <MedTable rows={medicosAtraso} tipo="atraso" />
+              <SH>🔴 Unidades com Mais Atrasos</SH>
+              {topUnidadesAtraso.map((u,i)=>(
+                <HBar key={u.nome} rank={i} label={u.nome} value={u.total}
+                  max={topUnidadesAtraso[0]?.total||1}
+                  color={i===0?T.danger:i===1?'#FF7A00':T.warning}
+                  unit=" atrasos" />
+              ))}
+              {!topUnidadesAtraso.length && <div style={{color:T.muted,fontSize:13}}>Nenhum atraso.</div>}
             </Card>
             <Card>
-              <SH>🔴 Médicos Sem Ponto — impacto na fila ({medicosSemPonto.length})</SH>
-              <MedTable rows={medicosSemPonto} tipo="semponto" />
+              <SH>📍 Registros por Estado (UF)</SH>
+              {ufBreak.map(u=>(
+                <HBar key={u.nome} label={u.nome} value={u.total} max={maxUF} color={T.accent} />
+              ))}
             </Card>
           </div>
 
-          {/* Top Unidades */}
-          <Card style={{ marginBottom:18 }}>
-            <SH>🏥 Unidades com Mais Atrasos</SH>
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0 48px' }}>
-              {topUnidades.map((u,i) => (
-                <div key={u.nome} style={{ marginBottom:13 }}>
-                  <div style={{ display:'flex', justifyContent:'space-between', marginBottom:5, gap:8 }}>
-                    <div style={{ display:'flex', alignItems:'center', gap:8, minWidth:0 }}>
-                      <span style={{ fontSize:10, fontWeight:800, minWidth:22, flexShrink:0,
-                        color:i<3?T.danger:T.muted }}>#{i+1}</span>
-                      <span style={{ fontSize:12.5, color:T.text, overflow:'hidden',
-                        textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{u.nome}</span>
-                    </div>
-                    <span style={{ fontSize:13, fontWeight:700, flexShrink:0,
-                      color:i===0?T.danger:i===1?'#FF7A00':T.warning }}>{u.total} atrasos</span>
-                  </div>
-                  <div style={{ background:T.border, borderRadius:99, height:6, overflow:'hidden' }}>
-                    <div style={{ height:'100%', borderRadius:99,
-                      background:i===0?T.danger:i===1?'#FF7A00':T.warning,
-                      width:`${(u.total/(topUnidades[0]?.total||1))*100}%`, transition:'width .6s' }} />
-                  </div>
-                </div>
-              ))}
+          {/* ── Médicos com Maior Espera ── */}
+          <Card style={{ marginBottom:16 }}>
+            <SH>👨‍⚕️ Médicos com Maior Tempo de Espera (acumulado)</SH>
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16 }}>
+              <div>
+                {topMedicos.slice(0,5).map((m,i)=>(
+                  <HBar key={m.med} rank={i} label={m.med}
+                    value={fmtMin(m.totalMin)} max={topMedicos[0]?.totalMin||1}
+                    color={i<3?T.danger:T.warning}
+                    sub={`${m.agendas} ${m.agendas===1?'agenda':'agendas'} · ${m.pacts.toLocaleString('pt-BR')} pacientes`}
+                  />
+                ))}
+              </div>
+              <div>
+                {topMedicos.slice(5,10).map((m,i)=>(
+                  <HBar key={m.med} rank={i+5} label={m.med}
+                    value={fmtMin(m.totalMin)} max={topMedicos[0]?.totalMin||1}
+                    color={T.warning}
+                    sub={`${m.agendas} ${m.agendas===1?'agenda':'agendas'} · ${m.pacts.toLocaleString('pt-BR')} pacientes`}
+                  />
+                ))}
+              </div>
+            </div>
+            {!topMedicos.length && <div style={{color:T.muted,fontSize:13}}>Nenhum dado de espera.</div>}
+          </Card>
+
+          {/* ── AUSÊNCIAS / SEM PONTO (NOVO) ── */}
+          <Card style={{ marginBottom:16 }}>
+            <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:16 }}>
+              <SH style={{ marginBottom:0 }}>🚫 Médicos Ausentes — Sem Ponto Registrado</SH>
+              <span style={{ fontSize:11, color:T.muted, marginLeft:'auto' }}>
+                HR_ENTRADA vazia · {semPontoCount} ocorrências
+              </span>
+            </div>
+            <AusenciasCard rows={filtered} cols={cols} />
+          </Card>
+
+          {/* ── MOTIVO DO IMPACTO NA ESPERA (NOVO) ── */}
+          <Card style={{ marginBottom:16 }}>
+            <SH>⏳ Motivo do Impacto na Espera — Unidades com Maior Tempo</SH>
+            <ImpactoEsperaCard rows={filtered} cols={cols} />
+          </Card>
+
+          {/* ── Especialidades ── */}
+          <Card style={{ marginBottom:16 }}>
+            <SH>🩻 Especialidades com Mais Atendimentos</SH>
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16 }}>
+              <div>{espBreak.slice(0,4).map((e,i)=>(
+                <HBar key={e.nome} label={e.nome} value={e.total} max={maxEsp}
+                  color={`hsl(${200+i*18},70%,55%)`} />
+              ))}</div>
+              <div>{espBreak.slice(4).map((e,i)=>(
+                <HBar key={e.nome} label={e.nome} value={e.total} max={maxEsp}
+                  color={`hsl(${272+i*18},70%,55%)`} />
+              ))}</div>
             </div>
           </Card>
 
-          {/* Footer */}
-          <div style={{ textAlign:'center', color:T.muted, fontSize:11, paddingBottom:20 }}>
-            Monitor Hospitalar · {new Date().toLocaleDateString('pt-BR')}
+          {/* ── Footer ── */}
+          <div style={{ textAlign:'center', color:T.muted, fontSize:11, paddingTop:8, paddingBottom:20 }}>
+            Dashboard Monitoramento Hospitalar · {new Date().toLocaleDateString('pt-BR')}
             {período!=='TODOS' && ` · ${períodoLabel}`}
-            {horaFilt!=='TODAS' && ` · Hora ${String(horaFilt).padStart(2,'0')}h`}
-            {verifTs && ` · Último upload: ${verifTs}`}
+            {horaFilt!=='TODAS' && ` · Hora ${horaFilt}h`}
           </div>
         </>)}
       </div>
