@@ -101,73 +101,41 @@ const todayStr = () => {
   const n = new Date()
   return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-${String(n.getDate()).padStart(2,'0')}`
 }
-// Converte DATA_AGENDA (qualquer formato) para serial Excel numérico
-const toSerial = (v) => {
-  if (v === null || v === undefined || v === '') return null
-  if (typeof v === 'number' && v > 1000) return v  // já é serial Excel
-  const s = String(v).trim()
-  // string numérica "46154"
-  if (/^\d{4,6}$/.test(s)) return Number(s)
-  // ISO "2026-05-13..." → converter para serial
-  const isoM = s.match(/^(\d{4})-(\d{2})-(\d{2})/)
-  if (isoM) {
-    const utcDays = Math.floor(Date.UTC(+isoM[1], +isoM[2]-1, +isoM[3]) / 86400000)
-    return utcDays + 25568
-  }
-  // "dd/mm/yyyy"
-  const brM = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/)
-  if (brM) {
-    const utcDays = Math.floor(Date.UTC(+brM[3], +brM[2]-1, +brM[1]) / 86400000)
-    return utcDays + 25568
-  }
-  return null
-}
-// Serial de hoje baseado na data local do sistema
-const todaySerial = () => {
-  const n = new Date()
-  return Math.floor(Date.UTC(n.getFullYear(), n.getMonth(), n.getDate()) / 86400000) + 25568
-}
-// Serial de uma data relativa (ontem, X dias atrás)
-const offsetSerial = (serial, days) => serial + days
-const buildFilter = (allSerials, período, dateFrom, dateTo) => {
-  if (!allSerials.length) return () => true
-  const sorted    = [...allSerials].sort((a,b)=>a-b)
-  const maxSerial = sorted[sorted.length - 1]
+const buildFilter = (allDates, período, dateFrom, dateTo) => {
+  if (!allDates.length) return () => true
+  const sorted  = [...allDates].sort()
+  const maxDate = sorted[sorted.length - 1]
   if (período === 'HOJE') {
-    const s = todaySerial()
-    return (serial) => serial === s
+    const today = todayStr()
+    return (ds) => ds === today
   }
   if (período === 'ONTEM') {
-    const s = todaySerial() - 1
-    return (serial) => serial === s
+    const ref = new Date(maxDate + 'T00:00:00Z')
+    ref.setUTCDate(ref.getUTCDate() - 1)
+    const ontem = `${ref.getUTCFullYear()}-${String(ref.getUTCMonth()+1).padStart(2,'0')}-${String(ref.getUTCDate()).padStart(2,'0')}`
+    return (ds) => ds === ontem
   }
   if (período === 'SEMANA') {
-    const cut = maxSerial - 6
-    return (serial) => serial >= cut && serial <= maxSerial
+    const c = new Date(maxDate + 'T00:00:00Z')
+    c.setUTCDate(c.getUTCDate() - 6)
+    const cut = `${c.getUTCFullYear()}-${String(c.getUTCMonth()+1).padStart(2,'0')}-${String(c.getUTCDate()).padStart(2,'0')}`
+    return (ds) => ds >= cut && ds <= maxDate
   }
   if (período === 'MES') {
-    // mesmo mês do maxSerial
-    const maxDate = new Date((maxSerial - 25568) * 86400000)
-    const y = maxDate.getUTCFullYear(), m = maxDate.getUTCMonth()
-    const firstOfMonth = Math.floor(Date.UTC(y,m,1)/86400000) + 25568
-    const firstOfNext  = Math.floor(Date.UTC(y,m+1,1)/86400000) + 25568
-    return (serial) => serial >= firstOfMonth && serial < firstOfNext
+    const mes = maxDate.slice(0,7)
+    return (ds) => ds.slice(0,7) === mes
   }
   if (período === 'ANO') {
-    const maxDate = new Date((maxSerial - 25568) * 86400000)
-    const y = maxDate.getUTCFullYear()
-    const firstOfYear = Math.floor(Date.UTC(y,0,1)/86400000) + 25568
-    const firstOfNext = Math.floor(Date.UTC(y+1,0,1)/86400000) + 25568
-    return (serial) => serial >= firstOfYear && serial < firstOfNext
+    const ano = maxDate.slice(0,4)
+    return (ds) => ds.slice(0,4) === ano
   }
   if (período === 'PERIODO') {
-    const from = dateFrom ? (Math.floor(Date.UTC(...dateFrom.split('-').map((v,i)=>i===1?+v-1:+v))/86400000)+25568) : sorted[0]
-    const to   = dateTo   ? (Math.floor(Date.UTC(...dateTo.split('-').map((v,i)=>i===1?+v-1:+v))/86400000)+25568) : maxSerial
-    return (serial) => serial >= from && serial <= to
+    const from = dateFrom || sorted[0]
+    const to   = dateTo   || maxDate
+    return (ds) => ds >= from && ds <= to
   }
   return () => true
 }
-
 // ─── Sub-components ───────────────────────────────────────
 function HBar({ label, value, max, color, unit='', rank, sub }) {
   const pct = max > 0 ? (value/max)*100 : 0
@@ -335,135 +303,105 @@ function AusenciasCard({ rows, cols }) {
 }
 
 // ─── ALTERADO: Unidades com Maior Espera + Pacientes Aguardando ──────────────
-function MaiorEsperaCard({ rows, cols, horaFilt }) {
+function EsperaHoraCard({ rows, cols }) {
   const items = useMemo(() => {
-    // ── Lógica correta de snapshot ────────────────────────────────────────
-    // Cada linha tem _hrReg (hora de HR_REGISTRO_ESPERA) e _dateStr (data da agenda).
-    //
-    // Estratégia:
-    // 1. Agrupar por DATA + UNIDADE
-    // 2. Por unidade+data: achar o snapshot correto (hrAlvo exato se filtrado, ou max disponível)
-    // 3. Pegar só as linhas desse snapshot, com pac > 0
-    // 4. Agregar esperaMax e pacAguardando
-    // 5. Ordenar por esperaMax desc
-
-    const hrAlvo = horaFilt !== 'TODAS' ? Number(horaFilt) : null
-
-    // 1ª passagem: achar o snapshot alvo por (data+unidade)
-    // chave: `${dateStr}||${unid}`
-    const keyAlvo = {}
+    // Agrupar por hora (HR_REGISTRO_ESPERA) — apenas linhas com pac > 0 e espera > 0
+    const byHora = {}
     rows.forEach(d => {
-      const unid   = String(d[cols.unidade]||'').trim() || 'Sem Unidade'
-      const hrReg  = d._hrReg
-      const serial = d._dateSerial
-      if (hrReg === null || hrReg === undefined) return
-      if (serial === null || serial === undefined) return
-      const key = serial + '||' + unid
-      if (hrAlvo !== null) {
-        // filtro ativo: exatamente aquela hora
-        if (hrReg === hrAlvo) keyAlvo[key] = hrAlvo
-      } else {
-        // sem filtro: máximo disponível por data+unidade
-        if (keyAlvo[key] === undefined || hrReg > keyAlvo[key]) {
-          keyAlvo[key] = hrReg
-        }
-      }
+      const hrRV = d[cols.hrRegistroEspera]
+      const espV = d[cols.espera]
+      const pac  = Number(d[cols.qtPacts]) || 0
+      if (!hrRV || hrRV === '') return
+      if (pac <= 0) return
+
+      // Converter hrRV para hora inteira
+      let h = null
+      if (typeof hrRV === 'number') h = Math.round(hrRV * 24)
+      else if (typeof hrRV === 'string' && hrRV.includes(':')) h = parseInt(hrRV)
+      else if (typeof hrRV === 'string') { const n = Number(hrRV); if (!isNaN(n) && n > 0 && n < 1) h = Math.round(n * 24) }
+      if (h === null || h < 0 || h > 23) return
+
+      // Converter espera para minutos
+      let espMin = 0
+      if (typeof espV === 'number') espMin = espV * 24 * 60
+      else if (typeof espV === 'string' && espV.includes(':')) {
+        const p = espV.split(':').map(Number); espMin = (p[0]||0)*60+(p[1]||0)
+      } else if (typeof espV === 'string') { const n = Number(espV); if (!isNaN(n)) espMin = n * 24 * 60 }
+      if (espMin <= 0) return
+
+      if (!byHora[h]) byHora[h] = { hora: h, esperaMax: 0, esperaTotal: 0, pac: 0, count: 0 }
+      if (espMin > byHora[h].esperaMax) byHora[h].esperaMax = espMin
+      byHora[h].esperaTotal += espMin
+      byHora[h].pac += pac
+      byHora[h].count += 1
     })
-
-    // 2ª passagem: agregar apenas registros do snapshot correto, com pac > 0
-    // resultado agrupado por UNIDADE (não por data+unidade) para mostrar ranking geral
-    const m = {}
-    rows.forEach(d => {
-      const unid   = String(d[cols.unidade]||'').trim() || 'Sem Unidade'
-      const hrReg  = d._hrReg
-      const serial = d._dateSerial
-      const pac    = Number(d[cols.qtPacts]) || 0
-      const esp    = parseEsperaMin(d[cols.espera])
-      if (hrReg === null || hrReg === undefined) return
-      if (serial === null || serial === undefined) return
-      const key = serial + '||' + unid
-      if (keyAlvo[key] === undefined) return
-      if (hrReg !== keyAlvo[key]) return
-      if (pac <= 0) return   // só conta se tem pacientes aguardando
-
-      if (!m[unid]) m[unid] = { unid, esperaMax: 0, pacAguardando: 0, registros: 0, hrSnap: hrReg }
-      if (esp > m[unid].esperaMax) m[unid].esperaMax = esp
-      m[unid].pacAguardando += pac
-      m[unid].registros     += 1
-    })
-
-    return Object.values(m)
-      .filter(x => x.esperaMax > 0 && x.pacAguardando > 0)
-      .sort((a, b) => b.esperaMax - a.esperaMax)
-      .slice(0, 10)
-  }, [rows, cols, horaFilt])
+    return Object.values(byHora).sort((a,b) => a.hora - b.hora)
+  }, [rows, cols])
 
   if (!items.length) return (
     <div style={{ color:T.muted, fontSize:13 }}>Sem dados de espera nos filtros atuais.</div>
   )
 
-  const maxMin = items[0]?.esperaMax || 1
-  const maxPac = Math.max(...items.map(x => x.pacAguardando), 1)
+  const maxEspera = Math.max(...items.map(x => x.esperaMax), 1)
+  const maxPac    = Math.max(...items.map(x => x.pac), 1)
 
   return (
     <div>
-      {items.map((r, i) => {
-        const barEspPct = (r.esperaMax / maxMin) * 100
-        const barPacPct = (r.pacAguardando / maxPac) * 100
-        const espColor  = i < 3 ? T.danger : T.warning
-        const pacColor  = i < 3 ? '#FF7A50' : T.accent
+      {/* Legenda */}
+      <div style={{ display:'flex', gap:20, marginBottom:16, fontSize:11, color:T.muted }}>
+        <span style={{ display:'flex', alignItems:'center', gap:5 }}>
+          <span style={{ width:10, height:10, borderRadius:2, background:T.danger, display:'inline-block' }}/>
+          Maior espera do horário
+        </span>
+        <span style={{ display:'flex', alignItems:'center', gap:5 }}>
+          <span style={{ width:10, height:10, borderRadius:2, background:T.accent, display:'inline-block' }}/>
+          Pacientes aguardando
+        </span>
+      </div>
 
-        return (
-          <div key={r.unid} style={{ marginBottom: 18 }}>
-            <div style={{ display:'flex', justifyContent:'space-between',
-              alignItems:'flex-start', marginBottom: 6, gap: 8 }}>
-              <div style={{ display:'flex', alignItems:'flex-start', gap: 8, minWidth: 0 }}>
-                <span style={{ fontSize:11, fontWeight:700,
-                  color: i < 3 ? T.danger : T.muted,
-                  minWidth:22, flexShrink:0, marginTop:1 }}>#{i+1}</span>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize:13, color:T.text, fontWeight:500,
-                    overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                    {r.unid}
-                  </div>
-                  <div style={{ display:'flex', alignItems:'center', gap: 10, marginTop: 3 }}>
-                    <span style={{ fontSize:10, color:T.muted }}>
-                      snapshot {String(r.hrSnap).padStart(2,'0')}h · {r.registros} {r.registros === 1 ? 'registro' : 'registros'}
-                    </span>
-                    <span style={{ fontSize:10, color: pacColor, fontWeight:700 }}>
-                      {r.pacAguardando.toLocaleString('pt-BR')} pac. aguardando
-                    </span>
-                  </div>
-                </div>
-              </div>
-              <span style={{ fontSize:13, fontWeight:700, color: espColor, flexShrink:0 }}>
-                {fmtMin(r.esperaMax)}
-              </span>
-            </div>
+      {/* Grid de horas */}
+      <div style={{ display:'grid', gridTemplateColumns:'44px 1fr 1fr 60px 60px', gap:'6px 10px', alignItems:'center' }}>
+        {/* Header */}
+        <div style={{ fontSize:10, color:T.muted, fontWeight:600 }}>HORA</div>
+        <div style={{ fontSize:10, color:T.muted, fontWeight:600 }}>MAIOR ESPERA</div>
+        <div style={{ fontSize:10, color:T.muted, fontWeight:600 }}>PAC. AGUARDANDO</div>
+        <div style={{ fontSize:10, color:T.muted, fontWeight:600, textAlign:'right' }}>ESPERA</div>
+        <div style={{ fontSize:10, color:T.muted, fontWeight:600, textAlign:'right' }}>PAC.</div>
 
-            <div style={{ marginBottom: 4 }}>
-              <div style={{ background:T.border, borderRadius:6, height:6, overflow:'hidden' }}>
-                <div style={{ height:'100%', borderRadius:6, background: espColor,
-                  width:`${barEspPct}%`, transition:'width .6s ease' }} />
-              </div>
-            </div>
-
-            <div style={{ display:'flex', alignItems:'center', gap: 6 }}>
-              <span style={{ fontSize:9, color: T.muted, minWidth: 80 }}>Pac. aguardando</span>
-              <div style={{ flex:1, background:T.border, borderRadius:4, height:4, overflow:'hidden' }}>
-                <div style={{ height:'100%', borderRadius:4, background: pacColor,
-                  width:`${barPacPct}%`, transition:'width .6s ease', opacity:.8 }} />
-              </div>
-              <span style={{ fontSize:10, color: pacColor, fontWeight:600, minWidth:28, textAlign:'right' }}>
-                {r.pacAguardando}
-              </span>
-            </div>
-          </div>
-        )
-      })}
+        {items.map(r => {
+          const pctEsp = (r.esperaMax / maxEspera) * 100
+          const pctPac = (r.pac / maxPac) * 100
+          const espColor = r.esperaMax > 120 ? T.danger : r.esperaMax > 60 ? T.warning : T.success
+          return [
+            // Hora
+            <div key={`h${r.hora}`} style={{ fontSize:12, fontWeight:700, color:T.sub }}>
+              {String(r.hora).padStart(2,'0')}h
+            </div>,
+            // Barra espera
+            <div key={`be${r.hora}`} style={{ background:T.border, borderRadius:4, height:8, overflow:'hidden' }}>
+              <div style={{ height:'100%', borderRadius:4, background:espColor,
+                width:`${pctEsp}%`, transition:'width .5s ease' }} />
+            </div>,
+            // Barra pac
+            <div key={`bp${r.hora}`} style={{ background:T.border, borderRadius:4, height:8, overflow:'hidden' }}>
+              <div style={{ height:'100%', borderRadius:4, background:T.accent,
+                width:`${pctPac}%`, transition:'width .5s ease', opacity:.8 }} />
+            </div>,
+            // Valor espera
+            <div key={`ve${r.hora}`} style={{ fontSize:11, fontWeight:700, color:espColor, textAlign:'right' }}>
+              {fmtMin(r.esperaMax)}
+            </div>,
+            // Valor pac
+            <div key={`vp${r.hora}`} style={{ fontSize:11, fontWeight:600, color:T.accent, textAlign:'right' }}>
+              {r.pac.toLocaleString('pt-BR')}
+            </div>,
+          ]
+        })}
+      </div>
     </div>
   )
 }
+
 
 function RecorrenciaAtrasoCard({ rows, cols }) {
   const items = useMemo(() => {
@@ -689,10 +627,6 @@ const rowDateStr = (r) => {
   const v = r['DATA_AGENDA'] ?? r[Object.keys(r).find(k => k.includes('DATA')) || ''] ?? ''
   return serialToDateStr(v)
 }
-const rowSerial = (r) => {
-  const v = r['DATA_AGENDA'] ?? r[Object.keys(r).find(k => k.includes('DATA')) || ''] ?? ''
-  return toSerial(v)
-}
 
 // ─── Main ──────────────────────────────────────────────────
 export default function Home() {
@@ -889,24 +823,18 @@ export default function Home() {
           }
         }
       }
-      const _serial = toSerial(d[cols.data])
-      return { ...d, _dateSerial: _serial, _dateStr: serialToDateStr(d[cols.data]), _hora: hora, _hrReg: hrReg }
+      return { ...d, _dateStr: serialToDateStr(d[cols.data]), _hora: hora, _hrReg: hrReg }
     })
   }, [dados, cols])
 
-  const allSerials = useMemo(() =>
-    [...new Set(dadosComData.map(d=>d._dateSerial).filter(s=>s!=null))].sort((a,b)=>a-b),
+  const allDates = useMemo(() =>
+    [...new Set(dadosComData.map(d=>d._dateStr).filter(Boolean))].sort(),
     [dadosComData])
 
-  // allDates: para exibição (períodoLabel) — converter seriais para strings
-  const allDates = useMemo(() =>
-    allSerials.map(s => serialToDateStr(s)).filter(Boolean).sort(),
-    [allSerials])
-
-  const periodoFn = useMemo(() => buildFilter(allSerials, período, dateFrom, dateTo), [allSerials, período, dateFrom, dateTo])
+  const periodoFn = useMemo(() => buildFilter(allDates, período, dateFrom, dateTo), [allDates, período, dateFrom, dateTo])
 
   const dadosPorPeriodo = useMemo(() =>
-    dadosComData.filter(d => d._dateSerial != null && periodoFn(d._dateSerial)),
+    dadosComData.filter(d => periodoFn(d._dateStr)),
     [dadosComData, periodoFn])
 
   const horasDisp = useMemo(() => {
@@ -1291,8 +1219,8 @@ export default function Home() {
 
             {/* ── ALTERADO: Maior Espera + Pacientes Aguardando ── */}
             <Card style={{ marginBottom:16 }}>
-              <SH>⏳ Unidades com Maior Tempo de Espera · Pacientes Aguardando</SH>
-              <MaiorEsperaCard rows={dadosPorPeriodo} cols={cols} horaFilt={horaFilt} />
+              <SH>⏳ Espera por Hora do Dia · Maior Espera e Pacientes Aguardando</SH>
+              <EsperaHoraCard rows={dadosPorPeriodo} cols={cols} />
             </Card>
 
             {/* ── NOVO: Recorrência de Atraso ── */}
