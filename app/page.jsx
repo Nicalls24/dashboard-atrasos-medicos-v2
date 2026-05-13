@@ -537,10 +537,10 @@ export default function Home() {
         setStoreStatus('Conectando ao Supabase…')
 
         // 1. Busca metadados (timestamp)
-        const metaRes = await sbFetch('monitor_hospitalar_meta?select=timestamp&id=eq.1')
+        const metaRes = await sbFetch('mh_meta?select=ts&id=eq.1')
         if (metaRes.ok) {
           const meta = await metaRes.json()
-          if (meta[0]?.timestamp) setTimestamp(meta[0].timestamp)
+          if (meta[0]?.ts) setTimestamp(meta[0].ts)
         } else {
           const txt = await metaRes.text()
           setStoreStatus(`Erro meta ${metaRes.status}: ${txt.slice(0,120)}`)
@@ -554,7 +554,7 @@ export default function Home() {
         const pageSize = 500
         while (true) {
           const r = await sbFetch(
-            `monitor_hospitalar_chunks?select=data_agenda,chunk_idx,rows_json&order=data_agenda.asc,chunk_idx.asc&limit=${pageSize}&offset=${offset}`
+            `mh_chunks?select=data_agenda,chunk_idx,rows_json&order=data_agenda.asc,chunk_idx.asc&limit=${pageSize}&offset=${offset}`
           )
           if (!r.ok) {
             const txt = await r.text()
@@ -606,7 +606,7 @@ export default function Home() {
       // Apaga chunks das datas que vieram na nova planilha (upsert por data)
       for (const date of newDates) {
         await sbFetch(
-          `monitor_hospitalar_chunks?data_agenda=eq.${date}`,
+          `mh_chunks?data_agenda=eq.${date}`,
           { method: 'DELETE' }
         )
       }
@@ -628,7 +628,7 @@ export default function Home() {
         setStoreStatus(`Salvando ${date} (${rows.length} linhas)…`)
         for (let ci = 0; ci < totalChunks; ci++) {
           const slice = rows.slice(ci * CHUNK_SIZE, (ci + 1) * CHUNK_SIZE)
-          await sbFetch('monitor_hospitalar_chunks', {
+          await sbFetch('mh_chunks', {
             method: 'POST',
             headers: { 'Prefer': 'resolution=merge-duplicates,return=minimal' },
             body: JSON.stringify({
@@ -644,10 +644,10 @@ export default function Home() {
       }
 
       // Atualiza metadados (timestamp)
-      await sbFetch('monitor_hospitalar_meta?id=eq.1', {
+      await sbFetch('mh_meta?id=eq.1', {
         method: 'PATCH',
         headers: { 'Prefer': 'return=minimal' },
-        body: JSON.stringify({ timestamp: ts, updated_at: new Date().toISOString() }),
+        body: JSON.stringify({ ts: ts, updated_at: new Date().toISOString() }),
       })
 
       // Recarrega tudo do Supabase com paginação
@@ -656,7 +656,7 @@ export default function Home() {
       const rPageSize = 500
       while (true) {
         const r = await sbFetch(
-          `monitor_hospitalar_chunks?select=data_agenda,chunk_idx,rows_json&order=data_agenda.asc,chunk_idx.asc&limit=${rPageSize}&offset=${rOffset}`
+          `mh_chunks?select=data_agenda,chunk_idx,rows_json&order=data_agenda.asc,chunk_idx.asc&limit=${rPageSize}&offset=${rOffset}`
         )
         if (!r.ok) break
         const batch = await r.json()
@@ -691,10 +691,10 @@ export default function Home() {
     setStoring(true)
     setStoreStatus('Apagando…')
     try {
-      await sbFetch('monitor_hospitalar_chunks?id=gt.0', { method: 'DELETE' })
-      await sbFetch('monitor_hospitalar_meta?id=eq.1', {
+      await sbFetch('mh_chunks?id=gt.0', { method: 'DELETE' })
+      await sbFetch('mh_meta?id=eq.1', {
         method: 'PATCH',
-        body: JSON.stringify({ timestamp: '' }),
+        body: JSON.stringify({ ts: '' }),
       })
     } catch(e) { console.error(e) }
     setDados([])
