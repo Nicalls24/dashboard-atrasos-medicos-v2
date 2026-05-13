@@ -294,25 +294,23 @@ function MaiorEsperaCard({ rows, cols, horaFilt }) {
     // Quando há filtro de hora (horaFilt), usamos EXATAMENTE aquela hora como snapshot.
     // Quando não há filtro, usamos o snapshot mais recente <= hora atual do sistema.
 
-    const agoraH = new Date().getHours()
     const hrAlvo = horaFilt !== 'TODAS' ? Number(horaFilt) : null
 
-    // Para cada unidade: achar o snapshot mais adequado
-    // _hrReg já foi calculado em dadosComData a partir de HR_REGISTRO_ESPERA
+    // Para cada unidade: achar o snapshot correto
+    // Se há filtro de hora → snapshot exato daquela hora
+    // Se não há filtro    → snapshot mais recente disponível na base (não limitado por hora atual)
     const hrAlvoPorUnid = {}
     rows.forEach(d => {
       const unid  = String(d[cols.unidade]||'').trim() || 'Sem Unidade'
-      const hrReg = d._hrReg  // já calculado, inteiro 0-23 ou null
+      const hrReg = d._hrReg  // inteiro 0-23 ou null, calculado de HR_REGISTRO_ESPERA
       if (hrReg === null) return
       if (hrAlvo !== null) {
-        // filtro de hora ativo: só aceitar registros exatamente nessa hora
+        // filtro de hora ativo: exatamente aquela hora
         if (hrReg === hrAlvo) hrAlvoPorUnid[unid] = hrAlvo
       } else {
-        // sem filtro: snapshot mais recente <= agora
-        if (hrReg <= agoraH) {
-          if (hrAlvoPorUnid[unid] === undefined || hrReg > hrAlvoPorUnid[unid]) {
-            hrAlvoPorUnid[unid] = hrReg
-          }
+        // sem filtro: snapshot mais recente de cada unidade (max de hrReg na base)
+        if (hrAlvoPorUnid[unid] === undefined || hrReg > hrAlvoPorUnid[unid]) {
+          hrAlvoPorUnid[unid] = hrReg
         }
       }
     })
@@ -1212,7 +1210,7 @@ export default function Home() {
             {/* ── ALTERADO: Maior Espera + Pacientes Aguardando ── */}
             <Card style={{ marginBottom:16 }}>
               <SH>⏳ Unidades com Maior Tempo de Espera · Pacientes Aguardando</SH>
-              <MaiorEsperaCard rows={filtered} cols={cols} horaFilt={horaFilt} />
+              <MaiorEsperaCard rows={dadosPorPeriodo} cols={cols} horaFilt={horaFilt} />
             </Card>
 
             {/* ── NOVO: Recorrência de Atraso ── */}
