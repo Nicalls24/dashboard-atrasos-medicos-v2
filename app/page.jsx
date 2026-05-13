@@ -297,25 +297,30 @@ function MaiorEsperaCard({ rows, cols, horaFilt }) {
     const hrAlvo = horaFilt !== 'TODAS' ? Number(horaFilt) : null
 
     // Para cada unidade: achar o snapshot correto
+    // Só considera snapshots onde existe ao menos 1 registro com pac > 0
     // Se há filtro de hora → snapshot exato daquela hora
-    // Se não há filtro    → snapshot mais recente disponível na base (não limitado por hora atual)
+    // Se não há filtro    → snapshot mais recente com pac > 0 na base
     const hrAlvoPorUnid = {}
     rows.forEach(d => {
       const unid  = String(d[cols.unidade]||'').trim() || 'Sem Unidade'
-      const hrReg = d._hrReg  // inteiro 0-23 ou null, calculado de HR_REGISTRO_ESPERA
+      const hrReg = d._hrReg
+      const pacts = Number(d[cols.qtPacts])||0
       if (hrReg === null) return
       if (hrAlvo !== null) {
-        // filtro de hora ativo: exatamente aquela hora
-        if (hrReg === hrAlvo) hrAlvoPorUnid[unid] = hrAlvo
+        // filtro de hora ativo: exatamente aquela hora, mas só se tiver pac
+        if (hrReg === hrAlvo && pacts > 0) hrAlvoPorUnid[unid] = hrAlvo
       } else {
-        // sem filtro: snapshot mais recente de cada unidade (max de hrReg na base)
-        if (hrAlvoPorUnid[unid] === undefined || hrReg > hrAlvoPorUnid[unid]) {
-          hrAlvoPorUnid[unid] = hrReg
+        // sem filtro: snapshot mais recente que tenha pac > 0
+        if (pacts > 0) {
+          if (hrAlvoPorUnid[unid] === undefined || hrReg > hrAlvoPorUnid[unid]) {
+            hrAlvoPorUnid[unid] = hrReg
+          }
         }
       }
     })
 
     // Agregar somente os registros do snapshot selecionado
+    // Regra: só conta espera se tiver pacientes aguardando (pac > 0) E pelo menos 1 agenda
     const m = {}
     rows.forEach(d => {
       const unid  = String(d[cols.unidade]||'').trim() || 'Sem Unidade'
@@ -326,14 +331,19 @@ function MaiorEsperaCard({ rows, cols, horaFilt }) {
 
       const espMin = parseEsperaMin(d[cols.espera])
       const pacts  = Number(d[cols.qtPacts])||0
+
+      // Só registra espera se houver pacientes aguardando
       if (!m[unid]) m[unid] = { unid, esperaMax: 0, pacAguardando: 0, registros: 0, hrSnap: hrReg }
-      if (espMin > m[unid].esperaMax) m[unid].esperaMax = espMin
-      m[unid].pacAguardando += pacts
-      m[unid].registros     += 1
+      m[unid].registros += 1
+      if (pacts > 0) {
+        // Só considera a espera desse registro se tem pac aguardando
+        if (espMin > m[unid].esperaMax) m[unid].esperaMax = espMin
+        m[unid].pacAguardando += pacts
+      }
     })
 
     return Object.values(m)
-      .filter(x => x.esperaMax > 0 || x.pacAguardando > 0)
+      .filter(x => x.esperaMax > 0 && x.pacAguardando > 0)  // ambos > 0
       .sort((a, b) => b.esperaMax - a.esperaMax)
       .slice(0, 10)
   }, [rows, cols, horaFilt])
