@@ -353,11 +353,12 @@ function MaiorEsperaCard({ rows, cols, horaFilt }) {
     // chave: `${dateStr}||${unid}`
     const keyAlvo = {}
     rows.forEach(d => {
-      const unid  = String(d[cols.unidade]||'').trim() || 'Sem Unidade'
-      const hrReg = d._hrReg
-      const ds    = d._dateStr || ''
+      const unid   = String(d[cols.unidade]||'').trim() || 'Sem Unidade'
+      const hrReg  = d._hrReg
+      const serial = d._dateSerial
       if (hrReg === null || hrReg === undefined) return
-      const key = ds + '||' + unid
+      if (serial === null || serial === undefined) return
+      const key = serial + '||' + unid
       if (hrAlvo !== null) {
         // filtro ativo: exatamente aquela hora
         if (hrReg === hrAlvo) keyAlvo[key] = hrAlvo
@@ -373,13 +374,14 @@ function MaiorEsperaCard({ rows, cols, horaFilt }) {
     // resultado agrupado por UNIDADE (não por data+unidade) para mostrar ranking geral
     const m = {}
     rows.forEach(d => {
-      const unid  = String(d[cols.unidade]||'').trim() || 'Sem Unidade'
-      const hrReg = d._hrReg
-      const ds    = d._dateStr || ''
-      const pac   = Number(d[cols.qtPacts]) || 0
-      const esp   = parseEsperaMin(d[cols.espera])
+      const unid   = String(d[cols.unidade]||'').trim() || 'Sem Unidade'
+      const hrReg  = d._hrReg
+      const serial = d._dateSerial
+      const pac    = Number(d[cols.qtPacts]) || 0
+      const esp    = parseEsperaMin(d[cols.espera])
       if (hrReg === null || hrReg === undefined) return
-      const key = ds + '||' + unid
+      if (serial === null || serial === undefined) return
+      const key = serial + '||' + unid
       if (keyAlvo[key] === undefined) return
       if (hrReg !== keyAlvo[key]) return
       if (pac <= 0) return   // só conta se tem pacientes aguardando
@@ -395,21 +397,6 @@ function MaiorEsperaCard({ rows, cols, horaFilt }) {
       .sort((a, b) => b.esperaMax - a.esperaMax)
       .slice(0, 10)
   }, [rows, cols, horaFilt])
-
-  // Debug: logar primeiras linhas para diagnóstico
-  if (rows.length > 0) {
-    const sample = rows[0]
-    console.log('[DEBUG row0]', {
-      DATA_AGENDA: sample[cols.data],
-      _dateSerial: sample._dateSerial,
-      _dateStr: sample._dateStr,
-      _hrReg: sample._hrReg,
-      HR_REGISTRO_ESPERA: sample[cols.hrRegistroEspera],
-      TEMPO_DE_ESPERA: sample[cols.espera],
-      QT_PACTS: sample[cols.qtPacts],
-      totalRows: rows.length,
-    })
-  }
 
   if (!items.length) return (
     <div style={{ color:T.muted, fontSize:13 }}>Sem dados de espera nos filtros atuais.</div>
@@ -907,15 +894,9 @@ export default function Home() {
     })
   }, [dados, cols])
 
-  const allSerials = useMemo(() => {
-    const serials = [...new Set(dadosComData.map(d=>d._dateSerial).filter(s=>s!=null))].sort((a,b)=>a-b)
-    if (dadosComData.length > 0) {
-      const s0 = dadosComData[0]
-      const ts = todaySerial()
-      console.log('[allSerials debug] todaySerial=' + ts + ' serialsArray=' + JSON.stringify(serials) + ' período=' + período + ' row0_DATA_AGENDA=' + s0[cols.data] + ' type=' + typeof s0[cols.data] + ' _dateSerial=' + s0._dateSerial)
-    }
-    return serials
-  }, [dadosComData])
+  const allSerials = useMemo(() =>
+    [...new Set(dadosComData.map(d=>d._dateSerial).filter(s=>s!=null))].sort((a,b)=>a-b),
+    [dadosComData])
 
   // allDates: para exibição (períodoLabel) — converter seriais para strings
   const allDates = useMemo(() =>
