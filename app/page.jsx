@@ -396,6 +396,21 @@ function MaiorEsperaCard({ rows, cols, horaFilt }) {
       .slice(0, 10)
   }, [rows, cols, horaFilt])
 
+  // Debug: logar primeiras linhas para diagnóstico
+  if (rows.length > 0) {
+    const sample = rows[0]
+    console.log('[DEBUG row0]', {
+      DATA_AGENDA: sample[cols.data],
+      _dateSerial: sample._dateSerial,
+      _dateStr: sample._dateStr,
+      _hrReg: sample._hrReg,
+      HR_REGISTRO_ESPERA: sample[cols.hrRegistroEspera],
+      TEMPO_DE_ESPERA: sample[cols.espera],
+      QT_PACTS: sample[cols.qtPacts],
+      totalRows: rows.length,
+    })
+  }
+
   if (!items.length) return (
     <div style={{ color:T.muted, fontSize:13 }}>Sem dados de espera nos filtros atuais.</div>
   )
