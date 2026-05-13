@@ -458,51 +458,47 @@ export default function Home() {
         } catch(e) { /* ignora erro de meta */ }
 
         // 2. Carrega todos os dados de hospital_dados com paginação
+        // Cada linha da tabela tem campo "dados" (jsonb) com um array de registros
         setStoreStatus('Carregando dados do Supabase…')
         let allRows = []
         let offset = 0
 
         while (true) {
           const res = await sbFetch(
-            `hospital_dados?select=dados&limit=${PAGE_SIZE}&offset=${offset}`,
-            { headers: { 'Range': `${offset}-${offset + PAGE_SIZE - 1}` } }
+            `hospital_dados?select=dados,verif_ts&order=eu_ia.asc&limit=${PAGE_SIZE}&offset=${offset}`
           )
 
           if (!res.ok) {
-            // Se a tabela não tem coluna "dados", tenta buscar tudo direto
-            const res2 = await sbFetch(
-              `hospital_dados?limit=${PAGE_SIZE}&offset=${offset}`
-            )
-            if (!res2.ok) {
-              const txt = await res2.text()
-              setStoreStatus(`Erro ${res2.status}: ${txt.slice(0,120)}`)
-              setInitLoading(false)
-              return
-            }
-            const batch2 = await res2.json()
-            if (!Array.isArray(batch2) || batch2.length === 0) break
-            allRows = allRows.concat(batch2)
-            setStoreStatus(`Carregando… ${allRows.length} linhas`)
-            if (batch2.length < PAGE_SIZE) break
-            offset += PAGE_SIZE
-            continue
+            const txt = await res.text()
+            setStoreStatus(`Erro ${res.status}: ${txt.slice(0,120)}`)
+            setInitLoading(false)
+            return
           }
 
           const batch = await res.json()
           if (!Array.isArray(batch) || batch.length === 0) break
 
-          // Se cada item tem campo "dados" (JSON embutido), extrai
-          const rows = batch[0]?.dados !== undefined
-            ? batch.flatMap(item => {
-                try {
-                  const d = typeof item.dados === 'string' ? JSON.parse(item.dados) : item.dados
-                  return Array.isArray(d) ? d : [d]
-                } catch { return [] }
-              })
-            : batch
+          // Cada linha tem campo "dados" que é jsonb (array ou objeto)
+          // O Supabase retorna jsonb já parseado (não como string)
+          for (const item of batch) {
+            try {
+              const d = item.dados
+              if (!d) continue
+              // Se jsonb vier como string (improvável mas possível)
+              const parsed = typeof d === 'string' ? JSON.parse(d) : d
+              if (Array.isArray(parsed)) {
+                allRows = allRows.concat(parsed)
+              } else if (parsed && typeof parsed === 'object') {
+                allRows.push(parsed)
+              }
+            } catch(e) { /* ignora linha corrompida */ }
+          }
 
-          allRows = allRows.concat(rows)
-          setStoreStatus(`Carregando… ${allRows.length} linhas`)
+          // Pega o timestamp da última linha carregada
+          const lastTs = batch[batch.length - 1]?.verif_ts
+          if (lastTs && !timestamp) setTimestamp(lastTs)
+
+          setStoreStatus(`Carregando… ${allRows.length} registros`)
           if (batch.length < PAGE_SIZE) break
           offset += PAGE_SIZE
         }
