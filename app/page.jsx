@@ -142,7 +142,13 @@ const buildFilter = (allDates, período, dateFrom, dateTo) => {
     const today = todayStr()
     return (ds) => ds === today
   }
-  if (período === 'ONTEM') return (ds) => ds === maxDate
+  if (período === 'ONTEM') {
+    // Ontem = dia anterior ao maxDate da base
+    const ref = new Date(maxDate + 'T00:00:00Z')
+    ref.setUTCDate(ref.getUTCDate() - 1)
+    const ontem = `${ref.getUTCFullYear()}-${String(ref.getUTCMonth()+1).padStart(2,'0')}-${String(ref.getUTCDate()).padStart(2,'0')}`
+    return (ds) => ds === ontem
+  }
   if (período === 'SEMANA') {
     const c = new Date(maxDate + 'T00:00:00Z')
     c.setUTCDate(c.getUTCDate() - 6)
@@ -667,7 +673,12 @@ export default function Home() {
     const sorted=[...allDates].sort(), max=sorted[sorted.length-1]
     const fmt=s=>s.split('-').reverse().join('/')
     if (período==='HOJE') return `Hoje · ${fmt(todayStr())}`
-    if (período==='ONTEM') return `Ontem · ${fmt(max)}`
+    if (período==='ONTEM') {
+      const ref = new Date(max+'T00:00:00Z')
+      ref.setUTCDate(ref.getUTCDate()-1)
+      const ontemStr = `${ref.getUTCFullYear()}-${String(ref.getUTCMonth()+1).padStart(2,'0')}-${String(ref.getUTCDate()).padStart(2,'0')}`
+      return `Ontem · ${fmt(ontemStr)}`
+    }
     if (período==='SEMANA') {
       const c=new Date(max+'T00:00:00Z'); c.setUTCDate(c.getUTCDate()-6)
       const cut=`${c.getUTCFullYear()}-${String(c.getUTCMonth()+1).padStart(2,'0')}-${String(c.getUTCDate()).padStart(2,'0')}`
