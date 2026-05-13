@@ -50,13 +50,17 @@ const getStatusCfg = (s = '') => {
 
 // ─── Helpers ──────────────────────────────────────────────
 const parseEsperaMin = (v) => {
-  if (!v && v !== 0) return 0
+  if (v === '' || v === null || v === undefined) return 0
   if (typeof v === 'number') return v * 24 * 60
   const s = String(v).trim()
   if (s.includes(':')) {
-    const [h, m] = s.split(':').map(Number)
-    return (h||0)*60 + (m||0)
+    // formato "HH:MM:SS" ou "H:MM"
+    const parts = s.split(':').map(Number)
+    return (parts[0]||0)*60 + (parts[1]||0)
   }
+  // string numérica (fração de dia vinda como string)
+  const n = Number(s)
+  if (!isNaN(n)) return n * 24 * 60
   return 0
 }
 const fmtMin = (m) => {
@@ -336,10 +340,17 @@ function MaiorEsperaCard({ rows, cols, horaFilt }) {
       }
     })
 
-    return Object.values(m)
-      .filter(x => x.esperaMax > 0 && x.pacAguardando > 0)  // ambos > 0
+    const result = Object.values(m)
+      .filter(x => x.esperaMax > 0 && x.pacAguardando > 0)
       .sort((a, b) => b.esperaMax - a.esperaMax)
       .slice(0, 10)
+
+    // Debug: logar no console para diagnóstico
+    const totalRows = rows.length
+    const withHrReg = rows.filter(d => d._hrReg !== null).length
+    const hrRegsUniq = [...new Set(rows.map(d=>d._hrReg).filter(h=>h!==null))].sort((a,b)=>a-b)
+    console.log('[MaiorEspera] rows:', totalRows, '| com _hrReg:', withHrReg, '| horas:', hrRegsUniq, '| hrAlvo:', hrAlvo, '| hrAlvoPorUnid count:', Object.keys(hrAlvoPorUnid).length, '| result:', result.length)
+    return result
   }, [rows, cols, horaFilt])
 
   if (!items.length) return (
@@ -810,12 +821,24 @@ export default function Home() {
         if (m) hora = parseInt(m[1])
       }
       // _hrReg: hora exata do snapshot de espera (HR_REGISTRO_ESPERA)
+      // Suporta: número fracionário (0.4583), string numérica ('0.4583'), string hora ('11:00:00')
       const hrRV = d[cols.hrRegistroEspera]
       let hrReg = null
-      if (typeof hrRV === 'number') hrReg = Math.round(hrRV * 24)
-      else if (hrRV && typeof hrRV === 'string') {
-        const m2 = hrRV.match(/^(\d{1,2}):/)
-        if (m2) hrReg = parseInt(m2[1])
+      if (hrRV !== '' && hrRV !== null && hrRV !== undefined) {
+        const n = Number(hrRV)
+        if (!isNaN(n) && typeof hrRV !== 'string') {
+          // número nativo (fração de dia)
+          hrReg = Math.round(n * 24)
+        } else if (typeof hrRV === 'string') {
+          const mStr = hrRV.match(/^(\d{1,2}):/)
+          if (mStr) {
+            // string formato "HH:MM:SS"
+            hrReg = parseInt(mStr[1])
+          } else if (!isNaN(n) && n !== 0) {
+            // string numérica "0.4583..."
+            hrReg = Math.round(n * 24)
+          }
+        }
       }
       return { ...d, _dateStr: serialToDateStr(d[cols.data]), _hora: hora, _hrReg: hrReg }
     })
