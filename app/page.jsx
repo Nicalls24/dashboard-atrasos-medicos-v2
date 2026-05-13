@@ -130,10 +130,18 @@ const parseEsperaMin = (v) => {
 }
 
 // ─── buildFilter: período baseado nas datas da base ───────
-const buildFilter = (allDates, período) => {
-  if (período === 'TODOS' || !allDates.length) return () => true
+const todayStr = () => {
+  const n = new Date()
+  return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-${String(n.getDate()).padStart(2,'0')}`
+}
+const buildFilter = (allDates, período, dateFrom, dateTo) => {
+  if (!allDates.length) return () => true
   const sorted  = [...allDates].sort()
   const maxDate = sorted[sorted.length - 1]
+  if (período === 'HOJE') {
+    const today = todayStr()
+    return (ds) => ds === today
+  }
   if (período === 'ONTEM') return (ds) => ds === maxDate
   if (período === 'SEMANA') {
     const c = new Date(maxDate + 'T00:00:00Z')
@@ -141,11 +149,20 @@ const buildFilter = (allDates, período) => {
     const cut = `${c.getUTCFullYear()}-${String(c.getUTCMonth()+1).padStart(2,'0')}-${String(c.getUTCDate()).padStart(2,'0')}`
     return (ds) => ds >= cut && ds <= maxDate
   }
-  if (período === 'MÊS') {
+  if (período === 'MES') {
     const mes = maxDate.slice(0,7)
     return (ds) => ds.slice(0,7) === mes
   }
-  return () => true
+  if (período === 'ANO') {
+    const ano = maxDate.slice(0,4)
+    return (ds) => ds.slice(0,4) === ano
+  }
+  if (período === 'PERIODO') {
+    const from = dateFrom || sorted[0]
+    const to   = dateTo   || maxDate
+    return (ds) => ds >= from && ds <= to
+  }
+  return () => true  // sem filtro
 }
 
 // ─── Sub-components ───────────────────────────────────────
@@ -418,31 +435,52 @@ function ImpactoEsperaCard({ rows, cols }) {
 
 // ─── Período selector ─────────────────────────────────────
 const PERIODOS = [
-  { key:'TODOS',  label:'Todos'  },
-  { key:'ONTEM',  label:'Ontem'  },
-  { key:'SEMANA', label:'Semana' },
-  { key:'MÊS',    label:'Mês'    },
+  { key:'HOJE',    label:'Hoje'    },
+  { key:'ONTEM',   label:'Ontem'   },
+  { key:'SEMANA',  label:'Semana'  },
+  { key:'MES',     label:'Mês'     },
+  { key:'ANO',     label:'Ano'     },
+  { key:'PERIODO', label:'Período' },
 ]
 
-function PeriodoSelector({ value, onChange, infoLabel }) {
+function PeriodoSelector({ value, onChange, infoLabel, dateFrom, dateTo, onDateFrom, onDateTo, allDates }) {
+  const minDate = allDates[0] || ''
+  const maxDate = allDates[allDates.length-1] || ''
   return (
-    <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+    <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
       <div style={{ display:'flex', gap:3, background:T.card,
         border:`1px solid ${T.border}`, borderRadius:10, padding:4 }}>
         {PERIODOS.map(p=>(
           <button key={p.key} onClick={()=>onChange(p.key)} style={{
-            padding:'6px 13px', borderRadius:7, border:'none',
+            padding:'6px 11px', borderRadius:7, border:'none',
             fontSize:12, fontWeight:700, cursor:'pointer', transition:'all .15s',
             background: value===p.key
               ? `linear-gradient(135deg,${T.accent},${T.accentB})` : 'transparent',
             color: value===p.key ? '#000' : T.muted,
+            whiteSpace:'nowrap',
           }}>{p.label}</button>
         ))}
       </div>
+      {value === 'PERIODO' && (
+        <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+          <input type="date" value={dateFrom} min={minDate} max={maxDate}
+            onChange={e=>onDateFrom(e.target.value)}
+            style={{ background:T.card, border:`1px solid ${T.accent}55`, borderRadius:8,
+              color:T.text, fontSize:12, padding:'6px 10px', outline:'none',
+              colorScheme:'dark', cursor:'pointer' }} />
+          <span style={{ color:T.muted, fontSize:12 }}>→</span>
+          <input type="date" value={dateTo} min={minDate} max={maxDate}
+            onChange={e=>onDateTo(e.target.value)}
+            style={{ background:T.card, border:`1px solid ${T.accent}55`, borderRadius:8,
+              color:T.text, fontSize:12, padding:'6px 10px', outline:'none',
+              colorScheme:'dark', cursor:'pointer' }} />
+        </div>
+      )}
       {infoLabel && <span style={{ fontSize:11, color:T.muted }}>{infoLabel}</span>}
     </div>
   )
 }
+
 
 // ─── Main ─────────────────────────────────────────────────
 export default function Home() {
@@ -453,6 +491,8 @@ export default function Home() {
   const [search,   setSearch]   = useState('')
   const [período,  setPeriodo]  = useState('TODOS')
   const [horaFilt, setHoraFilt] = useState('TODAS')
+  const [dateFrom,  setDateFrom]  = useState('')
+  const [dateTo,    setDateTo]    = useState('')
   const [timestamp, setTimestamp] = useState('')
 
   const handleUpload = async (e) => {
@@ -474,7 +514,7 @@ export default function Home() {
     const json = XLSX.utils.sheet_to_json(ws, { range:3, defval:'' })
     setDados(json)
     setUf('TODOS'); setStatus('TODOS'); setSearch('')
-    setPeriodo('TODOS'); setHoraFilt('TODAS')
+    setPeriodo('HOJE'); setHoraFilt('TODAS'); setDateFrom(''); setDateTo('')
     setLoading(false)
   }
 
@@ -524,7 +564,7 @@ export default function Home() {
     [...new Set(dadosComData.map(d=>d._dateStr).filter(Boolean))].sort(),
     [dadosComData])
 
-  const periodoFn = useMemo(() => buildFilter(allDates, período), [allDates, período])
+  const periodoFn = useMemo(() => buildFilter(allDates, período, dateFrom, dateTo), [allDates, período, dateFrom, dateTo])
 
   const dadosPorPeriodo = useMemo(() =>
     dadosComData.filter(d => periodoFn(d._dateStr)),
@@ -623,9 +663,10 @@ export default function Home() {
 
   // ── Label período ─────────────────────────────────────
   const períodoLabel = useMemo(() => {
-    if (!allDates.length||período==='TODOS') return ''
-    const sorted=[...allDates].sort(), max=sorted[sorted.length-1], min=sorted[0]
+    if (!allDates.length) return ''
+    const sorted=[...allDates].sort(), max=sorted[sorted.length-1]
     const fmt=s=>s.split('-').reverse().join('/')
+    if (período==='HOJE') return `Hoje · ${fmt(todayStr())}`
     if (período==='ONTEM') return `Ontem · ${fmt(max)}`
     if (período==='SEMANA') {
       const c=new Date(max+'T00:00:00Z'); c.setUTCDate(c.getUTCDate()-6)
@@ -633,14 +674,21 @@ export default function Home() {
       const semMin=sorted.find(d=>d>=cut)||cut
       return `${fmt(semMin)} → ${fmt(max)}`
     }
-    if (período==='MÊS') {
+    if (período==='MES') {
       const mes=max.slice(0,7), mesMin=sorted.find(d=>d.slice(0,7)===mes)||max
       const [y,m]=max.split('-')
       const nome=new Date(+y,+m-1).toLocaleString('pt-BR',{month:'long'})
       return `${nome.charAt(0).toUpperCase()+nome.slice(1)} · ${fmt(mesMin)} → ${fmt(max)}`
     }
+    if (período==='ANO') {
+      const ano=max.slice(0,4), anoMin=sorted.find(d=>d.slice(0,4)===ano)||max
+      return `Ano ${ano} · ${fmt(anoMin)} → ${fmt(max)}`
+    }
+    if (período==='PERIODO' && dateFrom && dateTo) {
+      return `${fmt(dateFrom)} → ${fmt(dateTo)}`
+    }
     return ''
-  }, [allDates, período])
+  }, [allDates, período, dateFrom, dateTo])
 
   const hasData = dados.length > 0
 
@@ -681,8 +729,10 @@ export default function Home() {
         <div style={{ display:'flex', alignItems:'center', gap:10, flexWrap:'wrap' }}>
           {hasData && (
             <>
-              <PeriodoSelector value={período} onChange={p=>{setPeriodo(p);setHoraFilt('TODAS')}}
-                infoLabel={`${totalRegistros.toLocaleString('pt-BR')} reg.${períodoLabel ? ' · '+períodoLabel : ''}`} />
+              <PeriodoSelector value={período} onChange={p=>{setPeriodo(p);setHoraFilt('TODAS');setDateFrom('');setDateTo('')}}
+                infoLabel={`${totalRegistros.toLocaleString('pt-BR')} reg.${períodoLabel ? ' · '+períodoLabel : ''}`}
+                dateFrom={dateFrom} dateTo={dateTo} onDateFrom={setDateFrom} onDateTo={setDateTo}
+                allDates={allDates} />
 
               {/* Filtro de hora */}
               <select value={horaFilt} onChange={e=>setHoraFilt(e.target.value)} style={{
@@ -859,7 +909,7 @@ export default function Home() {
           {/* ── Footer ── */}
           <div style={{ textAlign:'center', color:T.muted, fontSize:11, paddingTop:8, paddingBottom:20 }}>
             Dashboard Monitoramento Hospitalar · {new Date().toLocaleDateString('pt-BR')}
-            {período!=='TODOS' && ` · ${períodoLabel}`}
+            {períodoLabel && ` · ${períodoLabel}`}
             {horaFilt!=='TODAS' && ` · Hora ${horaFilt}h`}
           </div>
         </>)}
