@@ -456,7 +456,7 @@ export default function Home() {
 
         while (true) {
           const res = await sbFetch(
-            `hospital_dados?select=dados,verif_ts&order=id.asc&limit=${PAGE_SIZE}&offset=${offset}`
+            `hospital_dados?select=dados,verif_ts,snapshot_dates&order=id.asc&limit=${PAGE_SIZE}&offset=${offset}`
           )
           if (!res.ok) {
             const txt = await res.text()
@@ -512,42 +512,41 @@ export default function Home() {
       const BATCH = 500
       const newDates = [...new Set(newRows.map(rowDateStr).filter(Boolean))]
 
-      // Remove linhas antigas com as mesmas datas
-      setStoreStatus(`Removendo ${newDates.length} dia(s) antigo(s)…`)
-      for (const date of newDates) {
-        // datas_do_snapshot é text[] — filtra por overlap
-        await sbFetch(
-          `hospital_dados?datas_do_snapshot=cs.{${date}}`,
-          { method: 'DELETE' }
-        )
-      }
+      // Apaga tudo e reinsere (mais simples e confiável)
+      setStoreStatus('Limpando dados antigos…')
+      await sbFetch('hospital_dados?id=gt.0', { method: 'DELETE' })
 
-      // Insere em lotes de BATCH linhas por linha da tabela
-      const verif_ts = ts
-      const datas_do_snapshot = newDates
+      // Insere em lotes — usa os nomes EXATOS das colunas do Supabase:
+      // id (serial), uploaded_at (timestamptz), verif_ts (text),
+      // dados (jsonb), snapshot_dates (text[])
       const totalChunks = Math.ceil(newRows.length / BATCH)
       for (let ci = 0; ci < totalChunks; ci++) {
         const slice = newRows.slice(ci * BATCH, (ci + 1) * BATCH)
         setStoreStatus(`Salvando lote ${ci + 1}/${totalChunks}…`)
-        await sbFetch('hospital_dados', {
+        const res = await sbFetch('hospital_dados', {
           method: 'POST',
           headers: { 'Prefer': 'return=minimal' },
           body: JSON.stringify({
-            verif_ts,
-            dados: slice,           // jsonb — Supabase aceita array direto
-            datas_do_snapshot,
+            verif_ts:       ts,
+            dados:          slice,      // jsonb — array direto (sem stringify)
+            snapshot_dates: newDates,   // text[] — nome real da coluna
           }),
         })
+        if (!res.ok) {
+          const txt = await res.text()
+          setStoreStatus(`⚠ Erro lote ${ci+1}: ${txt.slice(0,120)}`)
+          setStoring(false)
+          return
+        }
       }
 
-      // Atualiza state sem recarregar do servidor (já temos os dados em memória)
-      const diasSet = new Set(newRows.map(rowDateStr).filter(Boolean))
+      const diasSet = new Set(newDates)
       setStorageInfo({ dias: diasSet.size, total: newRows.length })
       setStoreStatus('✓ Salvo no Supabase')
       setTimeout(() => setStoreStatus(''), 3000)
     } catch (e) {
       console.error('save error:', e)
-      setStoreStatus('⚠ Erro ao salvar — dados visíveis localmente')
+      setStoreStatus(`⚠ Erro: ${e.message}`)
     }
     setStoring(false)
   }, [])
