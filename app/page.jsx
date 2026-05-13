@@ -405,17 +405,16 @@ const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJ
 const PAGE_SIZE = 1000  // rows per page from hospital_dados
 
 const sbFetch = (path, opts = {}) => {
-  const isWrite = opts.method && ['POST','PATCH','PUT','DELETE'].includes(opts.method)
+  const { headers: extraHeaders, ...restOpts } = opts
   return fetch(`${SB_URL}/rest/v1/${path}`, {
+    ...restOpts,
     headers: {
       'apikey':        SB_KEY,
       'Authorization': `Bearer ${SB_KEY}`,
       'Content-Type':  'application/json',
-      ...(isWrite ? { 'Prefer': 'return=minimal' } : {}),
-      'Range-Unit': 'items',
-      ...opts.headers,
+      'Range-Unit':    'items',
+      ...extraHeaders,
     },
-    ...opts,
   })
 }
 
