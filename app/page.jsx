@@ -911,16 +911,8 @@ export default function Home() {
     const serials = [...new Set(dadosComData.map(d=>d._dateSerial).filter(s=>s!=null))].sort((a,b)=>a-b)
     if (dadosComData.length > 0) {
       const s0 = dadosComData[0]
-      console.log('[allSerials debug]', {
-        totalDados: dadosComData.length,
-        serialsCount: serials.length,
-        serials: serials,
-        todaySerial: todaySerial(),
-        row0_DATA_AGENDA: s0[cols.data],
-        row0_type: typeof s0[cols.data],
-        row0__dateSerial: s0._dateSerial,
-        período,
-      })
+      const ts = todaySerial()
+      console.log('[allSerials debug] todaySerial=' + ts + ' serialsArray=' + JSON.stringify(serials) + ' período=' + período + ' row0_DATA_AGENDA=' + s0[cols.data] + ' type=' + typeof s0[cols.data] + ' _dateSerial=' + s0._dateSerial)
     }
     return serials
   }, [dadosComData])
