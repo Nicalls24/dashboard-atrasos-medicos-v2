@@ -534,31 +534,44 @@ export default function Home() {
   useEffect(() => {
     const loadFromSupabase = async () => {
       try {
-        setStoreStatus('Carregando dados do Supabase…')
+        setStoreStatus('Conectando ao Supabase…')
 
         // 1. Busca metadados (timestamp)
         const metaRes = await sbFetch('monitor_hospitalar_meta?select=timestamp&id=eq.1')
         if (metaRes.ok) {
           const meta = await metaRes.json()
           if (meta[0]?.timestamp) setTimestamp(meta[0].timestamp)
+        } else {
+          const txt = await metaRes.text()
+          setStoreStatus(`Erro meta ${metaRes.status}: ${txt.slice(0,120)}`)
+          setInitLoading(false)
+          return
         }
 
         // 2. Busca todos os chunks com paginação via limit/offset
+        setStoreStatus('Buscando dados…')
         let allChunks = [], offset = 0
         const pageSize = 500
         while (true) {
           const r = await sbFetch(
             `monitor_hospitalar_chunks?select=data_agenda,chunk_idx,rows_json&order=data_agenda.asc,chunk_idx.asc&limit=${pageSize}&offset=${offset}`
           )
-          if (!r.ok) { console.error('Chunk fetch error:', r.status); break }
+          if (!r.ok) {
+            const txt = await r.text()
+            setStoreStatus(`Erro chunks ${r.status}: ${txt.slice(0,120)}`)
+            setInitLoading(false)
+            return
+          }
           const batch = await r.json()
           if (!Array.isArray(batch) || batch.length === 0) break
           allChunks = allChunks.concat(batch)
+          setStoreStatus(`Carregando… ${allChunks.length} chunks`)
           if (batch.length < pageSize) break
           offset += pageSize
         }
 
         if (allChunks.length > 0) {
+          setStoreStatus(`Processando ${allChunks.length} chunks…`)
           let allRows = []
           for (const c of allChunks) {
             try { allRows = allRows.concat(JSON.parse(c.rows_json)) } catch(e) {}
@@ -567,13 +580,15 @@ export default function Home() {
           setDados(allRows)
           setStorageInfo({ dias: diasSet.size, total: allRows.length })
           setPeriodo('HOJE')
-          setStoreStatus('')
+          setStoreStatus(`☁ ${diasSet.size} dias · ${allRows.length.toLocaleString('pt-BR')} registros`)
+          setTimeout(() => setStoreStatus(''), 4000)
         } else {
-          setStoreStatus('')
+          setStoreStatus('Supabase vazio — carregue uma planilha')
+          setTimeout(() => setStoreStatus(''), 4000)
         }
       } catch (e) {
         console.error('Supabase load error:', e)
-        setStoreStatus('Erro ao carregar — verifique a conexão')
+        setStoreStatus(`Erro: ${e.message}`)
       }
       setInitLoading(false)
     }
@@ -1000,17 +1015,34 @@ export default function Home() {
             justifyContent:'center', minHeight:'calc(100vh - 140px)', gap:16 }}>
             <div style={{ fontSize:40 }}>⏳</div>
             <div style={{ fontSize:18, color:T.muted }}>Conectando ao Supabase…</div>
+            {storeStatus && (
+              <div style={{ fontSize:13, color:T.warning, maxWidth:600, textAlign:'center',
+                background:T.card, padding:'12px 20px', borderRadius:10,
+                border:`1px solid ${T.warning}44` }}>{storeStatus}</div>
+            )}
           </div>
         )}
         {!isInit && !hasData && (
           <div style={{ display:'flex', flexDirection:'column', alignItems:'center',
             justifyContent:'center', minHeight:'calc(100vh - 140px)', gap:16 }}>
-            <div style={{ fontSize:56 }}>📋</div>
-            <div style={{ fontSize:22, fontWeight:700 }}>Nenhuma planilha carregada</div>
-            <div style={{ color:T.muted, fontSize:14, textAlign:'center' }}>
-              Clique em "+ Carregar Planilha" para começar.<br />
-              Os dados ficam salvos — carregue o acumulado de cada dia e o dashboard acumula tudo.
-            </div>
+            {storeStatus ? (
+              <>
+                <div style={{ fontSize:40 }}>⚠️</div>
+                <div style={{ fontSize:18, color:T.warning, fontWeight:700 }}>Problema na conexão</div>
+                <div style={{ fontSize:13, color:T.warning, maxWidth:600, textAlign:'center',
+                  background:T.card, padding:'12px 20px', borderRadius:10,
+                  border:`1px solid ${T.warning}44` }}>{storeStatus}</div>
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize:56 }}>📋</div>
+                <div style={{ fontSize:22, fontWeight:700 }}>Nenhuma planilha carregada</div>
+                <div style={{ color:T.muted, fontSize:14, textAlign:'center' }}>
+                  Clique em "+ Carregar Planilha" para começar.<br />
+                  Os dados ficam salvos — carregue o acumulado de cada dia e o dashboard acumula tudo.
+                </div>
+              </>
+            )}
           </div>
         )}
 
