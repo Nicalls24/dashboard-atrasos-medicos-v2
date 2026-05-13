@@ -311,10 +311,23 @@ function EsperaHoraCard({ rows, cols, allRawDados, período }) {
   const byHora = useMemo(() => {
     let fonte = rows
     if (período === 'HOJE' && allRawDados && allRawDados.length > 0) {
-      const maxAgenda = Math.max(...allRawDados
-        .map(d => { const v = d[cols.data]; return typeof v === 'number' ? v : 0 })
-        .filter(v => v > 0))
-      if (maxAgenda > 0) fonte = allRawDados.filter(d => d[cols.data] === maxAgenda)
+      // DATA_AGENDA pode vir como serial (46154) OU como serial+1 (46155) dependendo
+      // de como o SheetJS converteu datetime. Pegar os 2 maiores valores para cobrir ambos.
+      const agendaNums = allRawDados
+        .map(d => { const v = d[cols.data]; return typeof v === 'number' && v > 1000 ? v : 0 })
+        .filter(v => v > 0)
+      if (agendaNums.length > 0) {
+        const maxA = Math.max(...agendaNums)
+        // Incluir maxA e maxA-1 para cobrir offset de 1 dia do Excel
+        const validos = new Set([maxA, maxA - 1])
+        const candidatos = allRawDados.filter(d => {
+          const v = d[cols.data]
+          return typeof v === 'number' && validos.has(v)
+        })
+        // Preferir o conjunto com dados de HR_REGISTRO_ESPERA
+        const comEspera = candidatos.filter(d => d[cols.hrRegistroEspera] && d[cols.hrRegistroEspera] !== '')
+        fonte = comEspera.length > 0 ? candidatos : allRawDados
+      }
     }
 
     const map = {}
