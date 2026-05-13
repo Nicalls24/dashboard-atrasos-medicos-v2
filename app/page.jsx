@@ -402,7 +402,7 @@ function PeriodoSelector({ value, onChange, infoLabel, dateFrom, dateTo, onDateF
 // ─── Supabase config ──────────────────────────────────────
 const SB_URL = 'https://fwdvzsywudpieqlqnxkp.supabase.co'
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ3ZHZ6c3l3dWRwaWVxbHFueGtwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg1ODcyNzEsImV4cCI6MjA5NDE2MzI3MX0.SkyfE_HVulz_TyQldI6XpENSJAuu6xDgUEDz4vObKYQ'
-const PAGE_SIZE = 1000  // rows per page from hospital_dados
+const PAGE_SIZE = 10000  // linhas da tabela por página (cada linha tem ~2000 registros)
 
 const sbFetch = (path, opts = {}) => {
   const { headers: extraHeaders, ...restOpts } = opts
@@ -448,16 +448,18 @@ export default function Home() {
         setStoreStatus('Carregando dados…')
 
         // Carrega todas as linhas de hospital_dados com paginação
-        // Cada linha tem campo "dados" (jsonb) = array de registros da planilha
+        // O Supabase limita 1000 linhas por request — usamos Range header
         let allRows = []
         let offset = 0
         let lastVerifTs = ''
+        const BATCH_SIZE = 100  // linhas da tabela por request (cada uma tem ~2000 registros)
 
         while (true) {
           const res = await sbFetch(
-            `hospital_dados?select=dados,verif_ts,snapshot_dates&order=id.asc&limit=${PAGE_SIZE}&offset=${offset}`
+            `hospital_dados?select=dados,verif_ts&order=id.asc&limit=${BATCH_SIZE}&offset=${offset}`,
+            { headers: { 'Range': `${offset}-${offset + BATCH_SIZE - 1}` } }
           )
-          if (!res.ok) {
+          if (!res.ok && res.status !== 206) {
             const txt = await res.text()
             setStoreStatus(`Erro ${res.status}: ${txt.slice(0,120)}`)
             setInitLoading(false)
@@ -471,15 +473,15 @@ export default function Home() {
               const d = item.dados
               if (!d) continue
               const parsed = typeof d === 'string' ? JSON.parse(d) : d
-              if (Array.isArray(parsed))                   allRows = allRows.concat(parsed)
+              if (Array.isArray(parsed))                     allRows = allRows.concat(parsed)
               else if (parsed && typeof parsed === 'object') allRows.push(parsed)
             } catch(e) {}
             if (item.verif_ts) lastVerifTs = item.verif_ts
           }
 
           setStoreStatus(`Carregando… ${allRows.length} registros`)
-          if (batch.length < PAGE_SIZE) break
-          offset += PAGE_SIZE
+          if (batch.length < BATCH_SIZE) break
+          offset += BATCH_SIZE
         }
 
         if (allRows.length > 0) {
