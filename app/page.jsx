@@ -287,57 +287,48 @@ function AusenciasCard({ rows, cols }) {
 }
 
 // ─── ALTERADO: Unidades com Maior Espera + Pacientes Aguardando ──────────────
-function MaiorEsperaCard({ rows, cols }) {
+function MaiorEsperaCard({ rows, cols, horaFilt }) {
   const items = useMemo(() => {
-    // ── Lógica correta de snapshot ─────────────────────────────────────────
-    // HR_REGISTRO_ESPERA indica em qual hora aquele registro foi capturado.
-    // Para mostrar a situação ATUAL, filtramos pelo snapshot mais recente
-    // que seja <= horário atual do sistema. Assim, se o arquivo tem dados
-    // até 22h mas agora são 13h, usamos o snapshot das 13h.
-    //
-    // Por unidade: pegar os registros do seu snapshot mais recente ≤ agora,
-    // depois extrair espera máxima e soma de pacientes aguardando.
+    // ── Lógica de snapshot ────────────────────────────────────────────────
+    // Cada linha tem HR_REGISTRO_ESPERA = hora em que aquele snapshot foi capturado.
+    // Quando há filtro de hora (horaFilt), usamos EXATAMENTE aquela hora como snapshot.
+    // Quando não há filtro, usamos o snapshot mais recente <= hora atual do sistema.
 
-    const agoraMin = new Date().getHours() * 60 + new Date().getMinutes()
+    const agoraH = new Date().getHours()
+    const hrAlvo = horaFilt !== 'TODAS' ? Number(horaFilt) : null
 
-    // Converter HR_REGISTRO_ESPERA para minutos desde meia-noite
-    const hrRegToMin = (v) => {
-      if (!v && v !== 0) return null
-      if (typeof v === 'number') {
-        // fração de dia (Excel serial) → minutos
-        return Math.round(v * 24 * 60)
-      }
-      const s = String(v).trim()
-      if (s.includes(':')) {
-        const parts = s.split(':').map(Number)
-        return (parts[0]||0)*60 + (parts[1]||0)
-      }
-      return null
-    }
-
-    // 1ª passagem: achar o maior horário de snapshot ≤ agora por unidade
-    const hrMaxPorUnid = {}
+    // Para cada unidade: achar o snapshot mais adequado
+    // _hrReg já foi calculado em dadosComData a partir de HR_REGISTRO_ESPERA
+    const hrAlvoPorUnid = {}
     rows.forEach(d => {
       const unid  = String(d[cols.unidade]||'').trim() || 'Sem Unidade'
-      const hrMin = hrRegToMin(d[cols.hrRegistroEspera])
-      if (hrMin === null || hrMin > agoraMin) return
-      if (hrMaxPorUnid[unid] === undefined || hrMin > hrMaxPorUnid[unid]) {
-        hrMaxPorUnid[unid] = hrMin
+      const hrReg = d._hrReg  // já calculado, inteiro 0-23 ou null
+      if (hrReg === null) return
+      if (hrAlvo !== null) {
+        // filtro de hora ativo: só aceitar registros exatamente nessa hora
+        if (hrReg === hrAlvo) hrAlvoPorUnid[unid] = hrAlvo
+      } else {
+        // sem filtro: snapshot mais recente <= agora
+        if (hrReg <= agoraH) {
+          if (hrAlvoPorUnid[unid] === undefined || hrReg > hrAlvoPorUnid[unid]) {
+            hrAlvoPorUnid[unid] = hrReg
+          }
+        }
       }
     })
 
-    // 2ª passagem: agregar somente os registros do snapshot mais recente
+    // Agregar somente os registros do snapshot selecionado
     const m = {}
     rows.forEach(d => {
       const unid  = String(d[cols.unidade]||'').trim() || 'Sem Unidade'
-      const hrMin = hrRegToMin(d[cols.hrRegistroEspera])
-      if (hrMin === null) return
-      if (hrMaxPorUnid[unid] === undefined) return
-      if (hrMin !== hrMaxPorUnid[unid]) return   // só o snapshot mais recente
+      const hrReg = d._hrReg
+      if (hrReg === null) return
+      if (hrAlvoPorUnid[unid] === undefined) return
+      if (hrReg !== hrAlvoPorUnid[unid]) return
 
       const espMin = parseEsperaMin(d[cols.espera])
       const pacts  = Number(d[cols.qtPacts])||0
-      if (!m[unid]) m[unid] = { unid, esperaMax: 0, pacAguardando: 0, registros: 0, hrSnap: hrMin }
+      if (!m[unid]) m[unid] = { unid, esperaMax: 0, pacAguardando: 0, registros: 0, hrSnap: hrReg }
       if (espMin > m[unid].esperaMax) m[unid].esperaMax = espMin
       m[unid].pacAguardando += pacts
       m[unid].registros     += 1
@@ -347,7 +338,7 @@ function MaiorEsperaCard({ rows, cols }) {
       .filter(x => x.esperaMax > 0 || x.pacAguardando > 0)
       .sort((a, b) => b.esperaMax - a.esperaMax)
       .slice(0, 10)
-  }, [rows, cols])
+  }, [rows, cols, horaFilt])
 
   if (!items.length) return (
     <div style={{ color:T.muted, fontSize:13 }}>Sem dados de espera nos filtros atuais.</div>
@@ -363,8 +354,6 @@ function MaiorEsperaCard({ rows, cols }) {
         const barPacPct = (r.pacAguardando / maxPac) * 100
         const espColor  = i < 3 ? T.danger : T.warning
         const pacColor  = i < 3 ? '#FF7A50' : T.accent
-        const hSnap     = Math.floor(r.hrSnap / 60)
-        const mSnap     = r.hrSnap % 60
 
         return (
           <div key={r.unid} style={{ marginBottom: 18 }}>
@@ -381,10 +370,10 @@ function MaiorEsperaCard({ rows, cols }) {
                   </div>
                   <div style={{ display:'flex', alignItems:'center', gap: 10, marginTop: 3 }}>
                     <span style={{ fontSize:10, color:T.muted }}>
-                      snapshot {String(hSnap).padStart(2,'0')}:{String(mSnap).padStart(2,'0')}h · {r.registros} {r.registros === 1 ? 'registro' : 'registros'}
+                      snapshot {String(r.hrSnap).padStart(2,'0')}h · {r.registros} {r.registros === 1 ? 'registro' : 'registros'}
                     </span>
                     <span style={{ fontSize:10, color: pacColor, fontWeight:700 }}>
-                      👥 {r.pacAguardando.toLocaleString('pt-BR')} aguardando
+                      {r.pacAguardando.toLocaleString('pt-BR')} pac. aguardando
                     </span>
                   </div>
                 </div>
@@ -394,7 +383,6 @@ function MaiorEsperaCard({ rows, cols }) {
               </span>
             </div>
 
-            {/* Barra de espera */}
             <div style={{ marginBottom: 4 }}>
               <div style={{ background:T.border, borderRadius:6, height:6, overflow:'hidden' }}>
                 <div style={{ height:'100%', borderRadius:6, background: espColor,
@@ -402,7 +390,6 @@ function MaiorEsperaCard({ rows, cols }) {
               </div>
             </div>
 
-            {/* Barra de pacientes aguardando */}
             <div style={{ display:'flex', alignItems:'center', gap: 6 }}>
               <span style={{ fontSize:9, color: T.muted, minWidth: 80 }}>Pac. aguardando</span>
               <div style={{ flex:1, background:T.border, borderRadius:4, height:4, overflow:'hidden' }}>
@@ -420,7 +407,6 @@ function MaiorEsperaCard({ rows, cols }) {
   )
 }
 
-// ─── NOVO: Recorrência de Atraso por Unidade ─────────────────────────────────
 function RecorrenciaAtrasoCard({ rows, cols }) {
   const items = useMemo(() => {
     const m = {}
@@ -813,6 +799,7 @@ export default function Home() {
   const dadosComData = useMemo(() => {
     if (!dados.length) return []
     return dados.map(d => {
+      // _hora: hora da consulta (HR_INICIO) — filtro geral de hora
       const hrV = d[cols.hrInicio]
       let hora = 99
       if (typeof hrV === 'number') hora = Math.floor(hrV * 24)
@@ -820,7 +807,15 @@ export default function Home() {
         const m = hrV.match(/(\d{1,2}):/)
         if (m) hora = parseInt(m[1])
       }
-      return { ...d, _dateStr: serialToDateStr(d[cols.data]), _hora: hora }
+      // _hrReg: hora exata do snapshot de espera (HR_REGISTRO_ESPERA)
+      const hrRV = d[cols.hrRegistroEspera]
+      let hrReg = null
+      if (typeof hrRV === 'number') hrReg = Math.round(hrRV * 24)
+      else if (hrRV && typeof hrRV === 'string') {
+        const m2 = hrRV.match(/^(\d{1,2}):/)
+        if (m2) hrReg = parseInt(m2[1])
+      }
+      return { ...d, _dateStr: serialToDateStr(d[cols.data]), _hora: hora, _hrReg: hrReg }
     })
   }, [dados, cols])
 
@@ -835,7 +830,8 @@ export default function Home() {
     [dadosComData, periodoFn])
 
   const horasDisp = useMemo(() => {
-    const hs = [...new Set(dadosPorPeriodo.map(d=>d._hora).filter(h=>h>=0&&h<=23))].sort((a,b)=>a-b)
+    // Horas dos snapshots de espera (HR_REGISTRO_ESPERA) disponíveis no período
+    const hs = [...new Set(dadosPorPeriodo.map(d=>d._hrReg).filter(h=>h!==null&&h>=0&&h<=23))].sort((a,b)=>a-b)
     return hs
   }, [dadosPorPeriodo])
 
@@ -1216,7 +1212,7 @@ export default function Home() {
             {/* ── ALTERADO: Maior Espera + Pacientes Aguardando ── */}
             <Card style={{ marginBottom:16 }}>
               <SH>⏳ Unidades com Maior Tempo de Espera · Pacientes Aguardando</SH>
-              <MaiorEsperaCard rows={filtered} cols={cols} />
+              <MaiorEsperaCard rows={filtered} cols={cols} horaFilt={horaFilt} />
             </Card>
 
             {/* ── NOVO: Recorrência de Atraso ── */}
