@@ -446,57 +446,37 @@ export default function Home() {
   useEffect(() => {
     const loadFromSupabase = async () => {
       try {
-        setStoreStatus('Conectando ao Supabase…')
+        setStoreStatus('Carregando dados…')
 
-        // 1. Busca timestamp do meta (se existir)
-        try {
-          const metaRes = await sbFetch('mh_meta?select=ts&id=eq.1')
-          if (metaRes.ok) {
-            const meta = await metaRes.json()
-            if (meta[0]?.ts) setTimestamp(meta[0].ts)
-          }
-        } catch(e) { /* ignora erro de meta */ }
-
-        // 2. Carrega todos os dados de hospital_dados com paginação
-        // Cada linha da tabela tem campo "dados" (jsonb) com um array de registros
-        setStoreStatus('Carregando dados do Supabase…')
+        // Carrega todas as linhas de hospital_dados com paginação
+        // Cada linha tem campo "dados" (jsonb) = array de registros da planilha
         let allRows = []
         let offset = 0
+        let lastVerifTs = ''
 
         while (true) {
           const res = await sbFetch(
             `hospital_dados?select=dados,verif_ts&order=id.asc&limit=${PAGE_SIZE}&offset=${offset}`
           )
-
           if (!res.ok) {
             const txt = await res.text()
             setStoreStatus(`Erro ${res.status}: ${txt.slice(0,120)}`)
             setInitLoading(false)
             return
           }
-
           const batch = await res.json()
           if (!Array.isArray(batch) || batch.length === 0) break
 
-          // Cada linha tem campo "dados" que é jsonb (array ou objeto)
-          // O Supabase retorna jsonb já parseado (não como string)
           for (const item of batch) {
             try {
               const d = item.dados
               if (!d) continue
-              // Se jsonb vier como string (improvável mas possível)
               const parsed = typeof d === 'string' ? JSON.parse(d) : d
-              if (Array.isArray(parsed)) {
-                allRows = allRows.concat(parsed)
-              } else if (parsed && typeof parsed === 'object') {
-                allRows.push(parsed)
-              }
-            } catch(e) { /* ignora linha corrompida */ }
+              if (Array.isArray(parsed))                   allRows = allRows.concat(parsed)
+              else if (parsed && typeof parsed === 'object') allRows.push(parsed)
+            } catch(e) {}
+            if (item.verif_ts) lastVerifTs = item.verif_ts
           }
-
-          // Pega o timestamp da última linha carregada
-          const lastTs = batch[batch.length - 1]?.verif_ts
-          if (lastTs && !timestamp) setTimestamp(lastTs)
 
           setStoreStatus(`Carregando… ${allRows.length} registros`)
           if (batch.length < PAGE_SIZE) break
@@ -504,59 +484,20 @@ export default function Home() {
         }
 
         if (allRows.length > 0) {
+          if (lastVerifTs) setTimestamp(lastVerifTs)
           const diasSet = new Set(allRows.map(rowDateStr).filter(Boolean))
-          setDados(allRows)
-          setStorageInfo({ dias: diasSet.size, total: allRows.length })
-          setPeriodo('MES') // Padrão: mostra o mês disponível
-          setStoreStatus(`☁ ${diasSet.size} dias · ${allRows.length.toLocaleString('pt-BR')} registros`)
-          setTimeout(() => setStoreStatus(''), 4000)
-        } else {
-          // Tenta fallback para mh_chunks se hospital_dados estiver vazia
-          await loadFromChunks()
-          return
-        }
-      } catch (e) {
-        console.error('Supabase load error:', e)
-        setStoreStatus(`Erro: ${e.message}`)
-        // Tenta fallback para mh_chunks
-        try { await loadFromChunks() } catch(e2) {}
-      }
-      setInitLoading(false)
-    }
-
-    // Fallback: carrega de mh_chunks (estrutura antiga)
-    const loadFromChunks = async () => {
-      try {
-        let allChunks = [], offset = 0
-        while (true) {
-          const r = await sbFetch(
-            `mh_chunks?select=data_agenda,chunk_idx,rows_json&order=data_agenda.asc,chunk_idx.asc&limit=500&offset=${offset}`
-          )
-          if (!r.ok) break
-          const batch = await r.json()
-          if (!Array.isArray(batch) || batch.length === 0) break
-          allChunks = allChunks.concat(batch)
-          setStoreStatus(`Carregando chunks… ${allChunks.length}`)
-          if (batch.length < 500) break
-          offset += 500
-        }
-        if (allChunks.length > 0) {
-          let allRows = []
-          for (const c of allChunks) {
-            try { allRows = allRows.concat(JSON.parse(c.rows_json)) } catch(e) {}
-          }
-          const diasSet = new Set(allChunks.map(c => c.data_agenda))
           setDados(allRows)
           setStorageInfo({ dias: diasSet.size, total: allRows.length })
           setPeriodo('MES')
           setStoreStatus(`☁ ${diasSet.size} dias · ${allRows.length.toLocaleString('pt-BR')} registros`)
           setTimeout(() => setStoreStatus(''), 4000)
         } else {
-          setStoreStatus('Nenhum dado encontrado — carregue uma planilha')
-          setTimeout(() => setStoreStatus(''), 5000)
+          setStoreStatus('Nenhum dado — carregue uma planilha')
+          setTimeout(() => setStoreStatus(''), 4000)
         }
-      } catch(e) {
-        setStoreStatus(`Erro chunks: ${e.message}`)
+      } catch (e) {
+        console.error('load error:', e)
+        setStoreStatus(`Erro: ${e.message}`)
       }
       setInitLoading(false)
     }
@@ -564,130 +505,48 @@ export default function Home() {
     loadFromSupabase()
   }, [])
 
-  // ── Salva no Supabase (hospital_dados — upsert por lote) ─
+  // ── Salva no Supabase (só hospital_dados) ────────────
   const saveToSupabase = useCallback(async (newRows, ts) => {
     setStoring(true)
     try {
-      // Estratégia: salva na tabela hospital_dados linha a linha em lotes
-      // Detecta se a tabela tem coluna "dados" ou é row-per-row
       const BATCH = 500
       const newDates = [...new Set(newRows.map(rowDateStr).filter(Boolean))]
 
-      // Remove linhas existentes com as datas da nova planilha
+      // Remove linhas antigas com as mesmas datas
       setStoreStatus(`Removendo ${newDates.length} dia(s) antigo(s)…`)
-
-      // Tenta primeiro com mh_chunks (compatibilidade)
-      let usedChunks = false
-      try {
-        const testMeta = await sbFetch('mh_meta?select=id&id=eq.1')
-        if (testMeta.ok) {
-          const metaData = await testMeta.json()
-          if (metaData.length > 0) usedChunks = true
-        }
-      } catch(e) {}
-
-      // Salva em mh_chunks (método existente que funciona)
-      const CHUNK_SIZE = 4000
       for (const date of newDates) {
-        await sbFetch(`mh_chunks?data_agenda=eq.${date}`, { method: 'DELETE' })
-      }
-      const byDate = {}
-      newRows.forEach(r => {
-        const ds = rowDateStr(r)
-        if (!ds) return
-        if (!byDate[ds]) byDate[ds] = []
-        byDate[ds].push(r)
-      })
-      const datesSorted = Object.keys(byDate).sort()
-      for (const date of datesSorted) {
-        const rows = byDate[date]
-        const totalChunks = Math.ceil(rows.length / CHUNK_SIZE)
-        setStoreStatus(`Salvando ${date} (${rows.length} linhas)…`)
-        for (let ci = 0; ci < totalChunks; ci++) {
-          const slice = rows.slice(ci * CHUNK_SIZE, (ci + 1) * CHUNK_SIZE)
-          await sbFetch('mh_chunks', {
-            method: 'POST',
-            headers: { 'Prefer': 'resolution=merge-duplicates,return=minimal' },
-            body: JSON.stringify({
-              data_agenda:  date,
-              chunk_idx:    ci,
-              rows_json:    JSON.stringify(slice),
-              total_linhas: slice.length,
-              uploaded_at:  new Date().toISOString(),
-            }),
-          })
-        }
-      }
-
-      // Atualiza timestamp
-      await sbFetch('mh_meta?id=eq.1', {
-        method: 'PATCH',
-        headers: { 'Prefer': 'return=minimal' },
-        body: JSON.stringify({ ts: ts, updated_at: new Date().toISOString() }),
-      })
-
-      // Também tenta salvar em hospital_dados se existir
-      try {
-        const hdTest = await sbFetch('hospital_dados?limit=1')
-        if (hdTest.ok) {
-          // Apaga linhas com datas novas e reinsere
-          // Detecta estrutura da tabela
-          const sample = await hdTest.json()
-          const hasVerifTs = Array.isArray(sample) && sample[0]?.verif_ts !== undefined
-          const hasDados   = Array.isArray(sample) && sample[0]?.dados !== undefined
-
-          if (hasVerifTs || hasDados) {
-            // Tabela tem estrutura específica — salva como JSON embutido
-            setStoreStatus('Sincronizando hospital_dados…')
-            const verif_ts = ts
-            const datas_do_snapshot = newDates
-            const chunks = []
-            for (let i = 0; i < newRows.length; i += BATCH) {
-              chunks.push(newRows.slice(i, i + BATCH))
-            }
-            for (const chunk of chunks) {
-              await sbFetch('hospital_dados', {
-                method: 'POST',
-                headers: { 'Prefer': 'return=minimal' },
-                body: JSON.stringify({
-                  verif_ts,
-                  dados: JSON.stringify(chunk),
-                  datas_do_snapshot,
-                }),
-              })
-            }
-          }
-        }
-      } catch(e) { /* ignora erro de hospital_dados */ }
-
-      // Recarrega tudo
-      setStoreStatus('Recarregando…')
-      let reloadChunks = [], rOffset = 0
-      while (true) {
-        const r = await sbFetch(
-          `mh_chunks?select=data_agenda,chunk_idx,rows_json&order=data_agenda.asc,chunk_idx.asc&limit=500&offset=${rOffset}`
+        // datas_do_snapshot é text[] — filtra por overlap
+        await sbFetch(
+          `hospital_dados?datas_do_snapshot=cs.{${date}}`,
+          { method: 'DELETE' }
         )
-        if (!r.ok) break
-        const batch = await r.json()
-        if (!Array.isArray(batch) || batch.length === 0) break
-        reloadChunks = reloadChunks.concat(batch)
-        if (batch.length < 500) break
-        rOffset += 500
-      }
-      if (reloadChunks.length > 0) {
-        let allRows = []
-        for (const c of reloadChunks) {
-          try { allRows = allRows.concat(JSON.parse(c.rows_json)) } catch(e) {}
-        }
-        const diasSet = new Set(reloadChunks.map(c => c.data_agenda))
-        setDados(allRows)
-        setStorageInfo({ dias: diasSet.size, total: allRows.length })
       }
 
+      // Insere em lotes de BATCH linhas por linha da tabela
+      const verif_ts = ts
+      const datas_do_snapshot = newDates
+      const totalChunks = Math.ceil(newRows.length / BATCH)
+      for (let ci = 0; ci < totalChunks; ci++) {
+        const slice = newRows.slice(ci * BATCH, (ci + 1) * BATCH)
+        setStoreStatus(`Salvando lote ${ci + 1}/${totalChunks}…`)
+        await sbFetch('hospital_dados', {
+          method: 'POST',
+          headers: { 'Prefer': 'return=minimal' },
+          body: JSON.stringify({
+            verif_ts,
+            dados: slice,           // jsonb — Supabase aceita array direto
+            datas_do_snapshot,
+          }),
+        })
+      }
+
+      // Atualiza state sem recarregar do servidor (já temos os dados em memória)
+      const diasSet = new Set(newRows.map(rowDateStr).filter(Boolean))
+      setStorageInfo({ dias: diasSet.size, total: newRows.length })
       setStoreStatus('✓ Salvo no Supabase')
       setTimeout(() => setStoreStatus(''), 3000)
     } catch (e) {
-      console.error('Supabase save error:', e)
+      console.error('save error:', e)
       setStoreStatus('⚠ Erro ao salvar — dados visíveis localmente')
     }
     setStoring(false)
@@ -699,11 +558,7 @@ export default function Home() {
     setStoring(true)
     setStoreStatus('Apagando…')
     try {
-      await sbFetch('mh_chunks?id=gt.0', { method: 'DELETE' })
-      await sbFetch('mh_meta?id=eq.1', {
-        method: 'PATCH',
-        body: JSON.stringify({ ts: '' }),
-      })
+      await sbFetch('hospital_dados?id=gt.0', { method: 'DELETE' })
     } catch(e) { console.error(e) }
     setDados([])
     setStorageInfo({ dias: 0, total: 0 })
