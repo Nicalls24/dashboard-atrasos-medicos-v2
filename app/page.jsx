@@ -69,24 +69,33 @@ const fmtMin = (m) => {
   return `${Math.floor(mm/60)}h${mm%60>0?` ${mm%60}m`:''}`
 }
 const serialToDateStr = (v) => {
-  if (!v && v !== 0) return ''
-  let d
+  if (v === null || v === undefined || v === '') return ''
+  // Número: serial Excel (dias desde 31/12/1899, com bug Lotus +1 para seriais > 60)
   if (typeof v === 'number') {
-    // Excel serial: dias desde 31/12/1899 (epoch = 25569 dias antes de 01/01/1970 UTC)
-    // Mas o Excel conta 1 dia extra por bug do Lotus 1-2-3 (29/02/1900 inexistente)
-    // Para seriais modernos (> 60): offset correto é 25568 em vez de 25569
     const offsetDays = v > 60 ? 25568 : 25569
-    d = new Date(Math.round((v - offsetDays) * 86400 * 1000))
-  } else {
-    const s = String(v).trim()
-    const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/)
-    if (m) d = new Date(Date.UTC(+m[3], +m[2]-1, +m[1]))
-    else    d = new Date(s)
+    const d = new Date(Math.round((v - offsetDays) * 86400 * 1000))
+    if (!d || isNaN(d)) return ''
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`
   }
+  const s = String(v).trim()
+  // String numérica ex: "46154" → tratar como serial
+  if (/^\d{4,6}$/.test(s)) {
+    const n = Number(s)
+    const offsetDays = n > 60 ? 25568 : 25569
+    const d = new Date(Math.round((n - offsetDays) * 86400 * 1000))
+    if (!d || isNaN(d)) return ''
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`
+  }
+  // String ISO "2026-05-13" ou "2026-05-13T00:00:00" → extrair direto sem conversão UTC
+  const isoM = s.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (isoM) return `${isoM[1]}-${isoM[2]}-${isoM[3]}`
+  // String "dd/mm/yyyy"
+  const brM = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/)
+  if (brM) return `${brM[3]}-${brM[2].padStart(2,'0')}-${brM[1].padStart(2,'0')}`
+  // Fallback: tentar Date parse mas usar local date
+  const d = new Date(s)
   if (!d || isNaN(d)) return ''
-  const dd=String(d.getUTCDate()).padStart(2,'0')
-  const mm=String(d.getUTCMonth()+1).padStart(2,'0')
-  return `${d.getUTCFullYear()}-${mm}-${dd}`
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
 }
 const todayStr = () => {
   const n = new Date()
