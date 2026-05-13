@@ -447,19 +447,20 @@ export default function Home() {
       try {
         setStoreStatus('Carregando dados…')
 
-        // Carrega todas as linhas de hospital_dados com paginação
-        // O Supabase limita 1000 linhas por request — usamos Range header
         let allRows = []
         let offset = 0
         let lastVerifTs = ''
-        const BATCH_SIZE = 100  // linhas da tabela por request (cada uma tem ~2000 registros)
+        const BATCH_SIZE = 500
 
         while (true) {
+          const from = offset
+          const to   = offset + BATCH_SIZE - 1
           const res = await sbFetch(
-            `hospital_dados?select=dados,verif_ts&order=id.asc&limit=${BATCH_SIZE}&offset=${offset}`,
-            { headers: { 'Range': `${offset}-${offset + BATCH_SIZE - 1}` } }
+            `hospital_dados?select=dados,verif_ts&order=id.asc`,
+            { headers: { 'Range': `${from}-${to}`, 'Range-Unit': 'items' } }
           )
-          if (!res.ok && res.status !== 206) {
+          // 200 = all results, 206 = partial (more to come)
+          if (!res.ok) {
             const txt = await res.text()
             setStoreStatus(`Erro ${res.status}: ${txt.slice(0,120)}`)
             setInitLoading(false)
@@ -480,6 +481,7 @@ export default function Home() {
           }
 
           setStoreStatus(`Carregando… ${allRows.length} registros`)
+          // Se retornou menos que o solicitado, acabou
           if (batch.length < BATCH_SIZE) break
           offset += BATCH_SIZE
         }
