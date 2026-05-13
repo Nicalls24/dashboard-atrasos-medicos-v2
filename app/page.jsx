@@ -492,12 +492,12 @@ export default function Home() {
           setStoreStatus(`☁ ${diasSet.size} dias · ${allRows.length.toLocaleString('pt-BR')} registros`)
           setTimeout(() => setStoreStatus(''), 4000)
         } else {
-          setStoreStatus('Nenhum dado — carregue uma planilha')
-          setTimeout(() => setStoreStatus(''), 4000)
+          // Tabela vazia — sem erro, só sem dados ainda
+          setStoreStatus('')
         }
       } catch (e) {
         console.error('load error:', e)
-        setStoreStatus(`Erro: ${e.message}`)
+        setStoreStatus(`Erro de conexão: ${e.message}`)
       }
       setInitLoading(false)
     }
