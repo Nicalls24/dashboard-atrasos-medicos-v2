@@ -907,9 +907,23 @@ export default function Home() {
     })
   }, [dados, cols])
 
-  const allSerials = useMemo(() =>
-    [...new Set(dadosComData.map(d=>d._dateSerial).filter(s=>s!=null))].sort((a,b)=>a-b),
-    [dadosComData])
+  const allSerials = useMemo(() => {
+    const serials = [...new Set(dadosComData.map(d=>d._dateSerial).filter(s=>s!=null))].sort((a,b)=>a-b)
+    if (dadosComData.length > 0) {
+      const s0 = dadosComData[0]
+      console.log('[allSerials debug]', {
+        totalDados: dadosComData.length,
+        serialsCount: serials.length,
+        serials: serials,
+        todaySerial: todaySerial(),
+        row0_DATA_AGENDA: s0[cols.data],
+        row0_type: typeof s0[cols.data],
+        row0__dateSerial: s0._dateSerial,
+        período,
+      })
+    }
+    return serials
+  }, [dadosComData])
 
   // allDates: para exibição (períodoLabel) — converter seriais para strings
   const allDates = useMemo(() =>
