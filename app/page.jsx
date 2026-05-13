@@ -493,17 +493,19 @@ const SB_URL = 'https://fwdvzsywudpieqlqnxkp.supabase.co'
 const SB_KEY = 'sb_publishable_x32NVeFMKLK9kLJfdunngg_GfxpTo1P'
 const CHUNK_SIZE = 4000   // linhas por chunk
 
-const sbFetch = (path, opts = {}) =>
-  fetch(`${SB_URL}/rest/v1/${path}`, {
+const sbFetch = (path, opts = {}) => {
+  const isWrite = opts.method && ['POST','PATCH','PUT','DELETE'].includes(opts.method)
+  return fetch(`${SB_URL}/rest/v1/${path}`, {
     headers: {
       'apikey':        SB_KEY,
       'Authorization': `Bearer ${SB_KEY}`,
       'Content-Type':  'application/json',
-      'Prefer':        'return=minimal',
+      ...(isWrite ? { 'Prefer': 'return=minimal' } : {}),
       ...opts.headers,
     },
     ...opts,
   })
+}
 
 // Extrai a data (YYYY-MM-DD) de uma linha
 const rowDateStr = (r) => {
@@ -541,20 +543,19 @@ export default function Home() {
           if (meta[0]?.timestamp) setTimestamp(meta[0].timestamp)
         }
 
-        // 2. Busca todos os chunks com paginação (Supabase retorna até 1000 por request)
-        let allChunks = [], page = 0, pageSize = 500
+        // 2. Busca todos os chunks com paginação via limit/offset
+        let allChunks = [], offset = 0
+        const pageSize = 500
         while (true) {
-          const from = page * pageSize
-          const to   = from + pageSize - 1
           const r = await sbFetch(
-            `monitor_hospitalar_chunks?select=data_agenda,chunk_idx,rows_json&order=data_agenda.asc,chunk_idx.asc`,
-            { headers: { 'Range': `${from}-${to}`, 'Range-Unit': 'items' } }
+            `monitor_hospitalar_chunks?select=data_agenda,chunk_idx,rows_json&order=data_agenda.asc,chunk_idx.asc&limit=${pageSize}&offset=${offset}`
           )
-          if (!r.ok) break
+          if (!r.ok) { console.error('Chunk fetch error:', r.status); break }
           const batch = await r.json()
+          if (!Array.isArray(batch) || batch.length === 0) break
           allChunks = allChunks.concat(batch)
           if (batch.length < pageSize) break
-          page++
+          offset += pageSize
         }
 
         if (allChunks.length > 0) {
@@ -636,18 +637,18 @@ export default function Home() {
 
       // Recarrega tudo do Supabase com paginação
       setStoreStatus('Recarregando dados completos…')
-      let reloadChunks = [], rPage = 0, rPageSize = 500
+      let reloadChunks = [], rOffset = 0
+      const rPageSize = 500
       while (true) {
-        const from = rPage * rPageSize, to = from + rPageSize - 1
         const r = await sbFetch(
-          'monitor_hospitalar_chunks?select=data_agenda,chunk_idx,rows_json&order=data_agenda.asc,chunk_idx.asc',
-          { headers: { 'Range': `${from}-${to}`, 'Range-Unit': 'items' } }
+          `monitor_hospitalar_chunks?select=data_agenda,chunk_idx,rows_json&order=data_agenda.asc,chunk_idx.asc&limit=${rPageSize}&offset=${rOffset}`
         )
         if (!r.ok) break
         const batch = await r.json()
+        if (!Array.isArray(batch) || batch.length === 0) break
         reloadChunks = reloadChunks.concat(batch)
         if (batch.length < rPageSize) break
-        rPage++
+        rOffset += rPageSize
       }
       if (reloadChunks.length > 0) {
         let allRows = []
