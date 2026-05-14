@@ -255,15 +255,16 @@ function Sidebar({ tab, setTab, storageInfo, storeMsg, timestamp, storing, loadi
       <div style={{ position:'absolute', top:-60, left:'50%', transform:'translateX(-50%)', width:200, height:120, background:C.teal, opacity:.07, borderRadius:'50%', filter:'blur(30px)', pointerEvents:'none' }} />
 
       {/* Logo */}
-      <div style={{ padding:'28px 24px 24px', borderBottom:`1px solid ${C.border}` }}>
-        <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:6 }}>
-          <div style={{ width:38, height:38, borderRadius:11, background:`linear-gradient(135deg,${C.teal},${C.tealDim})`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:20, boxShadow:`0 0 20px ${C.tealGlow}` }}>🏥</div>
-          <div>
-            <div style={{ fontSize:16, fontWeight:900, color:C.text, fontFamily:"'Syne',sans-serif", lineHeight:1.1 }}>Monitor</div>
-            <div style={{ fontSize:16, fontWeight:900, color:C.teal, fontFamily:"'Syne',sans-serif", lineHeight:1.1 }}>Clínicas</div>
-          </div>
+      <div style={{ padding:'28px 24px 24px', borderBottom:`1px solid ${C.border}`, textAlign:'center' }}>
+        <div style={{ fontSize:22, fontWeight:900, color:C.text, fontFamily:"'Syne',sans-serif", lineHeight:1.2, marginBottom:10 }}>
+          Monitor Clínicas
         </div>
-        <div style={{ fontSize:10, color:C.muted, textTransform:'uppercase', letterSpacing:'.1em', marginTop:6 }}>Operacional · Tempo Real</div>
+        <div style={{ fontSize:11, fontWeight:700, color:C.teal, textTransform:'uppercase', letterSpacing:'.13em', marginBottom:5 }}>
+          Núcleo Observação e Controle
+        </div>
+        <div style={{ fontSize:10, color:C.muted, textTransform:'uppercase', letterSpacing:'.1em' }}>
+          Clínicas - Esperas e Agenda
+        </div>
       </div>
 
       {/* NAV */}
