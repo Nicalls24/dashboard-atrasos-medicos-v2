@@ -562,10 +562,9 @@ export default function Home() {
   const saveToSupabase = useCallback(async (newRows, ts) => {
     setStoring(true)
     try {
-      const MAX_ROWS_PER_INSERT = 500  // menor = mais confiável com Supabase
-      setStoreStatus('Limpando dados antigos…')
-      await sbFetch('hospital_dados?id=gt.0', { method: 'DELETE' })
+      const MAX_ROWS_PER_INSERT = 500
 
+      // Agrupa por data
       const byDate = {}
       newRows.forEach(r => {
         const ds = rowDateStr(r)
@@ -573,20 +572,43 @@ export default function Home() {
         if (!byDate[ds]) byDate[ds] = []
         byDate[ds].push(r)
       })
-
       const dates = Object.keys(byDate).sort()
-      let totalInserted = 0
-      const totalRows = newRows.length
 
-      for (let di = 0; di < dates.length; di++) {
-        const date = dates[di]
+      // Verifica quais datas já estão salvas no Supabase
+      setStoreStatus('Verificando dados existentes…')
+      const existRes = await sbFetch(`hospital_dados?select=snapshot_dates&order=id.asc&limit=1000`)
+      const existData = existRes.ok ? await existRes.json() : []
+      const savedDates = new Set(
+        Array.isArray(existData)
+          ? existData.flatMap(r => Array.isArray(r.snapshot_dates) ? r.snapshot_dates : [])
+          : []
+      )
+
+      // Filtra só datas que ainda não foram salvas
+      const datesToSave = dates.filter(d => !savedDates.has(d))
+
+      if (datesToSave.length === 0) {
+        setStoreStatus('✓ Todos os dados já estão salvos!')
+        setTimeout(() => setStoreStatus(''), 3000)
+        setStoring(false)
+        return
+      }
+
+      setStoreStatus(`Salvando ${datesToSave.length} dia(s) novos…`)
+
+      let totalInserted = 0
+      const totalRows = datesToSave.reduce((a, d) => a + byDate[d].length, 0)
+
+      for (let di = 0; di < datesToSave.length; di++) {
+        const date = datesToSave[di]
         const dayRows = byDate[date]
         const chunks = Math.ceil(dayRows.length / MAX_ROWS_PER_INSERT)
 
         for (let ci = 0; ci < chunks; ci++) {
           const slice = dayRows.slice(ci * MAX_ROWS_PER_INSERT, (ci + 1) * MAX_ROWS_PER_INSERT)
           totalInserted += slice.length
-          setStoreStatus(`Salvando ${date} (${di+1}/${dates.length}) · ${totalInserted.toLocaleString('pt-BR')}/${totalRows.toLocaleString('pt-BR')} linhas…`)
+          setStoreStatus(`Salvando ${date} (${di+1}/${datesToSave.length}) · ${totalInserted.toLocaleString('pt-BR')}/${totalRows.toLocaleString('pt-BR')} linhas…`)
+
           const res = await sbFetch('hospital_dados', {
             method: 'POST',
             headers: { 'Prefer': 'return=minimal' },
@@ -598,13 +620,13 @@ export default function Home() {
             setStoring(false)
             return
           }
-          // Pausa entre chunks para não sobrecarregar o Supabase
           if (ci < chunks - 1) await new Promise(r => setTimeout(r, 80))
         }
       }
 
-      const diasSet = new Set(dates)
-      setStorageInfo({ dias: diasSet.size, total: newRows.length })
+      // Atualiza info
+      const allSaved = new Set([...savedDates, ...datesToSave])
+      setStorageInfo({ dias: allSaved.size, total: newRows.length })
       setStoreStatus('✓ Salvo no Supabase')
       setTimeout(() => setStoreStatus(''), 3000)
     } catch (e) {
