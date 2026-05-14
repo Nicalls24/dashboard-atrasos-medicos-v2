@@ -271,8 +271,8 @@ function Sidebar({ tab, setTab, storageInfo, storeMsg, timestamp, storing, loadi
       <div style={{ padding:'20px 16px', flex:1 }}>
         <div style={{ fontSize:9.5, color:C.muted, textTransform:'uppercase', letterSpacing:'.12em', marginBottom:10, paddingLeft:8 }}>Painéis</div>
         {[
-          { key:'agendas', icon:'🗓', label:'Agendas Médicas', count:storageInfo.agendas },
-          { key:'espera',  icon:'⏱', label:'Fila de Espera',  count:storageInfo.espera  },
+          { key:'agendas', label:'Agendas Médicas', count:storageInfo.agendas },
+          { key:'espera',  label:'Fila de Espera',  count:storageInfo.espera  },
         ].map(item => {
           const active = tab === item.key
           return (
@@ -283,7 +283,17 @@ function Sidebar({ tab, setTab, storageInfo, storeMsg, timestamp, storing, loadi
               borderLeft: active ? `3px solid ${C.teal}` : '3px solid transparent',
               cursor:'pointer', marginBottom:4, transition:'all .2s', textAlign:'left',
             }}>
-              <span style={{ fontSize:18 }}>{item.icon}</span>
+              <div style={{ width:28, height:28, borderRadius:8, background: active?`${C.teal}20`:'rgba(255,255,255,0.04)', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                {item.key==='agendas' ? (
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={active?C.teal:C.muted} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+                  </svg>
+                ) : (
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={active?C.teal:C.muted} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                  </svg>
+                )}
+              </div>
               <div style={{ flex:1, minWidth:0 }}>
                 <div style={{ fontSize:13, fontWeight:700, color: active ? C.teal : C.sub }}>{item.label}</div>
               </div>
