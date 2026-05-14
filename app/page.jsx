@@ -564,7 +564,6 @@ export default function Home() {
     try {
       const MAX_ROWS_PER_INSERT = 500
 
-      // Agrupa por data
       const byDate = {}
       newRows.forEach(r => {
         const ds = rowDateStr(r)
@@ -572,61 +571,61 @@ export default function Home() {
         if (!byDate[ds]) byDate[ds] = []
         byDate[ds].push(r)
       })
-      const dates = Object.keys(byDate).sort()
+      const dates = Object.keys(byDate).sort((a, b) => {
+        // Converte ambas para string YYYY-MM-DD antes de comparar
+        const toISO = s => {
+          if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s
+          // Serial Excel
+          const n = Number(s)
+          if (!isNaN(n) && n > 1000) {
+            const d = new Date(Math.round((n - (n > 60 ? 25568 : 25569)) * 86400 * 1000) + 43200000)
+            return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`
+          }
+          return s
+        }
+        return toISO(a).localeCompare(toISO(b))
+      })
 
-      // Verifica quais datas já estão salvas no Supabase
-      setStoreStatus('Verificando dados existentes…')
-      const existRes = await sbFetch(`hospital_dados?select=snapshot_dates&order=id.asc&limit=1000`)
-      const existData = existRes.ok ? await existRes.json() : []
-      const savedDates = new Set(
-        Array.isArray(existData)
-          ? existData.flatMap(r => Array.isArray(r.snapshot_dates) ? r.snapshot_dates : [])
-          : []
-      )
-
-      // Filtra só datas que ainda não foram salvas
-      const datesToSave = dates.filter(d => !savedDates.has(d))
-
-      if (datesToSave.length === 0) {
-        setStoreStatus('✓ Todos os dados já estão salvos!')
-        setTimeout(() => setStoreStatus(''), 3000)
+      // Limpa via API route (server-side, sem timeout)
+      setStoreStatus('Limpando dados antigos…')
+      const delRes = await fetch('/api/save', { method: 'DELETE' })
+      if (!delRes.ok) {
+        setStoreStatus('⚠ Erro ao limpar dados antigos')
         setStoring(false)
         return
       }
 
-      setStoreStatus(`Salvando ${datesToSave.length} dia(s) novos…`)
-
       let totalInserted = 0
-      const totalRows = datesToSave.reduce((a, d) => a + byDate[d].length, 0)
+      const totalRows = newRows.length
 
-      for (let di = 0; di < datesToSave.length; di++) {
-        const date = datesToSave[di]
+      for (let di = 0; di < dates.length; di++) {
+        const date = dates[di]
         const dayRows = byDate[date]
         const chunks = Math.ceil(dayRows.length / MAX_ROWS_PER_INSERT)
 
         for (let ci = 0; ci < chunks; ci++) {
           const slice = dayRows.slice(ci * MAX_ROWS_PER_INSERT, (ci + 1) * MAX_ROWS_PER_INSERT)
           totalInserted += slice.length
-          setStoreStatus(`Salvando ${date} (${di+1}/${datesToSave.length}) · ${totalInserted.toLocaleString('pt-BR')}/${totalRows.toLocaleString('pt-BR')} linhas…`)
+          setStoreStatus(`Salvando ${date} (${di+1}/${dates.length}) · ${totalInserted.toLocaleString('pt-BR')}/${totalRows.toLocaleString('pt-BR')} linhas…`)
 
-          const res = await sbFetch('hospital_dados', {
+          // Chama API route (server-side — sem timeout do browser)
+          const res = await fetch('/api/save', {
             method: 'POST',
-            headers: { 'Prefer': 'return=minimal' },
-            body: JSON.stringify({ verif_ts: ts, dados: slice, snapshot_dates: [date] }),
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ rows: slice, date, ts, chunkIndex: ci, totalChunks: chunks }),
           })
+
           if (!res.ok) {
-            const txt = await res.text()
-            setStoreStatus(`⚠ Erro ${date} parte ${ci+1}: ${txt.slice(0,120)}`)
+            const data = await res.json().catch(() => ({}))
+            setStoreStatus(`⚠ Erro ${date} parte ${ci+1}: ${data.error?.slice(0,120) || res.status}`)
             setStoring(false)
             return
           }
-          if (ci < chunks - 1) await new Promise(r => setTimeout(r, 80))
         }
       }
 
-      // Atualiza info
-      const allSaved = new Set([...savedDates, ...datesToSave])
-      setStorageInfo({ dias: allSaved.size, total: newRows.length })
+      const diasSet = new Set(dates)
+      setStorageInfo({ dias: diasSet.size, total: newRows.length })
       setStoreStatus('✓ Salvo no Supabase')
       setTimeout(() => setStoreStatus(''), 3000)
     } catch (e) {
