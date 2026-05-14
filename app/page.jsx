@@ -511,11 +511,23 @@ export default function Home() {
       try {
         setStoreStatus('Carregando dados…')
         let allRows = [], lastVerifTs = ''
-        const res = await sbFetch(`hospital_dados?select=dados,verif_ts&order=id.asc`, { headers: { 'Range': '0-9999', 'Range-Unit': 'items' } })
-        if (!res.ok) { const txt = await res.text(); setStoreStatus(`Erro ${res.status}: ${txt.slice(0,120)}`); setInitLoading(false); return }
-        const allItems = await res.json()
-        if (Array.isArray(allItems)) {
-          for (const item of allItems) {
+        let offset = 0
+        const PAGE = 200  // linhas da tabela por request
+
+        while (true) {
+          const res = await sbFetch(
+            `hospital_dados?select=dados,verif_ts&order=id.asc&limit=${PAGE}&offset=${offset}`
+          )
+          if (!res.ok) {
+            const txt = await res.text()
+            setStoreStatus(`Erro ${res.status}: ${txt.slice(0,120)}`)
+            setInitLoading(false)
+            return
+          }
+          const batch = await res.json()
+          if (!Array.isArray(batch) || batch.length === 0) break
+
+          for (const item of batch) {
             try {
               const d = item.dados
               if (!d) continue
@@ -525,6 +537,10 @@ export default function Home() {
             } catch(e) {}
             if (item.verif_ts) lastVerifTs = item.verif_ts
           }
+
+          setStoreStatus(`Carregando… ${allRows.length.toLocaleString('pt-BR')} registros`)
+          if (batch.length < PAGE) break
+          offset += PAGE
         }
         if (allRows.length > 0) {
           if (lastVerifTs) setTimestamp(lastVerifTs)
