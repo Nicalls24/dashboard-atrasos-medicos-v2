@@ -1,992 +1,766 @@
 'use client'
 
-import { useMemo, useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import * as XLSX from 'xlsx'
 
+// ── THEME ─────────────────────────────────────────────────────────────────────
 const T = {
-  bg:      '#080C14',
-  surface: '#0E1623',
-  card:    '#111A2B',
-  border:  '#1C2D45',
-  accent:  '#00C6FF',
-  accentB: '#0072FF',
-  danger:  '#FF4D6A',
-  warning: '#FFB340',
-  success: '#00E5A0',
-  ok:      '#00E5A0',
-  text:    '#EDF2FF',
-  muted:   '#5A7799',
-  sub:     '#8FADC8',
-  purple:  '#B060FF',
-  orange:  '#FF7A00',
+  bg0:     '#03050E',
+  bg1:     '#060B1A',
+  bg2:     '#080E22',
+  glass:   'rgba(255,255,255,0.03)',
+  glass2:  'rgba(255,255,255,0.06)',
+  border:  'rgba(99,120,255,0.18)',
+  border2: 'rgba(99,120,255,0.35)',
+  blue:    '#4F7BFF',
+  blueB:   '#2952E3',
+  blueC:   '#1A3ACC',
+  cyan:    '#00D4FF',
+  cyanB:   '#00A8CC',
+  violet:  '#9B5DFF',
+  violetB: '#7B3FE4',
+  emerald: '#00E5A0',
+  amber:   '#FFB020',
+  rose:    '#FF4060',
+  text:    '#EEF2FF',
+  sub:     '#8898CC',
+  muted:   '#3D5080',
+  gBlue:   'linear-gradient(135deg,#4F7BFF,#2952E3)',
+  gViolet: 'linear-gradient(135deg,#9B5DFF,#7B3FE4)',
+  gCyan:   'linear-gradient(135deg,#00D4FF,#007ACC)',
+  gEm:     'linear-gradient(135deg,#00E5A0,#00A870)',
+  gRose:   'linear-gradient(135deg,#FF4060,#CC1040)',
 }
 
-const STATUS_CFG = {
-  'OK':                { label: 'OK (Motivo)',               color: '#22C55E', bg: '#14532d' },
-  'ATRASO':            { label: 'Atraso 31–45min',           color: '#F59E0B', bg: '#78350f' },
-  'ATRASO CRÍTICO':    { label: 'Atraso Crítico 46min–1h30', color: '#EF4444', bg: '#7f1d1d' },
-  'ATRASO GRAVE':      { label: 'Atraso Grave >1h30',        color: '#7C3AED', bg: '#3b0764' },
-  'Falta Médica':      { label: 'Médico Faltou',             color: '#1D4ED8', bg: '#1e3a8a' },
-  'ERRO DE ABERTURA':  { label: 'Erro de Abertura',          color: '#0891B2', bg: '#164e63' },
-  'SEM PONTO':         { label: 'Sem Ponto',                 color: '#6B7280', bg: '#1f2937' },
-  'CONTINUA/PONTO EM ABERTO': { label: 'Continua/Ponto Aberto', color: '#D97706', bg: '#451a03' },
-  'NÃO COBRAR':        { label: 'Não Cobrar',                color: '#9CA3AF', bg: '#374151' },
-  'Remarcação Adm':    { label: 'Remarcação Adm',            color: '#64748B', bg: '#1e293b' },
-  'Remarcação Médico': { label: 'Remarcação Médico',         color: '#64748B', bg: '#1e293b' },
-  'Remarcação médico': { label: 'Remarcação Médico',         color: '#64748B', bg: '#1e293b' },
-}
-const getStatusCfg = (s = '') => {
-  if (STATUS_CFG[s]) return STATUS_CFG[s]
-  const u = s.toUpperCase()
-  if (u.includes('CRÍTICO')) return STATUS_CFG['ATRASO CRÍTICO']
-  if (u.includes('GRAVE'))   return STATUS_CFG['ATRASO GRAVE']
-  if (u.includes('ATRASO'))  return STATUS_CFG['ATRASO']
-  if (u.includes('FALTA'))   return STATUS_CFG['Falta Médica']
-  if (u.includes('REMARCA')) return STATUS_CFG['Remarcação Adm']
-  return { label: s || 'OK', color: T.success, bg: '#0d2a1f' }
-}
+// ── SUPABASE ──────────────────────────────────────────────────────────────────
+const SB_URL = 'https://fwdvzsywudpieqlqnxkp.supabase.co'
+const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ3ZHZ6c3l3dWRwaWVxbHFueGtwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg1ODcyNzEsImV4cCI6MjA5NDE2MzI3MX0.SkyfE_HVulz_TyQldI6XpENSJAuu6xDgUEDz4vObKYQ'
+const SBH = { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}`, 'Content-Type': 'application/json' }
 
-const parseEsperaMin = (v) => {
-  if (v === '' || v === null || v === undefined) return 0
-  if (typeof v === 'number') return v * 24 * 60
-  const s = String(v).trim()
-  if (s.includes(':')) {
-    const parts = s.split(':').map(Number)
-    return (parts[0]||0)*60 + (parts[1]||0)
-  }
-  const n = Number(s)
-  if (!isNaN(n)) return n * 24 * 60
-  return 0
+// ── HELPERS ───────────────────────────────────────────────────────────────────
+const fmtMin = m => {
+  if (m === null || m === undefined) return '—'
+  const abs = Math.round(Math.abs(m)), sign = m < 0 ? '-' : ''
+  if (abs < 60) return `${sign}${abs}min`
+  return `${sign}${Math.floor(abs/60)}h${abs%60>0?` ${abs%60}m`:''}`
 }
-const fmtMin = (m) => {
-  const mm=Math.round(Math.abs(m))
-  if (mm < 60) return `${mm}min`
-  return `${Math.floor(mm/60)}h${mm%60>0?` ${mm%60}m`:''}`
-}
-const serialToDateStr = (v) => {
-  if (v === null || v === undefined || v === '') return ''
-  if (typeof v === 'number') {
-    const offsetDays = v > 60 ? 25568 : 25569
-    const d = new Date(Math.round((v - offsetDays) * 86400 * 1000) + 43200000)
-    if (!d || isNaN(d)) return ''
-    return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`
-  }
-  const s = String(v).trim()
-  if (/^\d{4,6}$/.test(s)) {
-    const n = Number(s)
-    const offsetDays = n > 60 ? 25568 : 25569
-    const d = new Date(Math.round((n - offsetDays) * 86400 * 1000))
-    if (!d || isNaN(d)) return ''
-    return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`
-  }
-  const isoM = s.match(/^(\d{4})-(\d{2})-(\d{2})/)
-  if (isoM) return `${isoM[1]}-${isoM[2]}-${isoM[3]}`
-  const brM = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/)
-  if (brM) return `${brM[3]}-${brM[2].padStart(2,'0')}-${brM[1].padStart(2,'0')}`
-  const d = new Date(s)
-  if (!d || isNaN(d)) return ''
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+const fmtDate = s => {
+  if (!s) return '—'
+  const [y,mo,d] = String(s).split('-')
+  return `${d}/${mo}/${y}`
 }
 const todayStr = () => {
   const n = new Date()
   return `${n.getUTCFullYear()}-${String(n.getUTCMonth()+1).padStart(2,'0')}-${String(n.getUTCDate()).padStart(2,'0')}`
 }
-const buildFilter = (allDates, período, dateFrom, dateTo) => {
+const buildFilter = (allDates, periodo, dateFrom, dateTo) => {
   if (!allDates.length) return () => true
-  const sorted  = [...allDates].sort()
-  const maxDate = sorted[sorted.length - 1]
-  if (período === 'HOJE') { const today = todayStr(); return (ds) => ds === today }
-  if (período === 'ONTEM') {
-    const ref = new Date(maxDate + 'T00:00:00Z')
-    ref.setUTCDate(ref.getUTCDate() - 1)
-    const ontem = `${ref.getUTCFullYear()}-${String(ref.getUTCMonth()+1).padStart(2,'0')}-${String(ref.getUTCDate()).padStart(2,'0')}`
-    return (ds) => ds === ontem
-  }
-  if (período === 'SEMANA') {
-    const c = new Date(maxDate + 'T00:00:00Z')
-    c.setUTCDate(c.getUTCDate() - 6)
-    const cut = `${c.getUTCFullYear()}-${String(c.getUTCMonth()+1).padStart(2,'0')}-${String(c.getUTCDate()).padStart(2,'0')}`
-    return (ds) => ds >= cut && ds <= maxDate
-  }
-  if (período === 'MES') { const mes = maxDate.slice(0,7); return (ds) => ds.slice(0,7) === mes }
-  if (período === 'ANO') { const ano = maxDate.slice(0,4); return (ds) => ds.slice(0,4) === ano }
-  if (período === 'PERIODO') {
-    const from = dateFrom || sorted[0]; const to = dateTo || maxDate
-    return (ds) => ds >= from && ds <= to
-  }
+  const sorted = [...allDates].sort(), max = sorted[sorted.length-1]
+  if (periodo==='HOJE')   return ds => ds === todayStr()
+  if (periodo==='ONTEM')  { const ref=new Date(max+'T00:00:00Z'); ref.setUTCDate(ref.getUTCDate()-1); const s=ref.toISOString().slice(0,10); return ds=>ds===s }
+  if (periodo==='SEMANA') { const ref=new Date(max+'T00:00:00Z'); ref.setUTCDate(ref.getUTCDate()-6); const cut=ref.toISOString().slice(0,10); return ds=>ds>=cut&&ds<=max }
+  if (periodo==='MES')    return ds => ds.slice(0,7)===max.slice(0,7)
+  if (periodo==='ANO')    return ds => ds.slice(0,4)===max.slice(0,4)
+  if (periodo==='PERIODO'){ const from=dateFrom||sorted[0],to=dateTo||max; return ds=>ds>=from&&ds<=to }
   return () => true
 }
+const STATUS_CFG = {
+  'OK':             { label:'OK',             color:'#00E5A0', glow:'#00E5A044' },
+  'ATRASO':         { label:'Atraso 31–45min',color:'#FFB020', glow:'#FFB02044' },
+  'ATRASO CRÍTICO': { label:'Atraso Crítico', color:'#FF6020', glow:'#FF602044' },
+  'ATRASO GRAVE':   { label:'Atraso Grave',   color:'#FF4060', glow:'#FF406044' },
+  'Falta Médica':   { label:'Médico Faltou',  color:'#4F7BFF', glow:'#4F7BFF44' },
+  'SEM PONTO':      { label:'Sem Ponto',      color:'#6B7280', glow:'#6B728044' },
+}
+const getStatusCfg = (s='') => {
+  if (STATUS_CFG[s]) return STATUS_CFG[s]
+  const u = s.toUpperCase()
+  if (u.includes('CRÍTICO')||u.includes('CRITICO')) return STATUS_CFG['ATRASO CRÍTICO']
+  if (u.includes('GRAVE'))  return STATUS_CFG['ATRASO GRAVE']
+  if (u.includes('ATRASO')) return STATUS_CFG['ATRASO']
+  if (u.includes('FALTA'))  return STATUS_CFG['Falta Médica']
+  return { label: s||'OK', color:'#00E5A0', glow:'#00E5A044' }
+}
+const PERIODOS = [{key:'HOJE',label:'Hoje'},{key:'ONTEM',label:'Ontem'},{key:'SEMANA',label:'Semana'},{key:'MES',label:'Mês'},{key:'ANO',label:'Ano'},{key:'PERIODO',label:'Período'}]
 
-function HBar({ label, value, max, color, unit='', rank, sub }) {
-  const pct = max > 0 ? (value/max)*100 : 0
+// ── ATOMS ─────────────────────────────────────────────────────────────────────
+function GlowCard({ children, color=T.blue, style={} }) {
   return (
-    <div style={{ marginBottom: 13 }}>
-      <div style={{ display:'flex', justifyContent:'space-between', marginBottom:4, gap:8 }}>
-        <div style={{ display:'flex', alignItems:'flex-start', gap:8, minWidth:0 }}>
-          {rank!=null && <span style={{ fontSize:11, fontWeight:700, flexShrink:0, marginTop:1, color: rank<3 ? T.danger : T.muted, minWidth:22 }}>#{rank+1}</span>}
+    <div style={{
+      background: T.glass2,
+      border: `1px solid ${color}44`,
+      borderRadius: 20,
+      padding: 22,
+      backdropFilter: 'blur(12px)',
+      boxShadow: `0 0 40px ${color}18, inset 0 1px 0 rgba(255,255,255,0.06)`,
+      position: 'relative',
+      overflow: 'hidden',
+      ...style,
+    }}>
+      <div style={{ position:'absolute', top:0, left:0, right:0, height:1, background:`linear-gradient(90deg,transparent,${color}88,transparent)` }} />
+      {children}
+    </div>
+  )
+}
+
+function KpiCard({ icon, label, value, sub, color, grad }) {
+  return (
+    <GlowCard color={color} style={{ padding:'20px 22px' }}>
+      <div style={{ position:'absolute', top:-40, right:-40, width:120, height:120, borderRadius:'50%', background:color, opacity:.08, filter:'blur(20px)' }} />
+      <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:14 }}>
+        <div style={{ width:36, height:36, borderRadius:10, background:grad||color, display:'flex', alignItems:'center', justifyContent:'center', fontSize:18, boxShadow:`0 0 16px ${color}66` }}>
+          {icon}
+        </div>
+        <span style={{ fontSize:10, fontWeight:700, color:T.muted, textTransform:'uppercase', letterSpacing:'.12em' }}>{label}</span>
+      </div>
+      <div style={{ fontSize:40, fontWeight:900, color:T.text, lineHeight:1, letterSpacing:'-2px', fontFamily:"'Clash Display','Syne',sans-serif", textShadow:`0 0 30px ${color}88` }}>
+        {value}
+      </div>
+      {sub && <div style={{ fontSize:11, color:T.sub, marginTop:8, fontWeight:500 }}>{sub}</div>}
+      <div style={{ position:'absolute', bottom:0, left:0, right:0, height:2, background:`linear-gradient(90deg,transparent,${color},transparent)`, opacity:.6 }} />
+    </GlowCard>
+  )
+}
+
+function NeonBar({ label, value, max, color, unit='', rank, sub }) {
+  const pct = max > 0 ? Math.min((typeof value==='number'?value:0)/max*100,100) : 0
+  return (
+    <div style={{ marginBottom:14 }}>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:6, gap:8 }}>
+        <div style={{ display:'flex', alignItems:'flex-start', gap:7, minWidth:0 }}>
+          {rank!=null && (
+            <span style={{ fontSize:10, fontWeight:900, color: rank===0?T.amber:rank<3?T.blue:T.muted, minWidth:20, flexShrink:0, marginTop:1 }}>
+              #{rank+1}
+            </span>
+          )}
           <div style={{ minWidth:0 }}>
-            <div style={{ fontSize:13, color:T.text, fontWeight:500, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{label}</div>
+            <div style={{ fontSize:12.5, color:T.text, fontWeight:600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{label}</div>
             {sub && <div style={{ fontSize:10, color:T.muted, marginTop:1 }}>{sub}</div>}
           </div>
         </div>
-        <span style={{ fontSize:13, fontWeight:700, color, flexShrink:0 }}>{value}{unit}</span>
+        <span style={{ fontSize:12, fontWeight:800, color, flexShrink:0, textShadow:`0 0 12px ${color}` }}>{value}{unit}</span>
       </div>
-      <div style={{ background:T.border, borderRadius:6, height:6, overflow:'hidden' }}>
-        <div style={{ height:'100%', borderRadius:6, background:color, width:`${pct}%`, transition:'width .6s ease' }} />
+      <div style={{ background:'rgba(255,255,255,0.05)', borderRadius:6, height:6, overflow:'hidden', position:'relative' }}>
+        <div style={{
+          height:'100%', borderRadius:6,
+          background:`linear-gradient(90deg,${color},${color}88)`,
+          width:`${pct}%`,
+          transition:'width .8s cubic-bezier(.4,0,.2,1)',
+          boxShadow:`0 0 10px ${color}`,
+        }} />
       </div>
     </div>
   )
 }
 
-function StatCard({ icon, label, value, sub, accent }) {
+function SecTitle({ children, sub }) {
   return (
-    <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:16, padding:'20px 22px', display:'flex', flexDirection:'column', gap:8, position:'relative', overflow:'hidden' }}>
-      <div style={{ position:'absolute', top:-20, right:-20, width:80, height:80, borderRadius:'50%', background:accent, opacity:.07 }} />
-      <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-        <span style={{ fontSize:20 }}>{icon}</span>
-        <span style={{ fontSize:11, color:T.muted, textTransform:'uppercase', letterSpacing:'.08em', fontWeight:600 }}>{label}</span>
-      </div>
-      <div style={{ fontSize:36, fontWeight:800, color:T.text, lineHeight:1, letterSpacing:'-1px' }}>{value}</div>
-      {sub && <div style={{ fontSize:11, color:T.sub }}>{sub}</div>}
+    <div style={{ marginBottom:18 }}>
+      <h2 style={{ fontSize:11.5, fontWeight:800, textTransform:'uppercase', letterSpacing:'.14em', color:T.sub, margin:0 }}>{children}</h2>
+      {sub && <div style={{ fontSize:10, color:T.muted, marginTop:3 }}>{sub}</div>}
     </div>
   )
 }
 
-function SH({ children }) {
-  return <h2 style={{ fontSize:13, fontWeight:700, textTransform:'uppercase', letterSpacing:'.12em', color:T.sub, marginBottom:16, marginTop:0 }}>{children}</h2>
-}
-
-function Card({ children, style={} }) {
-  return <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:16, padding:22, ...style }}>{children}</div>
-}
-
-function StatusDashboard({ breakdown, total }) {
-  const order = ['OK','ATRASO','ATRASO CRÍTICO','ATRASO GRAVE','Falta Médica','Remarcação Adm','Remarcação Médico','Remarcação médico','SEM PONTO']
-  const items = order
-    .map(k => ({ k, cfg: getStatusCfg(k), val: breakdown[k]||0 }))
-    .concat(Object.keys(breakdown).filter(k => !order.includes(k)).map(k => ({ k, cfg: getStatusCfg(k), val: breakdown[k] })))
-    .filter(x => x.val > 0)
-  return (
-    <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(180px,1fr))', gap:12 }}>
-      {items.map(({k, cfg, val}) => {
-        const pct = total > 0 ? ((val/total)*100).toFixed(1) : '0'
-        const barW = total > 0 ? (val/total)*100 : 0
-        return (
-          <div key={k} style={{ background: cfg.bg, border:`1px solid ${cfg.color}40`, borderRadius:14, padding:'16px 18px', position:'relative', overflow:'hidden' }}>
-            <div style={{ position:'absolute', bottom:0, left:0, height:3, width:`${barW}%`, background:cfg.color, borderRadius:'0 0 0 14px', transition:'width .6s ease' }} />
-            <div style={{ fontSize:10, fontWeight:700, color:cfg.color, textTransform:'uppercase', letterSpacing:'.08em', marginBottom:10 }}>{cfg.label}</div>
-            <div style={{ fontSize:36, fontWeight:900, color:cfg.color, lineHeight:1, letterSpacing:'-1px' }}>{val.toLocaleString('pt-BR')}</div>
-            <div style={{ fontSize:11, color:cfg.color+'99', marginTop:6, fontWeight:600 }}>{pct}% do total</div>
-          </div>
-        )
-      })}
-    </div>
-  )
-}
-
-function AusenciasCard({ rows, cols }) {
-  const items = useMemo(() => {
-    const m = {}
-    rows.forEach(d => {
-      const entrada = d[cols.hrEntrada]
-      const isVazio = !entrada || entrada === '' || entrada === 'NaT'
-      if (!isVazio) return
-      const med    = String(d[cols.medico]||'').trim() || 'Sem Nome'
-      const status = String(d[cols.status]||'').trim()
-      const motivo = String(d[cols.motivoCancelamento]||'').trim()
-      const unid   = String(d[cols.unidade]||'').trim()
-      const pacts  = Number(d[cols.qtPacts])||0
-      const tipo   = motivo || 'Sem Ponto Registrado'
-      const key    = `${med}||${unid}`
-      if (!m[key]) m[key] = { med, unid, status, tipo, pacts: 0, agendas: 0 }
-      m[key].pacts   += pacts
-      m[key].agendas += 1
-    })
-    return Object.values(m).sort((a,b) => b.pacts - a.pacts).slice(0, 15)
-  }, [rows, cols])
-
-  if (!items.length) return <div style={{ color:T.muted, fontSize:13 }}>Nenhuma ausência identificada.</div>
-  return (
-    <div style={{ overflowX:'auto' }}>
-      <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12.5 }}>
-        <thead>
-          <tr style={{ borderBottom:`1px solid ${T.border}` }}>
-            {['#','Médico','Unidade','Status','Motivo/Cancelamento','Agendas','Pac. Impactados'].map(h=>(
-              <th key={h} style={{ padding:'9px 12px', textAlign:'left', color:T.muted, fontWeight:600, fontSize:10.5, textTransform:'uppercase', letterSpacing:'.06em', whiteSpace:'nowrap' }}>{h}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {items.map((r, i) => {
-            const cfg = getStatusCfg(r.status)
-            return (
-              <tr key={i} className="row-table" style={{ borderBottom:`1px solid ${T.border}`, transition:'background .15s' }}>
-                <td style={{ padding:'10px 12px', color:T.muted, fontSize:11 }}>{i+1}</td>
-                <td style={{ padding:'10px 12px', fontWeight:600, color:T.text, whiteSpace:'nowrap' }}>{r.med}</td>
-                <td style={{ padding:'10px 12px', color:T.sub, maxWidth:200, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{r.unid}</td>
-                <td style={{ padding:'10px 12px' }}>
-                  <span style={{ fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:20, background:cfg.color+'22', color:cfg.color }}>{r.status}</span>
-                </td>
-                <td style={{ padding:'10px 12px', color:T.sub, maxWidth:220, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{r.tipo || '—'}</td>
-                <td style={{ padding:'10px 12px', color:T.accent, fontWeight:700, textAlign:'center' }}>{r.agendas}</td>
-                <td style={{ padding:'10px 12px', color:T.warning, fontWeight:700, textAlign:'center' }}>{r.pacts}</td>
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
-    </div>
-  )
-}
-
-function EsperaHoraCard({ rows, cols, allRawDados, período }) {
-  const [expanded, setExpanded] = useState(null)
-  const byHora = useMemo(() => {
-    let fonte = rows
-    if (período === 'HOJE' && allRawDados && allRawDados.length > 0) {
-      const agendaNums = allRawDados.map(d => { const v = d[cols.data]; return typeof v === 'number' && v > 1000 ? v : 0 }).filter(v => v > 0)
-      if (agendaNums.length > 0) {
-        const maxA = Math.max(...agendaNums)
-        const validos = new Set([maxA, maxA - 1])
-        const candidatos = allRawDados.filter(d => { const v = d[cols.data]; return typeof v === 'number' && validos.has(v) })
-        const comEspera = candidatos.filter(d => d[cols.hrRegistroEspera] && d[cols.hrRegistroEspera] !== '')
-        fonte = comEspera.length > 0 ? candidatos : allRawDados
-      }
-    }
-    const map = {}
-    fonte.forEach(d => {
-      const hrRV = d[cols.hrRegistroEspera]
-      const espV = d[cols.espera]
-      const pac  = Number(d[cols.qtPacts]) || 0
-      const unid = String(d[cols.unidade] || '').trim() || 'Sem Unidade'
-      if (!hrRV || hrRV === '') return
-      if (pac <= 0) return
-      let h = null
-      if (typeof hrRV === 'number') h = Math.round(hrRV * 24)
-      else if (typeof hrRV === 'string' && hrRV.includes(':')) h = parseInt(hrRV)
-      else if (typeof hrRV === 'string') { const n = Number(hrRV); if (!isNaN(n) && n > 0 && n < 1) h = Math.round(n * 24) }
-      if (h === null || h < 0 || h > 23) return
-      let espMin = 0
-      if (typeof espV === 'number') espMin = espV * 24 * 60
-      else if (typeof espV === 'string' && espV.includes(':')) { const p = espV.split(':').map(Number); espMin = (p[0]||0)*60+(p[1]||0) }
-      else if (typeof espV === 'string') { const n = Number(espV); if (!isNaN(n)) espMin = n * 24 * 60 }
-      if (espMin <= 0) return
-      if (!map[h]) map[h] = { hora: h, totalPac: 0, maxEspera: 0, unidades: {} }
-      map[h].totalPac += pac
-      if (espMin > map[h].maxEspera) map[h].maxEspera = espMin
-      if (!map[h].unidades[unid]) map[h].unidades[unid] = { esperaMax: 0, pac: 0 }
-      if (espMin > map[h].unidades[unid].esperaMax) map[h].unidades[unid].esperaMax = espMin
-      map[h].unidades[unid].pac += pac
-    })
-    return Object.values(map)
-      .map(h => ({ ...h, ranking: Object.entries(h.unidades).map(([nome, v]) => ({ nome, ...v })).sort((a, b) => b.esperaMax - a.esperaMax).slice(0, 10) }))
-      .sort((a, b) => a.hora - b.hora)
-  }, [rows, cols, allRawDados, período])
-
-  if (!byHora.length) return <div style={{ color:T.muted, fontSize:13 }}>Sem dados de espera nos filtros atuais.</div>
-  const maxEspGlobal = Math.max(...byHora.map(x => x.maxEspera), 1)
-
-  return (
-    <div>
-      {byHora.map(h => {
-        const isOpen   = expanded === h.hora
-        const espColor = h.maxEspera > 120 ? T.danger : h.maxEspera > 60 ? T.warning : T.success
-        const barW     = (h.maxEspera / maxEspGlobal) * 100
-        return (
-          <div key={h.hora} style={{ marginBottom: 6 }}>
-            <div onClick={() => setExpanded(isOpen ? null : h.hora)}
-              style={{ display:'flex', alignItems:'center', gap:12, background: isOpen ? '#1a2a3f' : T.card, border:`1px solid ${isOpen ? T.accent+'44' : T.border}`, borderRadius: isOpen ? '12px 12px 0 0' : 12, padding:'10px 16px', cursor:'pointer', transition:'all .15s' }}>
-              <span style={{ fontSize:13, fontWeight:700, color:T.sub, minWidth:36 }}>{String(h.hora).padStart(2,'0')}h</span>
-              <div style={{ flex:1, background:T.border, borderRadius:4, height:8, overflow:'hidden' }}>
-                <div style={{ height:'100%', borderRadius:4, background:espColor, width:`${barW}%`, transition:'width .5s ease' }} />
-              </div>
-              <span style={{ fontSize:12, fontWeight:700, color:espColor, minWidth:60, textAlign:'right' }}>{fmtMin(h.maxEspera)}</span>
-              <span style={{ fontSize:12, color:T.accent, fontWeight:700, minWidth:70, textAlign:'right' }}>👥 {h.totalPac.toLocaleString('pt-BR')}</span>
-              <span style={{ fontSize:11, color:T.muted, minWidth:80, textAlign:'right' }}>{h.ranking.length} unid.</span>
-              <span style={{ fontSize:12, color:T.muted, transform: isOpen ? 'rotate(180deg)' : 'none', transition:'transform .2s' }}>▾</span>
-            </div>
-            {isOpen && (
-              <div style={{ background:'#0d1825', border:`1px solid ${T.accent+'44'}`, borderTop:'none', borderRadius:'0 0 12px 12px', padding:'4px 0 8px' }}>
-                <div style={{ display:'grid', gridTemplateColumns:'1fr 140px 80px 80px', gap:8, padding:'6px 16px 8px', borderBottom:`1px solid ${T.border}` }}>
-                  {['UNIDADE','ESPERA','PAC.',''].map((lbl,i) => (
-                    <span key={i} style={{ fontSize:10, color:T.muted, fontWeight:600, textAlign: i > 0 ? 'right' : 'left' }}>{lbl}</span>
-                  ))}
-                </div>
-                {h.ranking.map((u, i) => {
-                  const uColor = u.esperaMax > 120 ? T.danger : u.esperaMax > 60 ? T.warning : T.success
-                  const pct    = (u.esperaMax / (h.ranking[0]?.esperaMax || 1)) * 100
-                  return (
-                    <div key={u.nome} style={{ display:'grid', gridTemplateColumns:'1fr 140px 80px 30px', gap:8, padding:'8px 16px', borderBottom: i < h.ranking.length-1 ? `1px solid ${T.border}22` : 'none', alignItems:'center' }}>
-                      <div style={{ fontSize:12, color:T.text, fontWeight:500, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{u.nome}</div>
-                      <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-                        <div style={{ flex:1, background:T.border, borderRadius:3, height:5, overflow:'hidden' }}>
-                          <div style={{ height:'100%', borderRadius:3, background:uColor, width:`${pct}%` }} />
-                        </div>
-                        <span style={{ fontSize:11, fontWeight:700, color:uColor, minWidth:48, textAlign:'right' }}>{fmtMin(u.esperaMax)}</span>
-                      </div>
-                      <div style={{ fontSize:12, fontWeight:700, color:T.accent, textAlign:'right' }}>{u.pac.toLocaleString('pt-BR')}</div>
-                      <div style={{ fontSize:10, color: i < 3 ? T.danger : T.muted, textAlign:'right' }}>#{i+1}</div>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-        )
-      })}
-    </div>
-  )
-}
-
-function RecorrenciaAtrasoCard({ rows, cols }) {
-  const items = useMemo(() => {
-    const m = {}
-    rows.forEach(d => {
-      const unid   = String(d[cols.unidade]||'').trim() || 'Sem Unidade'
-      const status = String(d[cols.status]||'').trim()
-      const dateS  = d._dateStr || ''
-      const isAtraso = status.toUpperCase().includes('ATRASO')
-      if (!m[unid]) m[unid] = { unid, totalAtrasos:0, totalRegistros:0, diasComAtraso:new Set(), atrasoGrave:0, atrasoCritico:0, atrasoNormal:0 }
-      m[unid].totalRegistros += 1
-      if (isAtraso) {
-        m[unid].totalAtrasos += 1
-        if (dateS) m[unid].diasComAtraso.add(dateS)
-        const su = status.toUpperCase()
-        if (su.includes('GRAVE'))              m[unid].atrasoGrave    += 1
-        else if (su.includes('CRÍT') || su.includes('CRIT')) m[unid].atrasoCritico += 1
-        else                                   m[unid].atrasoNormal   += 1
-      }
-    })
-    return Object.values(m)
-      .filter(x => x.totalAtrasos > 0)
-      .map(x => ({ ...x, diasComAtraso: x.diasComAtraso.size, taxaAtraso: x.totalRegistros > 0 ? (x.totalAtrasos / x.totalRegistros) * 100 : 0 }))
-      .sort((a, b) => b.diasComAtraso - a.diasComAtraso || b.totalAtrasos - a.totalAtrasos)
-      .slice(0, 10)
-  }, [rows, cols])
-
-  if (!items.length) return <div style={{ color:T.muted, fontSize:13 }}>Nenhum atraso registrado no período.</div>
-  const maxDias    = items[0]?.diasComAtraso || 1
-  const maxAtrasos = Math.max(...items.map(x => x.totalAtrasos), 1)
-
-  return (
-    <div style={{ overflowX:'auto' }}>
-      <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12.5 }}>
-        <thead>
-          <tr style={{ borderBottom:`1px solid ${T.border}` }}>
-            {['#','Unidade','Dias c/ Atraso','Total Atrasos','Taxa','Composição'].map(h => (
-              <th key={h} style={{ padding:'9px 12px', textAlign:'left', color:T.muted, fontWeight:600, fontSize:10.5, textTransform:'uppercase', letterSpacing:'.06em', whiteSpace:'nowrap' }}>{h}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {items.map((r, i) => {
-            const diasPct    = (r.diasComAtraso / maxDias) * 100
-            const atrasosPct = (r.totalAtrasos / maxAtrasos) * 100
-            const rowColor   = i < 3 ? T.danger : i < 6 ? T.warning : T.muted
-            const total      = r.atrasoGrave + r.atrasoCritico + r.atrasoNormal || 1
-            const graveW     = (r.atrasoGrave   / total) * 100
-            const criticoW   = (r.atrasoCritico / total) * 100
-            const normalW    = (r.atrasoNormal  / total) * 100
-            return (
-              <tr key={r.unid} className="row-table" style={{ borderBottom:`1px solid ${T.border}22`, transition:'background .15s' }}>
-                <td style={{ padding:'10px 12px', color:rowColor, fontWeight:700, fontSize:12 }}>#{i+1}</td>
-                <td style={{ padding:'10px 12px', minWidth:180, maxWidth:260 }}>
-                  <div style={{ fontWeight:600, color:T.text, fontSize:12.5, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{r.unid}</div>
-                  <div style={{ fontSize:10, color:T.muted, marginTop:2 }}>{r.totalRegistros} registros totais</div>
-                </td>
-                <td style={{ padding:'10px 12px', minWidth:130 }}>
-                  <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                    <span style={{ fontWeight:800, color:rowColor, fontSize:14, minWidth:20 }}>{r.diasComAtraso}</span>
-                    <div style={{ flex:1, background:T.border, borderRadius:4, height:5, overflow:'hidden', minWidth:60 }}>
-                      <div style={{ height:'100%', borderRadius:4, background:rowColor, width:`${diasPct}%`, transition:'width .6s ease' }} />
-                    </div>
-                  </div>
-                  <div style={{ fontSize:10, color:T.muted, marginTop:2 }}>{r.diasComAtraso === 1 ? 'dia único' : 'dias distintos'}</div>
-                </td>
-                <td style={{ padding:'10px 12px', minWidth:120 }}>
-                  <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                    <span style={{ fontWeight:700, color:rowColor, fontSize:13, minWidth:24 }}>{r.totalAtrasos}</span>
-                    <div style={{ flex:1, background:T.border, borderRadius:4, height:5, overflow:'hidden', minWidth:50 }}>
-                      <div style={{ height:'100%', borderRadius:4, background:rowColor, opacity:.7, width:`${atrasosPct}%`, transition:'width .6s ease' }} />
-                    </div>
-                  </div>
-                </td>
-                <td style={{ padding:'10px 12px' }}>
-                  <span style={{ fontSize:12, fontWeight:700, padding:'3px 9px', borderRadius:20, background: r.taxaAtraso>=50?T.danger+'22':r.taxaAtraso>=20?T.warning+'22':T.muted+'22', color: r.taxaAtraso>=50?T.danger:r.taxaAtraso>=20?T.warning:T.muted }}>
-                    {r.taxaAtraso.toFixed(1)}%
-                  </span>
-                </td>
-                <td style={{ padding:'10px 12px', minWidth:140 }}>
-                  <div style={{ display:'flex', height:8, borderRadius:4, overflow:'hidden', gap:1 }}>
-                    {r.atrasoNormal   > 0 && <div title={`Normal: ${r.atrasoNormal}`}   style={{ width:`${normalW}%`,  background:'#F59E0B', borderRadius:'4px 0 0 4px' }} />}
-                    {r.atrasoCritico  > 0 && <div title={`Crítico: ${r.atrasoCritico}`} style={{ width:`${criticoW}%`, background:'#EF4444' }} />}
-                    {r.atrasoGrave    > 0 && <div title={`Grave: ${r.atrasoGrave}`}     style={{ width:`${graveW}%`,   background:'#7C3AED', borderRadius:'0 4px 4px 0' }} />}
-                  </div>
-                  <div style={{ display:'flex', gap:8, marginTop:4 }}>
-                    {r.atrasoNormal  > 0 && <span style={{ fontSize:9, color:'#F59E0B' }}>■ {r.atrasoNormal} normal</span>}
-                    {r.atrasoCritico > 0 && <span style={{ fontSize:9, color:'#EF4444' }}>■ {r.atrasoCritico} crít.</span>}
-                    {r.atrasoGrave   > 0 && <span style={{ fontSize:9, color:'#7C3AED' }}>■ {r.atrasoGrave} grave</span>}
-                  </div>
-                </td>
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
-    </div>
-  )
-}
-
-const PERIODOS = [
-  { key:'HOJE',    label:'Hoje'    },
-  { key:'ONTEM',   label:'Ontem'   },
-  { key:'SEMANA',  label:'Semana'  },
-  { key:'MES',     label:'Mês'     },
-  { key:'ANO',     label:'Ano'     },
-  { key:'PERIODO', label:'Período' },
-]
-
-function PeriodoSelector({ value, onChange, infoLabel, dateFrom, dateTo, onDateFrom, onDateTo, allDates }) {
-  const minDate = allDates[0] || ''
-  const maxDate = allDates[allDates.length-1] || ''
+function PeriodoBar({ value, onChange, allDates, dateFrom, dateTo, onDateFrom, onDateTo, label }) {
   return (
     <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
-      <div style={{ display:'flex', gap:3, background:T.card, border:`1px solid ${T.border}`, borderRadius:10, padding:4 }}>
-        {PERIODOS.map(p=>(
+      <div style={{ display:'flex', gap:2, background:'rgba(255,255,255,0.04)', border:`1px solid ${T.border}`, borderRadius:12, padding:3, backdropFilter:'blur(8px)' }}>
+        {PERIODOS.map(p => (
           <button key={p.key} onClick={()=>onChange(p.key)} style={{
-            padding:'6px 11px', borderRadius:7, border:'none', fontSize:12, fontWeight:700, cursor:'pointer', transition:'all .15s',
-            background: value===p.key ? `linear-gradient(135deg,${T.accent},${T.accentB})` : 'transparent',
-            color: value===p.key ? '#000' : T.muted, whiteSpace:'nowrap',
+            padding:'6px 13px', borderRadius:9, border:'none', fontSize:11.5, fontWeight:700,
+            cursor:'pointer', transition:'all .2s',
+            background: value===p.key ? T.gBlue : 'transparent',
+            color: value===p.key ? '#fff' : T.muted,
+            boxShadow: value===p.key ? `0 0 16px ${T.blue}66` : 'none',
           }}>{p.label}</button>
         ))}
       </div>
-      {value === 'PERIODO' && (
-        <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-          <input type="date" value={dateFrom} min={minDate} max={maxDate} onChange={e=>onDateFrom(e.target.value)}
-            style={{ background:T.card, border:`1px solid ${T.accent}55`, borderRadius:8, color:T.text, fontSize:12, padding:'6px 10px', outline:'none', colorScheme:'dark', cursor:'pointer' }} />
-          <span style={{ color:T.muted, fontSize:12 }}>→</span>
-          <input type="date" value={dateTo} min={minDate} max={maxDate} onChange={e=>onDateTo(e.target.value)}
-            style={{ background:T.card, border:`1px solid ${T.accent}55`, borderRadius:8, color:T.text, fontSize:12, padding:'6px 10px', outline:'none', colorScheme:'dark', cursor:'pointer' }} />
-        </div>
+      {value==='PERIODO' && (
+        <>
+          <input type="date" value={dateFrom} min={allDates[0]||''} max={allDates[allDates.length-1]||''} onChange={e=>onDateFrom(e.target.value)}
+            style={{ background:'rgba(255,255,255,0.05)', border:`1px solid ${T.border2}`, borderRadius:9, color:T.text, fontSize:11, padding:'6px 10px', outline:'none', colorScheme:'dark' }} />
+          <span style={{ color:T.muted }}>→</span>
+          <input type="date" value={dateTo} min={allDates[0]||''} max={allDates[allDates.length-1]||''} onChange={e=>onDateTo(e.target.value)}
+            style={{ background:'rgba(255,255,255,0.05)', border:`1px solid ${T.border2}`, borderRadius:9, color:T.text, fontSize:11, padding:'6px 10px', outline:'none', colorScheme:'dark' }} />
+        </>
       )}
-      {infoLabel && <span style={{ fontSize:11, color:T.muted }}>{infoLabel}</span>}
+      {label && <span style={{ fontSize:10.5, color:T.muted }}>{label}</span>}
     </div>
   )
 }
 
-const SB_URL = 'https://fwdvzsywudpieqlqnxkp.supabase.co'
-const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ3ZHZ6c3l3dWRwaWVxbHFueGtwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg1ODcyNzEsImV4cCI6MjA5NDE2MzI3MX0.SkyfE_HVulz_TyQldI6XpENSJAuu6xDgUEDz4vObKYQ'
-
-const sbFetch = (path, opts = {}) => {
-  const { headers: extraHeaders, ...restOpts } = opts
-  return fetch(`${SB_URL}/rest/v1/${path}`, {
-    ...restOpts,
-    headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}`, 'Content-Type': 'application/json', 'Range-Unit': 'items', ...extraHeaders },
-  })
+function Filters({ search, onSearch, uf, onUf, ufs, extra, showClear, onClear }) {
+  return (
+    <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center', marginBottom:20 }}>
+      <input value={search} onChange={e=>onSearch(e.target.value)} placeholder="🔍  Buscar unidade, médico, especialidade…"
+        style={{ background:'rgba(255,255,255,0.04)', border:`1px solid ${T.border}`, borderRadius:11, color:T.text, fontSize:12, padding:'8px 14px', outline:'none', width:280, backdropFilter:'blur(8px)' }} />
+      <select value={uf} onChange={e=>onUf(e.target.value)}
+        style={{ background:'rgba(10,14,35,0.9)', border:`1px solid ${T.border}`, borderRadius:11, color:T.text, fontSize:12, padding:'8px 12px', outline:'none', cursor:'pointer' }}>
+        <option value="TODOS">Todos os Estados</option>
+        {ufs.map(u=><option key={u}>{u}</option>)}
+      </select>
+      {extra}
+      {showClear && (
+        <button onClick={onClear} style={{ background:'rgba(255,64,96,0.1)', border:`1px solid ${T.rose}44`, borderRadius:11, color:T.rose, fontSize:12, padding:'8px 12px', cursor:'pointer' }}>✕ Limpar</button>
+      )}
+    </div>
+  )
 }
 
-const rowDateStr = (r) => {
-  const v = r['DATA_AGENDA'] ?? r[Object.keys(r).find(k => k.includes('DATA')) || ''] ?? ''
-  return serialToDateStr(v)
+// Neon line/bar sparkline
+function NeonSpark({ data, color, height=60 }) {
+  if (!data.length) return null
+  const max = Math.max(...data.map(d=>d.v), 1)
+  const w = 100 / data.length
+  return (
+    <div style={{ display:'flex', alignItems:'flex-end', gap:3, height, position:'relative' }}>
+      {/* Glow backdrop */}
+      <div style={{ position:'absolute', bottom:0, left:0, right:0, height:'40%', background:`linear-gradient(0deg,${color}18,transparent)`, borderRadius:4, pointerEvents:'none' }} />
+      {data.map((d,i) => {
+        const h = Math.max((d.v/max)*100, 4)
+        return (
+          <div key={i} title={`${fmtDate(d.k)}: ${d.v}`} style={{
+            flex:1, borderRadius:'3px 3px 0 0',
+            background:`linear-gradient(0deg,${color},${color}66)`,
+            height:`${h}%`,
+            boxShadow:`0 0 8px ${color}88`,
+            transition:'height .6s cubic-bezier(.4,0,.2,1)',
+            opacity: .5 + .5*(d.v/max),
+          }} />
+        )
+      })}
+    </div>
+  )
 }
 
+// ── TAB AGENDAS ───────────────────────────────────────────────────────────────
+function TabAgendas({ rows }) {
+  const [periodo,    setPeriodo]    = useState('MES')
+  const [dateFrom,   setDateFrom]   = useState('')
+  const [dateTo,     setDateTo]     = useState('')
+  const [ufFilt,     setUfFilt]     = useState('TODOS')
+  const [statusFilt, setStatusFilt] = useState('TODOS')
+  const [search,     setSearch]     = useState('')
+
+  const allDates = useMemo(() => [...new Set(rows.map(r=>r.data_agenda).filter(Boolean))].sort(), [rows])
+  const periodoFn = useMemo(() => buildFilter(allDates, periodo, dateFrom, dateTo), [allDates, periodo, dateFrom, dateTo])
+  const ufs      = useMemo(() => [...new Set(rows.map(r=>r.uf).filter(Boolean))].sort(), [rows])
+  const statuses = useMemo(() => [...new Set(rows.map(r=>r.status).filter(Boolean))].sort(), [rows])
+
+  const filtered = useMemo(() => {
+    let r = rows.filter(d=>periodoFn(d.data_agenda))
+    if (ufFilt!=='TODOS')     r = r.filter(d=>d.uf===ufFilt)
+    if (statusFilt!=='TODOS') r = r.filter(d=>d.status===statusFilt)
+    if (search) { const q=search.toLowerCase(); r=r.filter(d=>[d.nm_local,d.nm_medico,d.ds_especialidade,d.cidade].some(v=>String(v||'').toLowerCase().includes(q))) }
+    return r
+  }, [rows, periodoFn, ufFilt, statusFilt, search])
+
+  const stats = useMemo(() => {
+    const total    = filtered.length
+    const emAtraso = filtered.filter(d=>String(d.status||'').toUpperCase().includes('ATRASO')).length
+    const semPonto = filtered.filter(d=>d.hr_entrada_min===null||d.hr_entrada_min===undefined).length
+    const unidMap={}, medMap={}, statMap={}
+    filtered.forEach(d=>{
+      const u=d.nm_local||'Sem Unidade'; unidMap[u]=(unidMap[u]||0)+1
+      const m=d.nm_medico||''; if(m) medMap[m]=(medMap[m]||0)+1
+      const s=d.status||'OK'; statMap[s]=(statMap[s]||0)+1
+    })
+    const topUnidades = Object.entries(unidMap).map(([n,v])=>({n,v})).sort((a,b)=>b.v-a.v).slice(0,8)
+    const topMedicos  = Object.entries(medMap).map(([n,v])=>({n,v})).sort((a,b)=>b.v-a.v).slice(0,8)
+    const statusBreak = Object.entries(statMap).map(([k,v])=>({k,v})).sort((a,b)=>b.v-a.v)
+    const dayMap={}
+    filtered.forEach(d=>{ if(d.data_agenda) dayMap[d.data_agenda]=(dayMap[d.data_agenda]||0)+1 })
+    const byDate = Object.entries(dayMap).map(([k,v])=>({k,v})).sort((a,b)=>a.k.localeCompare(b.k)).slice(-28)
+    return {
+      total, emAtraso, semPonto, topUnidades, topMedicos, statusBreak, byDate,
+      atrasoPct: total>0?((emAtraso/total)*100).toFixed(1):'0',
+      semPontoPct: total>0?((semPonto/total)*100).toFixed(1):'0',
+    }
+  }, [filtered])
+
+  if (!rows.length) return (
+    <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', minHeight:420, gap:16 }}>
+      <div style={{ fontSize:56, filter:'drop-shadow(0 0 20px #4F7BFF88)' }}>📋</div>
+      <div style={{ fontSize:22, fontWeight:900, color:T.text, fontFamily:"'Syne',sans-serif", letterSpacing:'-0.5px' }}>Nenhuma agenda carregada</div>
+      <div style={{ fontSize:13, color:T.muted }}>Carregue uma planilha para começar</div>
+    </div>
+  )
+
+  const { total, emAtraso, semPonto, topUnidades, topMedicos, statusBreak, byDate, atrasoPct, semPontoPct } = stats
+  const maxUnid = topUnidades[0]?.v||1, maxMed = topMedicos[0]?.v||1
+
+  return (
+    <div>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:20, flexWrap:'wrap', gap:12 }}>
+        <PeriodoBar value={periodo} onChange={p=>{setPeriodo(p);setDateFrom('');setDateTo('')}}
+          allDates={allDates} dateFrom={dateFrom} dateTo={dateTo} onDateFrom={setDateFrom} onDateTo={setDateTo}
+          label={`${total.toLocaleString('pt-BR')} registros`} />
+      </div>
+      <Filters search={search} onSearch={setSearch} uf={ufFilt} onUf={setUfFilt} ufs={ufs}
+        showClear={ufFilt!=='TODOS'||statusFilt!=='TODOS'||!!search}
+        onClear={()=>{setUfFilt('TODOS');setStatusFilt('TODOS');setSearch('')}}
+        extra={
+          <select value={statusFilt} onChange={e=>setStatusFilt(e.target.value)}
+            style={{ background:'rgba(10,14,35,0.9)', border:`1px solid ${T.border}`, borderRadius:11, color:T.text, fontSize:12, padding:'8px 12px', outline:'none', cursor:'pointer' }}>
+            <option value="TODOS">Todos os Status</option>
+            {statuses.map(s=><option key={s}>{s}</option>)}
+          </select>
+        } />
+
+      {/* KPIs */}
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:14, marginBottom:20 }}>
+        <KpiCard icon="🗓" label="Total Agendas"    value={total.toLocaleString('pt-BR')}         color={T.blue}    grad={T.gBlue} />
+        <KpiCard icon="⚠️" label="Em Atraso"        value={emAtraso.toLocaleString('pt-BR')}      sub={`${atrasoPct}% do total`}    color={T.rose}    grad={T.gRose} />
+        <KpiCard icon="🚫" label="Sem Ponto"        value={semPonto.toLocaleString('pt-BR')}      sub={`${semPontoPct}% do total`}  color={T.violet}  grad={T.gViolet} />
+        <KpiCard icon="✅" label="Com Atendimento"  value={(total-semPonto).toLocaleString('pt-BR')} sub={`${(100-Number(semPontoPct)).toFixed(1)}% presentes`} color={T.emerald} grad={T.gEm} />
+      </div>
+
+      {/* Tendência + Status */}
+      <div style={{ display:'grid', gridTemplateColumns:'1.4fr 1fr', gap:14, marginBottom:14 }}>
+        {byDate.length > 1 && (
+          <GlowCard color={T.blue}>
+            <SecTitle sub={`Últimos ${byDate.length} dias com dados`}>📈 Agendas por Dia</SecTitle>
+            <NeonSpark data={byDate} color={T.blue} height={64} />
+            <div style={{ display:'flex', justifyContent:'space-between', marginTop:8 }}>
+              <span style={{ fontSize:10, color:T.muted }}>{fmtDate(byDate[0]?.k)} · {byDate[0]?.v} ag.</span>
+              <span style={{ fontSize:10, color:T.muted }}>{fmtDate(byDate[byDate.length-1]?.k)} · {byDate[byDate.length-1]?.v} ag.</span>
+            </div>
+          </GlowCard>
+        )}
+        <GlowCard color={T.violet}>
+          <SecTitle>📊 Status das Agendas</SecTitle>
+          <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+            {statusBreak.slice(0,6).map(({k,v}) => {
+              const cfg = getStatusCfg(k)
+              const pct = total>0?((v/total)*100).toFixed(1):'0'
+              return (
+                <div key={k} style={{ display:'flex', alignItems:'center', gap:10 }}>
+                  <div style={{ width:8, height:8, borderRadius:'50%', background:cfg.color, boxShadow:`0 0 8px ${cfg.color}`, flexShrink:0 }} />
+                  <div style={{ flex:1, fontSize:11.5, color:T.text, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{cfg.label}</div>
+                  <span style={{ fontSize:11, fontWeight:800, color:cfg.color, minWidth:36, textAlign:'right', textShadow:`0 0 8px ${cfg.color}` }}>{v.toLocaleString('pt-BR')}</span>
+                  <span style={{ fontSize:10, color:T.muted, minWidth:36, textAlign:'right' }}>{pct}%</span>
+                  <div style={{ width:60, background:'rgba(255,255,255,0.05)', borderRadius:4, height:4, overflow:'hidden' }}>
+                    <div style={{ height:'100%', borderRadius:4, background:cfg.color, width:`${(v/(statusBreak[0]?.v||1))*100}%`, boxShadow:`0 0 6px ${cfg.color}` }} />
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </GlowCard>
+      </div>
+
+      {/* Rankings */}
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14, marginBottom:14 }}>
+        <GlowCard color={T.cyan}>
+          <SecTitle>🏥 Top Unidades por Agendas</SecTitle>
+          {topUnidades.map((u,i)=>(
+            <NeonBar key={u.n} rank={i} label={u.n} value={u.v} max={maxUnid}
+              color={i===0?T.amber:i<3?T.cyan:T.blue} />
+          ))}
+        </GlowCard>
+        <GlowCard color={T.violet}>
+          <SecTitle>👨‍⚕️ Top Médicos por Agendas</SecTitle>
+          {topMedicos.map((m,i)=>(
+            <NeonBar key={m.n} rank={i} label={m.n} value={m.v} max={maxMed}
+              color={i===0?T.amber:i<3?T.violet:T.blue} />
+          ))}
+        </GlowCard>
+      </div>
+
+      {/* Tabela */}
+      <GlowCard color={T.border}>
+        <SecTitle sub="Últimos 50 registros filtrados">📋 Detalhamento de Agendas</SecTitle>
+        <div style={{ overflowX:'auto' }}>
+          <table style={{ width:'100%', borderCollapse:'collapse', fontSize:11.5 }}>
+            <thead>
+              <tr style={{ borderBottom:`1px solid ${T.border}` }}>
+                {['Data','Unidade','Médico','Especialidade','UF','Status','Atraso'].map(h=>(
+                  <th key={h} style={{ padding:'8px 12px', textAlign:'left', color:T.muted, fontWeight:700, fontSize:9.5, textTransform:'uppercase', letterSpacing:'.08em', whiteSpace:'nowrap' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.slice(0,50).map((r,i)=>{
+                const cfg = getStatusCfg(r.status||'')
+                return (
+                  <tr key={i} style={{ borderBottom:`1px solid rgba(99,120,255,0.07)`, transition:'background .15s' }}
+                    onMouseEnter={e=>e.currentTarget.style.background='rgba(79,123,255,0.06)'}
+                    onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                    <td style={{ padding:'9px 12px', color:T.sub, whiteSpace:'nowrap', fontSize:11 }}>{fmtDate(r.data_agenda)}</td>
+                    <td style={{ padding:'9px 12px', color:T.text, fontWeight:600, maxWidth:190, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{r.nm_local}</td>
+                    <td style={{ padding:'9px 12px', color:T.sub, whiteSpace:'nowrap' }}>{r.nm_medico}</td>
+                    <td style={{ padding:'9px 12px', color:T.muted, maxWidth:150, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{r.ds_especialidade}</td>
+                    <td style={{ padding:'9px 12px', color:T.muted }}>{r.uf}</td>
+                    <td style={{ padding:'9px 12px' }}>
+                      <span style={{ fontSize:9.5, fontWeight:700, padding:'2px 8px', borderRadius:20, background:cfg.glow, color:cfg.color, border:`1px solid ${cfg.color}44` }}>{r.status||'—'}</span>
+                    </td>
+                    <td style={{ padding:'9px 12px', color:r.atraso==='SIM'?T.rose:T.emerald, fontWeight:700, textShadow:r.atraso==='SIM'?`0 0 10px ${T.rose}`:'' }}>{r.atraso||'—'}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      </GlowCard>
+    </div>
+  )
+}
+
+// ── TAB ESPERA ────────────────────────────────────────────────────────────────
+function TabEspera({ rows }) {
+  const [periodo,  setPeriodo]  = useState('MES')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo,   setDateTo]   = useState('')
+  const [ufFilt,   setUfFilt]   = useState('TODOS')
+  const [search,   setSearch]   = useState('')
+
+  const allDates = useMemo(() => [...new Set(rows.map(r=>r.data_agenda).filter(Boolean))].sort(), [rows])
+  const periodoFn = useMemo(() => buildFilter(allDates, periodo, dateFrom, dateTo), [allDates, periodo, dateFrom, dateTo])
+  const ufs = useMemo(() => [...new Set(rows.map(r=>r.uf).filter(Boolean))].sort(), [rows])
+
+  const filtered = useMemo(() => {
+    let r = rows.filter(d=>periodoFn(d.data_agenda))
+    if (ufFilt!=='TODOS') r=r.filter(d=>d.uf===ufFilt)
+    if (search) { const q=search.toLowerCase(); r=r.filter(d=>[d.nm_local,d.nm_medico,d.ds_especialidade,d.cidade].some(v=>String(v||'').toLowerCase().includes(q))) }
+    return r
+  }, [rows, periodoFn, ufFilt, search])
+
+  const stats = useMemo(() => {
+    const comEspera = filtered.filter(d=>d.tempo_espera_min!==null&&d.tempo_espera_min!==undefined)
+    const total   = filtered.length
+    const totalPac= filtered.reduce((a,d)=>a+(d.qt_pacientes_aguardando||0),0)
+    const soma    = comEspera.reduce((a,d)=>a+d.tempo_espera_min,0)
+    const media   = comEspera.length>0?soma/comEspera.length:null
+    const maxE    = comEspera.length>0?Math.max(...comEspera.map(d=>d.tempo_espera_min)):null
+    const unidMap={}, medMap={}
+    comEspera.forEach(d=>{
+      const u=d.nm_local||'Sem Unidade'; if(!unidMap[u]) unidMap[u]={soma:0,cnt:0}; unidMap[u].soma+=d.tempo_espera_min; unidMap[u].cnt+=1
+      const m=d.nm_medico||''; if(!m) return; if(!medMap[m]) medMap[m]={soma:0,cnt:0}; medMap[m].soma+=d.tempo_espera_min; medMap[m].cnt+=1
+    })
+    const topUnidades = Object.entries(unidMap).map(([n,{soma,cnt}])=>({n,v:Math.round(soma/cnt),cnt})).sort((a,b)=>b.v-a.v).slice(0,8)
+    const topMedicos  = Object.entries(medMap).map(([n,{soma,cnt}])=>({n,v:Math.round(soma/cnt),cnt})).sort((a,b)=>b.v-a.v).slice(0,8)
+    const dayMap={}
+    comEspera.forEach(d=>{ if(!d.data_agenda) return; if(!dayMap[d.data_agenda]) dayMap[d.data_agenda]={soma:0,cnt:0}; dayMap[d.data_agenda].soma+=d.tempo_espera_min; dayMap[d.data_agenda].cnt+=1 })
+    const byDate = Object.entries(dayMap).map(([k,{soma,cnt}])=>({k,v:Math.round(soma/cnt)})).sort((a,b)=>a.k.localeCompare(b.k)).slice(-28)
+    const faixas = {'0–15min':0,'16–30min':0,'31–60min':0,'61–120min':0,'+120min':0}
+    comEspera.forEach(d=>{ const m=d.tempo_espera_min; if(m<=15) faixas['0–15min']++; else if(m<=30) faixas['16–30min']++; else if(m<=60) faixas['31–60min']++; else if(m<=120) faixas['61–120min']++; else faixas['+120min']++ })
+    const distEspera = Object.entries(faixas).map(([k,v])=>({k,v}))
+    return { total, totalPac, media, maxE, topUnidades, topMedicos, byDate, distEspera }
+  }, [filtered])
+
+  if (!rows.length) return (
+    <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', minHeight:420, gap:16 }}>
+      <div style={{ fontSize:56, filter:'drop-shadow(0 0 20px #00D4FF88)' }}>⏱️</div>
+      <div style={{ fontSize:22, fontWeight:900, color:T.text, fontFamily:"'Syne',sans-serif" }}>Nenhum dado de espera carregado</div>
+      <div style={{ fontSize:13, color:T.muted }}>Carregue uma planilha para começar</div>
+    </div>
+  )
+
+  const { total, totalPac, media, maxE, topUnidades, topMedicos, byDate, distEspera } = stats
+  const maxUnid = topUnidades[0]?.v||1, maxMed = topMedicos[0]?.v||1
+  const distColors = [T.emerald, T.cyan, T.amber, T.rose, '#FF1040']
+
+  return (
+    <div>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:20, flexWrap:'wrap', gap:12 }}>
+        <PeriodoBar value={periodo} onChange={p=>{setPeriodo(p);setDateFrom('');setDateTo('')}}
+          allDates={allDates} dateFrom={dateFrom} dateTo={dateTo} onDateFrom={setDateFrom} onDateTo={setDateTo}
+          label={`${total.toLocaleString('pt-BR')} registros`} />
+      </div>
+      <Filters search={search} onSearch={setSearch} uf={ufFilt} onUf={setUfFilt} ufs={ufs}
+        showClear={ufFilt!=='TODOS'||!!search} onClear={()=>{setUfFilt('TODOS');setSearch('')}} />
+
+      {/* KPIs */}
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:14, marginBottom:20 }}>
+        <KpiCard icon="⏱️" label="Registros de Espera"  value={total.toLocaleString('pt-BR')}    color={T.cyan}    grad={T.gCyan}   />
+        <KpiCard icon="👥" label="Pacientes na Fila"    value={totalPac.toLocaleString('pt-BR')} color={T.blue}    grad={T.gBlue}   />
+        <KpiCard icon="📊" label="Espera Média"          value={fmtMin(media)}  sub="TEMPO_DE_ESPERA"  color={T.amber}   grad="linear-gradient(135deg,#FFB020,#CC8000)" />
+        <KpiCard icon="🔴" label="Maior Espera"          value={fmtMin(maxE)}   sub="pior caso no período" color={T.rose} grad={T.gRose}   />
+      </div>
+
+      {/* Distribuição por faixa */}
+      <GlowCard color={T.amber} style={{ marginBottom:14 }}>
+        <SecTitle sub="Réguas de classificação a definir — distribuição por TEMPO_DE_ESPERA">⏳ Distribuição por Faixa de Espera</SecTitle>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(5,1fr)', gap:10 }}>
+          {distEspera.map(({k,v},i) => {
+            const c = distColors[i]
+            const maxD = Math.max(...distEspera.map(d=>d.v),1)
+            return (
+              <div key={k} style={{ background:`${c}0A`, border:`1px solid ${c}33`, borderRadius:14, padding:'16px 14px', textAlign:'center', position:'relative', overflow:'hidden' }}>
+                <div style={{ position:'absolute', bottom:0, left:0, right:0, height:3, background:`linear-gradient(90deg,${c},${c}44)`, opacity:(v/maxD) }} />
+                <div style={{ fontSize:9, fontWeight:800, color:c, textTransform:'uppercase', letterSpacing:'.09em', marginBottom:10, textShadow:`0 0 8px ${c}` }}>{k}</div>
+                <div style={{ fontSize:30, fontWeight:900, color:c, lineHeight:1, textShadow:`0 0 20px ${c}88`, fontFamily:"'Syne',sans-serif" }}>{v.toLocaleString('pt-BR')}</div>
+              </div>
+            )
+          })}
+        </div>
+      </GlowCard>
+
+      {/* Tendência */}
+      {byDate.length > 1 && (
+        <GlowCard color={T.amber} style={{ marginBottom:14 }}>
+          <SecTitle sub={`Média diária de TEMPO_DE_ESPERA — ${byDate.length} dias`}>📈 Evolução da Espera Média</SecTitle>
+          <NeonSpark data={byDate} color={T.amber} height={64} />
+          <div style={{ display:'flex', justifyContent:'space-between', marginTop:8 }}>
+            <span style={{ fontSize:10, color:T.muted }}>{fmtDate(byDate[0]?.k)} · {fmtMin(byDate[0]?.v)}</span>
+            <span style={{ fontSize:10, color:T.muted }}>{fmtDate(byDate[byDate.length-1]?.k)} · {fmtMin(byDate[byDate.length-1]?.v)}</span>
+          </div>
+        </GlowCard>
+      )}
+
+      {/* Rankings */}
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14, marginBottom:14 }}>
+        <GlowCard color={T.rose}>
+          <SecTitle sub="Média de TEMPO_DE_ESPERA">🏥 Unidades — Maior Espera</SecTitle>
+          {topUnidades.map((u,i)=>(
+            <NeonBar key={u.n} rank={i} label={u.n} value={fmtMin(u.v)} max={maxUnid} sub={`${u.cnt} registros`}
+              color={i===0?T.rose:i<3?T.amber:T.cyan} />
+          ))}
+          {!topUnidades.length && <div style={{color:T.muted,fontSize:12}}>Sem dados no período.</div>}
+        </GlowCard>
+        <GlowCard color={T.violet}>
+          <SecTitle sub="Média de TEMPO_DE_ESPERA">👨‍⚕️ Médicos — Maior Espera</SecTitle>
+          {topMedicos.map((m,i)=>(
+            <NeonBar key={m.n} rank={i} label={m.n} value={fmtMin(m.v)} max={maxMed} sub={`${m.cnt} registros`}
+              color={i<3?T.violet:T.blue} />
+          ))}
+          {!topMedicos.length && <div style={{color:T.muted,fontSize:12}}>Sem dados no período.</div>}
+        </GlowCard>
+      </div>
+
+      {/* Tabela */}
+      <GlowCard color={T.border}>
+        <SecTitle sub="Ordenado por maior TEMPO_DE_ESPERA — top 50">📋 Detalhamento de Espera</SecTitle>
+        <div style={{ overflowX:'auto' }}>
+          <table style={{ width:'100%', borderCollapse:'collapse', fontSize:11.5 }}>
+            <thead>
+              <tr style={{ borderBottom:`1px solid ${T.border}` }}>
+                {['Data','Unidade','Médico','UF','Pac. Aguardando','Tempo de Espera'].map(h=>(
+                  <th key={h} style={{ padding:'8px 12px', textAlign:'left', color:T.muted, fontWeight:700, fontSize:9.5, textTransform:'uppercase', letterSpacing:'.08em', whiteSpace:'nowrap' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {[...filtered].sort((a,b)=>(b.tempo_espera_min||0)-(a.tempo_espera_min||0)).slice(0,50).map((r,i)=>{
+                const m=r.tempo_espera_min
+                const c=m>120?T.rose:m>60?T.amber:m>30?T.cyan:T.emerald
+                return (
+                  <tr key={i} style={{ borderBottom:`1px solid rgba(99,120,255,0.07)`, transition:'background .15s' }}
+                    onMouseEnter={e=>e.currentTarget.style.background='rgba(79,123,255,0.06)'}
+                    onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                    <td style={{ padding:'9px 12px', color:T.sub, whiteSpace:'nowrap', fontSize:11 }}>{fmtDate(r.data_agenda)}</td>
+                    <td style={{ padding:'9px 12px', color:T.text, fontWeight:600, maxWidth:190, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{r.nm_local}</td>
+                    <td style={{ padding:'9px 12px', color:T.sub, whiteSpace:'nowrap' }}>{r.nm_medico}</td>
+                    <td style={{ padding:'9px 12px', color:T.muted }}>{r.uf}</td>
+                    <td style={{ padding:'9px 12px', color:T.cyan, fontWeight:700, textAlign:'center' }}>{r.qt_pacientes_aguardando??'—'}</td>
+                    <td style={{ padding:'9px 12px' }}>
+                      <span style={{ fontSize:13, fontWeight:900, color:c, textShadow:`0 0 12px ${c}88` }}>{fmtMin(m)}</span>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      </GlowCard>
+    </div>
+  )
+}
+
+// ── ROOT ──────────────────────────────────────────────────────────────────────
 export default function Home() {
-  const [dados,       setDados]       = useState([])
-  const [uf,          setUf]          = useState('TODOS')
-  const [status,      setStatus]      = useState('TODOS')
-  const [loading,     setLoading]     = useState(false)
+  const [tab,         setTab]         = useState('agendas')
+  const [agendas,     setAgendas]     = useState([])
+  const [espera,      setEspera]      = useState([])
+  const [loadingDB,   setLoadingDB]   = useState(true)
   const [storing,     setStoring]     = useState(false)
-  const [storeStatus, setStoreStatus] = useState('')
-  const [search,      setSearch]      = useState('')
-  const [período,     setPeriodo]     = useState('TODOS')
-  const [horaFilt,    setHoraFilt]    = useState('TODAS')
-  const [dateFrom,    setDateFrom]    = useState('')
-  const [dateTo,      setDateTo]      = useState('')
+  const [storeMsg,    setStoreMsg]    = useState('')
   const [timestamp,   setTimestamp]   = useState('')
-  const [storageInfo, setStorageInfo] = useState({ dias: 0, total: 0 })
-  const [initLoading, setInitLoading] = useState(true)
+  const [storageInfo, setStorageInfo] = useState({ agendas:0, espera:0 })
+
+  const loadTable = useCallback(async (table) => {
+    const PAGE=1000; let all=[], offset=0
+    while(true) {
+      const res = await fetch(`${SB_URL}/rest/v1/${table}?select=*&order=id.asc&limit=${PAGE}&offset=${offset}`,{headers:SBH})
+      if(!res.ok) break
+      const batch = await res.json()
+      if(!Array.isArray(batch)||!batch.length) break
+      all=all.concat(batch)
+      if(batch.length<PAGE) break
+      offset+=PAGE
+    }
+    return all
+  }, [])
 
   useEffect(() => {
     const load = async () => {
       try {
-        setStoreStatus('Carregando dados…')
-        let allRows = [], lastVerifTs = ''
-        let offset = 0
-        const PAGE = 200  // linhas da tabela por request
-
-        while (true) {
-          const res = await sbFetch(
-            `hospital_dados?select=dados,verif_ts&order=id.asc&limit=${PAGE}&offset=${offset}`
-          )
-          if (!res.ok) {
-            const txt = await res.text()
-            setStoreStatus(`Erro ${res.status}: ${txt.slice(0,120)}`)
-            setInitLoading(false)
-            return
-          }
-          const batch = await res.json()
-          if (!Array.isArray(batch) || batch.length === 0) break
-
-          for (const item of batch) {
-            try {
-              const d = item.dados
-              if (!d) continue
-              const parsed = typeof d === 'string' ? JSON.parse(d) : d
-              if (Array.isArray(parsed))                     allRows = allRows.concat(parsed)
-              else if (parsed && typeof parsed === 'object') allRows.push(parsed)
-            } catch(e) {}
-            if (item.verif_ts) lastVerifTs = item.verif_ts
-          }
-
-          setStoreStatus(`Carregando… ${allRows.length.toLocaleString('pt-BR')} registros`)
-          if (batch.length < PAGE) break
-          offset += PAGE
-        }
-        if (allRows.length > 0) {
-          if (lastVerifTs) setTimestamp(lastVerifTs)
-          const diasSet = new Set(allRows.map(rowDateStr).filter(Boolean))
-          setDados(allRows)
-          setStorageInfo({ dias: diasSet.size, total: allRows.length })
-          setPeriodo('MES')
-          setStoreStatus(`☁ ${diasSet.size} dias · ${allRows.length.toLocaleString('pt-BR')} registros`)
-          setTimeout(() => setStoreStatus(''), 4000)
-        } else {
-          setStoreStatus('')
-        }
-      } catch (e) { setStoreStatus(`Erro de conexão: ${e.message}`) }
-      setInitLoading(false)
+        setStoreMsg('Conectando…')
+        const [ag,esp] = await Promise.all([loadTable('agendas'),loadTable('espera')])
+        if(ag.length||esp.length) {
+          setAgendas(ag); setEspera(esp)
+          setStorageInfo({agendas:ag.length,espera:esp.length})
+          const ts=ag[0]?.verif_ts||esp[0]?.verif_ts||''; if(ts) setTimestamp(ts)
+          setStoreMsg(`☁ ${ag.length.toLocaleString('pt-BR')} agendas · ${esp.length.toLocaleString('pt-BR')} esperas`)
+          setTimeout(()=>setStoreMsg(''),4000)
+        } else setStoreMsg('')
+      } catch(e) { setStoreMsg(`Erro: ${e.message}`) }
+      setLoadingDB(false)
     }
     load()
-  }, [])
+  }, [loadTable])
 
-  const saveToSupabase = useCallback(async (newRows, ts) => {
+  const handleUpload = useCallback(async (e) => {
+    const file=e.target.files[0]; if(!file) return; e.target.value=''
     setStoring(true)
-    try {
-      const MAX_ROWS_PER_INSERT = 500
-
-      const byDate = {}
-      newRows.forEach(r => {
-        const ds = rowDateStr(r)
-        if (!ds) return
-        if (!byDate[ds]) byDate[ds] = []
-        byDate[ds].push(r)
-      })
-      const dates = Object.keys(byDate).sort((a, b) => {
-        // Converte ambas para string YYYY-MM-DD antes de comparar
-        const toISO = s => {
-          if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s
-          // Serial Excel
-          const n = Number(s)
-          if (!isNaN(n) && n > 1000) {
-            const d = new Date(Math.round((n - (n > 60 ? 25568 : 25569)) * 86400 * 1000) + 43200000)
-            return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`
-          }
-          return s
-        }
-        return toISO(a).localeCompare(toISO(b))
-      })
-
-      // Limpa via API route (server-side, sem timeout)
-      setStoreStatus('Limpando dados antigos…')
-      const delRes = await fetch('/api/save', { method: 'DELETE' })
-      if (!delRes.ok) {
-        setStoreStatus('⚠ Erro ao limpar dados antigos')
-        setStoring(false)
-        return
-      }
-
-      let totalInserted = 0
-      const totalRows = newRows.length
-
-      for (let di = 0; di < dates.length; di++) {
-        const date = dates[di]
-        const dayRows = byDate[date]
-        const chunks = Math.ceil(dayRows.length / MAX_ROWS_PER_INSERT)
-
-        for (let ci = 0; ci < chunks; ci++) {
-          const slice = dayRows.slice(ci * MAX_ROWS_PER_INSERT, (ci + 1) * MAX_ROWS_PER_INSERT)
-          totalInserted += slice.length
-          setStoreStatus(`Salvando ${date} (${di+1}/${dates.length}) · ${totalInserted.toLocaleString('pt-BR')}/${totalRows.toLocaleString('pt-BR')} linhas…`)
-
-          // Chama API route (server-side — sem timeout do browser)
-          const res = await fetch('/api/save', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ rows: slice, date, ts, chunkIndex: ci, totalChunks: chunks }),
-          })
-
-          if (!res.ok) {
-            const data = await res.json().catch(() => ({}))
-            setStoreStatus(`⚠ Erro ${date} parte ${ci+1}: ${data.error?.slice(0,120) || res.status}`)
-            setStoring(false)
-            return
-          }
-        }
-      }
-
-      const diasSet = new Set(dates)
-      setStorageInfo({ dias: diasSet.size, total: newRows.length })
-      setStoreStatus('✓ Salvo no Supabase')
-      setTimeout(() => setStoreStatus(''), 3000)
-    } catch (e) {
-      setStoreStatus(`⚠ Erro: ${e.message}`)
-    }
-    setStoring(false)
-  }, [])
-
-  const clearStorage = async () => {
-    if (!confirm('Apagar TODOS os dados do Supabase? Isso não pode ser desfeito.')) return
-    setStoring(true); setStoreStatus('Apagando…')
-    try { await sbFetch('hospital_dados?id=gt.0', { method: 'DELETE' }) } catch(e) {}
-    setDados([]); setStorageInfo({ dias:0, total:0 }); setTimestamp(''); setStoreStatus(''); setStoring(false)
-  }
-
-  const handleUpload = async (e) => {
-    const file = e.target.files[0]
-    if (!file) return
-    setLoading(true)
-    const now = new Date(), pad = n => String(n).padStart(2,'0')
-    const ts = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`
+    const now=new Date(),pad=n=>String(n).padStart(2,'0')
+    const ts=`${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`
     setTimestamp(ts)
-    const buf  = await file.arrayBuffer()
-    const wb   = XLSX.read(buf, { type:'buffer' })
-    const ws   = wb.Sheets[wb.SheetNames[0]]
-    const json = XLSX.utils.sheet_to_json(ws, { range:3, defval:'' })
-    setUf('TODOS'); setStatus('TODOS'); setSearch('')
-    setPeriodo('MES'); setHoraFilt('TODAS'); setDateFrom(''); setDateTo('')
-    setDados(json); setInitLoading(false); setLoading(false)
-    saveToSupabase(json, ts)
-  }
-
-  const cols = useMemo(() => {
-    if (!dados.length) return {}
-    const k = Object.keys(dados[0])
-    const find = (...terms) =>
-      k.find(c => terms.some(t => c === t)) ||
-      k.find(c => terms.some(t => c.toLowerCase().includes(t.toLowerCase()))) || ''
-    return {
-      unidade:            find('NM_LOCAL','UNIDADE'),
-      medico:             find('NM_MEDICO','MEDICO'),
-      esp:                find('DS_ESPECIALIDADE','ESPECIALIDADE'),
-      status:             find('STATUS'),
-      espera:             find('TEMPO_DE_ESPERA','TEMPO DE ESPERA'),
-      qtPacts:            find('QT_PACIENTES_AGUARDANDO','QTS PACTS'),
-      uf:                 find('UF'),
-      cidade:             find('CIDADE'),
-      data:               find('DATA_AGENDA','DATA'),
-      hrInicio:           find('HR_INICIO'),
-      hrEntrada:          find('HR_ENTRADA'),
-      motivoCancelamento: find('MOTIVO_CANCELAMENTO'),
-      dtRegistro:         find('DT_REGISTRO'),
-      hrRegistroEspera:   find('HR_REGISTRO_ESPERA'),
-    }
-  }, [dados])
-
-  const dadosComData = useMemo(() => {
-    if (!dados.length) return []
-    return dados.map(d => {
-      const hrV = d[cols.hrInicio]
-      let hora = 99
-      if (typeof hrV === 'number') hora = Math.floor(hrV * 24)
-      else if (hrV && typeof hrV === 'string') { const m = hrV.match(/(\d{1,2}):/); if (m) hora = parseInt(m[1]) }
-      const hrRV = d[cols.hrRegistroEspera]
-      let hrReg = null
-      if (hrRV !== '' && hrRV !== null && hrRV !== undefined) {
-        const n = Number(hrRV)
-        if (!isNaN(n) && typeof hrRV !== 'string') { hrReg = Math.round(n * 24) }
-        else if (typeof hrRV === 'string') {
-          const mStr = hrRV.match(/^(\d{1,2}):/)
-          if (mStr) hrReg = parseInt(mStr[1])
-          else if (!isNaN(n) && n !== 0) hrReg = Math.round(n * 24)
-        }
+    try {
+      setStoreMsg('Lendo planilha…')
+      const buf=await file.arrayBuffer()
+      const wb=XLSX.read(buf,{type:'buffer'})
+      const ws=wb.Sheets['PONTOS']||wb.Sheets[wb.SheetNames[0]]
+      const json=XLSX.utils.sheet_to_json(ws,{range:3,defval:''})
+      setStoreMsg(`${json.length.toLocaleString('pt-BR')} linhas — limpando banco…`)
+      const delRes=await fetch('/api/save',{method:'DELETE'})
+      if(!delRes.ok){setStoreMsg('⚠ Erro ao limpar banco');setStoring(false);return}
+      const CHUNK=500
+      for(let i=0;i<json.length;i+=CHUNK){
+        setStoreMsg(`Salvando agendas… ${Math.min(i+CHUNK,json.length).toLocaleString('pt-BR')}/${json.length.toLocaleString('pt-BR')}`)
+        await fetch('/api/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows:json.slice(i,i+CHUNK),ts,table:'agendas'})})
       }
-      return { ...d, _dateStr: serialToDateStr(d[cols.data]), _hora: hora, _hrReg: hrReg }
-    })
-  }, [dados, cols])
+      for(let i=0;i<json.length;i+=CHUNK){
+        setStoreMsg(`Salvando espera… ${Math.min(i+CHUNK,json.length).toLocaleString('pt-BR')}/${json.length.toLocaleString('pt-BR')}`)
+        await fetch('/api/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows:json.slice(i,i+CHUNK),ts,table:'espera'})})
+      }
+      setStoreMsg('Recarregando…')
+      const [ag,esp]=await Promise.all([loadTable('agendas'),loadTable('espera')])
+      setAgendas(ag); setEspera(esp); setStorageInfo({agendas:ag.length,espera:esp.length})
+      setStoreMsg(`✓ ${ag.length.toLocaleString('pt-BR')} agendas · ${esp.length.toLocaleString('pt-BR')} esperas`)
+      setTimeout(()=>setStoreMsg(''),4000)
+    } catch(e){setStoreMsg(`⚠ Erro: ${e.message}`)}
+    setStoring(false)
+  }, [loadTable])
 
-  const allDates = useMemo(() => [...new Set(dadosComData.map(d=>d._dateStr).filter(Boolean))].sort(), [dadosComData])
-  const periodoFn = useMemo(() => buildFilter(allDates, período, dateFrom, dateTo), [allDates, período, dateFrom, dateTo])
-  const dadosPorPeriodo = useMemo(() => dadosComData.filter(d => periodoFn(d._dateStr)), [dadosComData, periodoFn])
-  const horasDisp = useMemo(() => [...new Set(dadosPorPeriodo.map(d=>d._hrReg).filter(h=>h!==null&&h>=0&&h<=23))].sort((a,b)=>a-b), [dadosPorPeriodo])
-  const ufs = useMemo(() => [...new Set(dadosPorPeriodo.map(d=>String(d[cols.uf]||'').trim()).filter(Boolean))].sort(), [dadosPorPeriodo, cols])
-  const statuses = useMemo(() => [...new Set(dadosPorPeriodo.map(d=>String(d[cols.status]||'').trim()).filter(Boolean))].sort(), [dadosPorPeriodo, cols])
-
-  const filtered = useMemo(() => {
-    let r = dadosPorPeriodo
-    if (uf !== 'TODOS')       r = r.filter(d => String(d[cols.uf]||'').trim() === uf)
-    if (status !== 'TODOS')   r = r.filter(d => String(d[cols.status]||'').trim() === status)
-    if (horaFilt !== 'TODAS') r = r.filter(d => d._hora === Number(horaFilt))
-    if (search)               r = r.filter(d => [d[cols.unidade], d[cols.medico], d[cols.esp], d[cols.cidade]].some(v => String(v||'').toLowerCase().includes(search.toLowerCase())))
-    return r
-  }, [dadosPorPeriodo, uf, status, horaFilt, search, cols])
-
-  const totalRegistros = filtered.length
-  const totalUnidades  = new Set(filtered.map(d=>d[cols.unidade]).filter(Boolean)).size
-  const totalMedicos   = new Set(filtered.map(d=>String(d[cols.medico]||'').trim()).filter(Boolean)).size
-  const emAtraso       = filtered.filter(d=>String(d[cols.status]||'').toUpperCase().includes('ATRASO')).length
-  const taxaAtraso     = totalRegistros>0 ? ((emAtraso/totalRegistros)*100).toFixed(1) : 0
-  const totalEsperaMin = filtered.reduce((a,d)=>a+parseEsperaMin(d[cols.espera]),0)
-  const mediaEsperaMin = totalRegistros>0 ? totalEsperaMin/totalRegistros : 0
-  const totalPacAguard = filtered.reduce((a,d)=>a+(Number(d[cols.qtPacts])||0),0)
-  const semPontoCount  = filtered.filter(d => { const e = d[cols.hrEntrada]; return !e || e === '' || e === 'NaT' }).length
-
-  const statusBreakdown = useMemo(() => {
-    const m = {}
-    filtered.forEach(d => { const s=String(d[cols.status]||'OK').trim(); m[s]=(m[s]||0)+1 })
-    return m
-  }, [filtered, cols])
-
-  const topUnidadesAtraso = useMemo(() => {
-    const m = {}
-    filtered.filter(d=>String(d[cols.status]||'').toUpperCase().includes('ATRASO')).forEach(d=>{ const u=d[cols.unidade]||'Sem Unidade'; m[u]=(m[u]||0)+1 })
-    return Object.entries(m).map(([nome,total])=>({nome,total})).sort((a,b)=>b.total-a.total).slice(0,8)
-  }, [filtered, cols])
-
-  const topMedicos = useMemo(() => {
-    const m = {}
-    filtered.forEach(d => {
-      const med = String(d[cols.medico]||'').trim(); if(!med) return
-      const espM = parseEsperaMin(d[cols.espera])
-      const dateS = d._dateStr||''; const unid=String(d[cols.unidade]||'').trim()
-      if(!m[med]) m[med]={ med, totalEspMin:0, agendasSet:new Set(), pacts:0 }
-      m[med].totalEspMin += espM
-      m[med].agendasSet.add(`${dateS}||${unid}`)
-      m[med].pacts += Number(d[cols.qtPacts])||0
-    })
-    return Object.values(m).filter(x=>x.totalEspMin>0)
-      .map(x=>({ med:x.med, totalMin:parseFloat(x.totalEspMin.toFixed(0)), agendas:x.agendasSet.size, pacts:x.pacts }))
-      .sort((a,b)=>b.totalMin-a.totalMin).slice(0,10)
-  }, [filtered, cols])
-
-  const espBreak = useMemo(() => {
-    const m = {}
-    filtered.forEach(d=>{ const e=d[cols.esp]||'Outro'; m[e]=(m[e]||0)+1 })
-    return Object.entries(m).map(([nome,total])=>({nome,total})).sort((a,b)=>b.total-a.total).slice(0,8)
-  }, [filtered, cols])
-  const maxEsp = espBreak[0]?.total||1
-
-  const ufBreak = useMemo(() => {
-    const m = {}
-    filtered.forEach(d=>{ const u=String(d[cols.uf]||'?').trim(); m[u]=(m[u]||0)+1 })
-    return Object.entries(m).map(([nome,total])=>({nome,total})).sort((a,b)=>b.total-a.total).slice(0,8)
-  }, [filtered, cols])
-  const maxUF = ufBreak[0]?.total||1
-
-  const períodoLabel = useMemo(() => {
-    if (!allDates.length) return ''
-    const sorted=[...allDates].sort(), max=sorted[sorted.length-1]
-    const fmt=s=>s.split('-').reverse().join('/')
-    if (período==='HOJE') return `Hoje · ${fmt(todayStr())}`
-    if (período==='ONTEM') {
-      const ref = new Date(max+'T00:00:00Z'); ref.setUTCDate(ref.getUTCDate()-1)
-      const ontemStr = `${ref.getUTCFullYear()}-${String(ref.getUTCMonth()+1).padStart(2,'0')}-${String(ref.getUTCDate()).padStart(2,'0')}`
-      return `Ontem · ${fmt(ontemStr)}`
-    }
-    if (período==='SEMANA') {
-      const c=new Date(max+'T00:00:00Z'); c.setUTCDate(c.getUTCDate()-6)
-      const cut=`${c.getUTCFullYear()}-${String(c.getUTCMonth()+1).padStart(2,'0')}-${String(c.getUTCDate()).padStart(2,'0')}`
-      const semMin=sorted.find(d=>d>=cut)||cut
-      return `${fmt(semMin)} → ${fmt(max)}`
-    }
-    if (período==='MES') {
-      const mes=max.slice(0,7), mesMin=sorted.find(d=>d.slice(0,7)===mes)||max
-      const [y,m]=max.split('-')
-      const nome=new Date(+y,+m-1).toLocaleString('pt-BR',{month:'long'})
-      return `${nome.charAt(0).toUpperCase()+nome.slice(1)} · ${fmt(mesMin)} → ${fmt(max)}`
-    }
-    if (período==='ANO') {
-      const ano=max.slice(0,4), anoMin=sorted.find(d=>d.slice(0,4)===ano)||max
-      return `Ano ${ano} · ${fmt(anoMin)} → ${fmt(max)}`
-    }
-    if (período==='PERIODO' && dateFrom && dateTo) return `${fmt(dateFrom)} → ${fmt(dateTo)}`
-    return ''
-  }, [allDates, período, dateFrom, dateTo])
-
-  const hasData    = dados.length > 0
-  const isInit     = initLoading
-  const hasFiltred = filtered.length > 0
+  const handleClear = async () => {
+    if(!confirm('Apagar TODOS os dados do banco?')) return
+    setStoring(true); setStoreMsg('Apagando…')
+    await fetch('/api/save',{method:'DELETE'})
+    setAgendas([]); setEspera([]); setStorageInfo({agendas:0,espera:0}); setTimestamp(''); setStoreMsg(''); setStoring(false)
+  }
 
   return (
-    <div style={{ background:T.bg, minHeight:'100vh', fontFamily:"'DM Sans','Segoe UI',sans-serif", color:T.text }}>
+    <div style={{
+      minHeight:'100vh',
+      fontFamily:"'DM Sans','Segoe UI',sans-serif",
+      color:T.text,
+      background:`radial-gradient(ellipse 80% 60% at 50% -10%,rgba(79,123,255,0.22) 0%,transparent 60%),
+                  radial-gradient(ellipse 60% 40% at 90% 50%,rgba(155,93,255,0.12) 0%,transparent 50%),
+                  radial-gradient(ellipse 40% 30% at 10% 80%,rgba(0,212,255,0.08) 0%,transparent 40%),
+                  linear-gradient(180deg,#03050E 0%,#060B1A 50%,#040810 100%)`,
+    }}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700;800&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800;900&family=DM+Sans:wght@300;400;500;600;700;800&display=swap');
         *{box-sizing:border-box;margin:0;padding:0}
-        ::-webkit-scrollbar{width:6px;background:${T.bg}}
-        ::-webkit-scrollbar-thumb{background:${T.border};border-radius:3px}
-        select option{background:${T.surface};color:${T.text}}
-        .btn-upload:hover{opacity:.9;transform:translateY(-1px)}
-        .row-table:hover{background:#162033!important}
-        input::placeholder{color:${T.muted}}
+        ::-webkit-scrollbar{width:4px;background:transparent}
+        ::-webkit-scrollbar-thumb{background:rgba(99,120,255,0.3);border-radius:4px}
+        select option{background:#0A0E23;color:#EEF2FF}
+        input::placeholder{color:#3D5080}
         select{appearance:auto}
+        .upload-btn{transition:all .25s}
+        .upload-btn:hover{filter:brightness(1.15);transform:translateY(-2px);box-shadow:0 8px 32px rgba(79,123,255,0.4)!important}
       `}</style>
 
-      <div style={{ background:T.surface, borderBottom:`1px solid ${T.border}`, padding:'0 36px', display:'flex', alignItems:'center', justifyContent:'space-between', height:64, position:'sticky', top:0, zIndex:100 }}>
-        <div style={{ display:'flex', alignItems:'center', gap:14 }}>
-          <div style={{ width:32, height:32, borderRadius:8, fontSize:16, background:`linear-gradient(135deg,${T.accent},${T.accentB})`, display:'flex', alignItems:'center', justifyContent:'center' }}>🏥</div>
+      {/* HEADER */}
+      <div style={{
+        backdropFilter:'blur(20px)',
+        background:'rgba(6,11,26,0.8)',
+        borderBottom:`1px solid ${T.border}`,
+        padding:'0 32px',
+        display:'flex', alignItems:'center', justifyContent:'space-between',
+        height:62, position:'sticky', top:0, zIndex:100,
+        boxShadow:`0 1px 0 rgba(99,120,255,0.15), 0 4px 24px rgba(0,0,0,0.4)`,
+      }}>
+        {/* LOGO */}
+        <div style={{ display:'flex', alignItems:'center', gap:12 }}>
+          <div style={{
+            width:34, height:34, borderRadius:10,
+            background:'linear-gradient(135deg,#4F7BFF,#9B5DFF)',
+            display:'flex', alignItems:'center', justifyContent:'center', fontSize:17,
+            boxShadow:'0 0 20px rgba(79,123,255,0.6)',
+          }}>🏥</div>
           <div>
-            <div style={{ fontSize:15, fontWeight:700 }}>Monitor Hospitalar</div>
-            <div style={{ fontSize:11, color:T.muted }}>Atrasos Médicos · Operacional</div>
+            <div style={{ fontSize:15, fontWeight:900, fontFamily:"'Syne',sans-serif", letterSpacing:'-.4px', background:'linear-gradient(90deg,#EEF2FF,#8898CC)', WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent' }}>
+              Monitor Clínicas
+            </div>
+            <div style={{ fontSize:9.5, color:T.muted, letterSpacing:'.08em', textTransform:'uppercase' }}>Agendas · Espera · Operacional</div>
           </div>
         </div>
-        <div style={{ display:'flex', alignItems:'center', gap:10, flexWrap:'wrap' }}>
-          {hasData && (
-            <>
-              <PeriodoSelector value={período} onChange={p=>{setPeriodo(p);setHoraFilt('TODAS');setDateFrom('');setDateTo('')}}
-                infoLabel={`${totalRegistros.toLocaleString('pt-BR')} reg.${períodoLabel ? ' · '+períodoLabel : ''}`}
-                dateFrom={dateFrom} dateTo={dateTo} onDateFrom={setDateFrom} onDateTo={setDateTo} allDates={allDates} />
-              <select value={horaFilt} onChange={e=>setHoraFilt(e.target.value)} style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:9, color:T.text, fontSize:12, padding:'7px 11px', outline:'none', cursor:'pointer' }}>
-                <option value="TODAS">Todas as horas</option>
-                {horasDisp.map(h=>(<option key={h} value={h}>{String(h).padStart(2,'0')}h</option>))}
-              </select>
-            </>
-          )}
+
+        {/* TABS */}
+        <div style={{ display:'flex', gap:2, background:'rgba(255,255,255,0.03)', border:`1px solid ${T.border}`, borderRadius:13, padding:4, backdropFilter:'blur(8px)' }}>
+          {[{key:'agendas',icon:'🗓',label:'Agendas',count:storageInfo.agendas},{key:'espera',icon:'⏱',label:'Espera',count:storageInfo.espera}].map(t=>(
+            <button key={t.key} onClick={()=>setTab(t.key)} style={{
+              padding:'7px 22px', borderRadius:10, border:'none', cursor:'pointer', transition:'all .2s',
+              fontSize:12.5, fontWeight:700,
+              background: tab===t.key ? 'linear-gradient(135deg,#4F7BFF,#2952E3)' : 'transparent',
+              color: tab===t.key ? '#fff' : T.muted,
+              boxShadow: tab===t.key ? '0 0 20px rgba(79,123,255,0.5)' : 'none',
+            }}>
+              {t.icon} {t.label}
+              {t.count>0&&<span style={{ marginLeft:7, fontSize:9.5, background:'rgba(255,255,255,0.15)', borderRadius:10, padding:'1px 7px' }}>{t.count.toLocaleString('pt-BR')}</span>}
+            </button>
+          ))}
+        </div>
+
+        {/* CONTROLS */}
+        <div style={{ display:'flex', alignItems:'center', gap:10 }}>
           {timestamp && (
-            <div style={{ fontSize:10, color:T.muted, textAlign:'right', lineHeight:1.4 }}>
-              <div>Verificação ponto</div>
+            <div style={{ fontSize:9, color:T.muted, textAlign:'right', lineHeight:1.6 }}>
+              <div style={{ textTransform:'uppercase', letterSpacing:'.08em' }}>Verificação</div>
               <div style={{ color:T.sub, fontWeight:600 }}>{timestamp}</div>
             </div>
           )}
-          <div style={{ fontSize:10, textAlign:'right', lineHeight:1.6, minWidth:120 }}>
-            {storageInfo.dias > 0 && !storeStatus && (
-              <><div style={{ color:T.success, fontWeight:700 }}>☁ Supabase · {storageInfo.dias} {storageInfo.dias===1?'dia':'dias'}</div><div style={{ color:T.muted }}>{storageInfo.total.toLocaleString('pt-BR')} registros</div></>
+          <div style={{ fontSize:9.5, textAlign:'right', lineHeight:1.7, minWidth:110 }}>
+            {(storageInfo.agendas>0||storageInfo.espera>0)&&!storeMsg&&(
+              <div style={{ color:T.emerald, fontWeight:700, textShadow:`0 0 10px ${T.emerald}88` }}>
+                ☁ {(storageInfo.agendas+storageInfo.espera).toLocaleString('pt-BR')} registros
+              </div>
             )}
-            {storeStatus && <div style={{ color: storeStatus.startsWith('☁')||storeStatus.startsWith('✓') ? T.success : T.warning, fontWeight:600 }}>{storeStatus}</div>}
+            {storeMsg&&<div style={{ color:storeMsg.startsWith('☁')||storeMsg.startsWith('✓')?T.emerald:T.amber, fontWeight:600 }}>{storeMsg}</div>}
           </div>
-          {storageInfo.dias > 0 && !storing && (
-            <button onClick={clearStorage} style={{ background:'transparent', border:`1px solid ${T.danger}44`, borderRadius:9, color:T.danger, fontSize:11, padding:'7px 11px', cursor:'pointer', whiteSpace:'nowrap' }}>🗑 Limpar</button>
+          {(storageInfo.agendas>0||storageInfo.espera>0)&&!storing&&(
+            <button onClick={handleClear} style={{ background:'rgba(255,64,96,0.08)', border:`1px solid rgba(255,64,96,0.3)`, borderRadius:9, color:T.rose, fontSize:12, padding:'6px 10px', cursor:'pointer', transition:'all .2s' }}>🗑</button>
           )}
-          <label className="btn-upload" style={{ background: storing ? T.border : `linear-gradient(135deg,${T.accent},${T.accentB})`, color:'#000', fontWeight:700, fontSize:13, padding:'9px 18px', borderRadius:10, cursor: storing ? 'default' : 'pointer', transition:'all .2s', whiteSpace:'nowrap' }}>
-            {loading ? 'Lendo…' : storing ? 'Salvando…' : '+ Carregar Planilha'}
-            <input type="file" accept=".xlsx,.xls" style={{ display:'none' }} onChange={handleUpload} disabled={loading || storing} />
+          <label className="upload-btn" style={{
+            background: storing ? 'rgba(255,255,255,0.08)' : 'linear-gradient(135deg,#4F7BFF,#2952E3)',
+            color:'#fff', fontWeight:700, fontSize:12.5, padding:'8px 18px',
+            borderRadius:10, cursor:storing?'default':'pointer',
+            whiteSpace:'nowrap', boxShadow:'0 0 24px rgba(79,123,255,0.35)',
+            border:'1px solid rgba(79,123,255,0.4)',
+          }}>
+            {storing?'Salvando…':'+ Carregar Planilha'}
+            <input type="file" accept=".xlsx,.xls" style={{display:'none'}} onChange={handleUpload} disabled={storing||loadingDB} />
           </label>
         </div>
       </div>
 
-      <div style={{ padding:'28px 36px' }}>
-        {isInit && (
-          <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', minHeight:'calc(100vh - 140px)', gap:16 }}>
-            <div style={{ fontSize:40 }}>⏳</div>
-            <div style={{ fontSize:18, color:T.muted }}>Carregando dados do Supabase…</div>
-            {storeStatus && <div style={{ fontSize:13, color:T.warning, maxWidth:600, textAlign:'center', background:T.card, padding:'12px 20px', borderRadius:10, border:`1px solid ${T.warning}44` }}>{storeStatus}</div>}
+      {/* CONTENT */}
+      <div style={{ padding:'24px 32px' }}>
+        {loadingDB ? (
+          <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', minHeight:'calc(100vh - 110px)', gap:16 }}>
+            <div style={{ fontSize:48, filter:'drop-shadow(0 0 30px #4F7BFF)' }}>⏳</div>
+            <div style={{ fontSize:18, color:T.sub, fontFamily:"'Syne',sans-serif", fontWeight:800 }}>Conectando ao banco de dados…</div>
+            {storeMsg&&<div style={{ fontSize:12, color:T.amber, background:'rgba(255,176,32,0.08)', padding:'10px 18px', borderRadius:10, border:`1px solid ${T.amber}44` }}>{storeMsg}</div>}
           </div>
+        ) : (
+          <>
+            {tab==='agendas'&&<TabAgendas rows={agendas}/>}
+            {tab==='espera' &&<TabEspera  rows={espera} />}
+          </>
         )}
-        {!isInit && !hasData && (
-          <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', minHeight:'calc(100vh - 140px)', gap:16 }}>
-            {storeStatus ? (
-              <><div style={{ fontSize:40 }}>⚠️</div><div style={{ fontSize:18, color:T.warning, fontWeight:700 }}>Problema na conexão</div><div style={{ fontSize:13, color:T.warning, maxWidth:600, textAlign:'center', background:T.card, padding:'12px 20px', borderRadius:10, border:`1px solid ${T.warning}44` }}>{storeStatus}</div></>
-            ) : (
-              <><div style={{ fontSize:56 }}>📋</div><div style={{ fontSize:22, fontWeight:700 }}>Nenhuma planilha carregada</div><div style={{ color:T.muted, fontSize:14, textAlign:'center' }}>Clique em "+ Carregar Planilha" para começar.<br/>Os dados ficam salvos — carregue o acumulado de cada dia e o dashboard acumula tudo.</div></>
-            )}
-          </div>
-        )}
-
-        {!isInit && hasData && (<>
-          <div style={{ display:'flex', gap:10, marginBottom:24, flexWrap:'wrap', alignItems:'center' }}>
-            <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar unidade, médico, especialidade…"
-              style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:10, color:T.text, fontSize:13, padding:'9px 14px', outline:'none', width:280 }} />
-            <select value={uf} onChange={e=>setUf(e.target.value)} style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:10, color:T.text, fontSize:13, padding:'9px 13px', outline:'none', cursor:'pointer' }}>
-              <option value="TODOS">Todos os Estados</option>
-              {ufs.map(u=><option key={u}>{u}</option>)}
-            </select>
-            <select value={status} onChange={e=>setStatus(e.target.value)} style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:10, color:T.text, fontSize:13, padding:'9px 13px', outline:'none', cursor:'pointer' }}>
-              <option value="TODOS">Todos os Status</option>
-              {statuses.map(s=><option key={s}>{s}</option>)}
-            </select>
-            {(uf!=='TODOS'||status!=='TODOS'||search||horaFilt!=='TODAS') && (
-              <button onClick={()=>{setUf('TODOS');setStatus('TODOS');setSearch('');setHoraFilt('TODAS')}} style={{ background:'transparent', border:`1px solid ${T.border}`, borderRadius:10, color:T.muted, fontSize:13, padding:'9px 13px', cursor:'pointer' }}>✕ Limpar</button>
-            )}
-          </div>
-
-          {!hasFiltred && (
-            <div style={{ background:T.card, border:`1px solid ${T.warning}44`, borderRadius:14, padding:'20px 24px', marginBottom:20, display:'flex', alignItems:'center', gap:14 }}>
-              <span style={{ fontSize:28 }}>📅</span>
-              <div>
-                <div style={{ fontWeight:700, color:T.warning, marginBottom:4 }}>Sem registros no período selecionado</div>
-                <div style={{ fontSize:13, color:T.muted }}>
-                  Os dados disponíveis vão de <strong style={{color:T.sub}}>{allDates[0]?.split('-').reverse().join('/')}</strong> até <strong style={{color:T.sub}}>{allDates[allDates.length-1]?.split('-').reverse().join('/')}</strong>.
-                </div>
-              </div>
-              <button onClick={()=>setPeriodo('MES')} style={{ marginLeft:'auto', background:`linear-gradient(135deg,${T.accent},${T.accentB})`, color:'#000', fontWeight:700, fontSize:12, padding:'8px 16px', borderRadius:8, border:'none', cursor:'pointer', whiteSpace:'nowrap' }}>Ver Mês Completo</button>
-            </div>
-          )}
-
-          {hasFiltred && (<>
-            <div style={{ display:'grid', gridTemplateColumns:'repeat(5,1fr)', gap:14, marginBottom:22 }}>
-              <StatCard icon="🩺" label="Total Registros" value={totalRegistros.toLocaleString('pt-BR')} sub={`${totalUnidades} unidades · ${totalMedicos} médicos`} accent={T.accent} />
-              <StatCard icon="⚠️" label="Em Atraso" value={emAtraso.toLocaleString('pt-BR')} sub={`${taxaAtraso}% do total`} accent={T.danger} />
-              <StatCard icon="⏱️" label="Espera Média" value={fmtMin(mediaEsperaMin)} sub="por atendimento" accent={T.warning} />
-              <StatCard icon="👥" label="Pacientes Aguardando" value={totalPacAguard.toLocaleString('pt-BR')} sub="na fila agora" accent={T.success} />
-              <StatCard icon="🚫" label="Sem Ponto" value={semPontoCount.toLocaleString('pt-BR')} sub="HR_ENTRADA vazia" accent={T.purple} />
-            </div>
-
-            <Card style={{ marginBottom:18 }}>
-              <SH>📊 Distribuição de Status — Visão Operacional</SH>
-              <StatusDashboard breakdown={statusBreakdown} total={totalRegistros} />
-            </Card>
-
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16, marginBottom:16 }}>
-              <Card>
-                <SH>🔴 Unidades com Mais Atrasos</SH>
-                {topUnidadesAtraso.map((u,i)=>(
-                  <HBar key={u.nome} rank={i} label={u.nome} value={u.total} max={topUnidadesAtraso[0]?.total||1} color={i===0?T.danger:i===1?'#FF7A00':T.warning} unit=" atrasos" />
-                ))}
-                {!topUnidadesAtraso.length && <div style={{color:T.muted,fontSize:13}}>Nenhum atraso.</div>}
-              </Card>
-              <Card>
-                <SH>📍 Registros por Estado (UF)</SH>
-                {ufBreak.map(u=>(<HBar key={u.nome} label={u.nome} value={u.total} max={maxUF} color={T.accent} />))}
-              </Card>
-            </div>
-
-            <Card style={{ marginBottom:16 }}>
-              <SH>👨‍⚕️ Médicos com Maior Tempo de Espera (acumulado)</SH>
-              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16 }}>
-                <div>{topMedicos.slice(0,5).map((m,i)=>(<HBar key={m.med} rank={i} label={m.med} value={fmtMin(m.totalMin)} max={topMedicos[0]?.totalMin||1} color={i<3?T.danger:T.warning} sub={`${m.agendas} ${m.agendas===1?'agenda':'agendas'} · ${m.pacts.toLocaleString('pt-BR')} pacientes`} />))}</div>
-                <div>{topMedicos.slice(5,10).map((m,i)=>(<HBar key={m.med} rank={i+5} label={m.med} value={fmtMin(m.totalMin)} max={topMedicos[0]?.totalMin||1} color={T.warning} sub={`${m.agendas} ${m.agendas===1?'agenda':'agendas'} · ${m.pacts.toLocaleString('pt-BR')} pacientes`} />))}</div>
-              </div>
-              {!topMedicos.length && <div style={{color:T.muted,fontSize:13}}>Nenhum dado de espera.</div>}
-            </Card>
-
-            <Card style={{ marginBottom:16 }}>
-              <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:16 }}>
-                <SH style={{ marginBottom:0 }}>🚫 Médicos Ausentes — Sem Ponto Registrado</SH>
-                <span style={{ fontSize:11, color:T.muted, marginLeft:'auto' }}>HR_ENTRADA vazia · {semPontoCount} ocorrências</span>
-              </div>
-              <AusenciasCard rows={filtered} cols={cols} />
-            </Card>
-
-            <Card style={{ marginBottom:16 }}>
-              <SH>⏳ Espera por Hora do Dia · Maior Espera e Pacientes Aguardando</SH>
-              <EsperaHoraCard rows={dadosPorPeriodo} cols={cols} allRawDados={dadosComData} período={período} />
-            </Card>
-
-            <Card style={{ marginBottom:16 }}>
-              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
-                <SH style={{ marginBottom:0 }}>🔁 Unidades que Mais Atrasaram — Recorrência</SH>
-                <div style={{ display:'flex', gap:12, fontSize:10 }}>
-                  <span style={{ color:'#F59E0B' }}>■ Normal 31–45min</span>
-                  <span style={{ color:'#EF4444' }}>■ Crítico 46min–1h30</span>
-                  <span style={{ color:'#7C3AED' }}>■ Grave +1h30</span>
-                </div>
-              </div>
-              <RecorrenciaAtrasoCard rows={filtered} cols={cols} />
-            </Card>
-
-            <Card style={{ marginBottom:16 }}>
-              <SH>🩻 Especialidades com Mais Atendimentos</SH>
-              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16 }}>
-                <div>{espBreak.slice(0,4).map((e,i)=>(<HBar key={e.nome} label={e.nome} value={e.total} max={maxEsp} color={`hsl(${200+i*18},70%,55%)`} />))}</div>
-                <div>{espBreak.slice(4).map((e,i)=>(<HBar key={e.nome} label={e.nome} value={e.total} max={maxEsp} color={`hsl(${272+i*18},70%,55%)`} />))}</div>
-              </div>
-            </Card>
-          </>)}
-
-          <div style={{ textAlign:'center', color:T.muted, fontSize:11, paddingTop:8, paddingBottom:20 }}>
-            Dashboard Monitoramento Hospitalar · {new Date().toLocaleDateString('pt-BR')}
-            {períodoLabel && ` · ${períodoLabel}`}
-            {horaFilt!=='TODAS' && ` · Hora ${horaFilt}h`}
-          </div>
-        </>)}
       </div>
     </div>
   )
