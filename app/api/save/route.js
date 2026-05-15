@@ -21,16 +21,28 @@ function serialToDate(v) {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`
 }
 
-// timedelta from Excel comes as seconds integer; strings as "HH:MM:SS"
+// Excel timedelta: número = fração do dia (ex: 0.020833 = 30min = 30/1440)
+// String pode vir como "HH:MM:SS" ou "H:MM:SS"
 function toMinutes(v) {
   if (v === null || v === undefined || v === '') return null
-  if (typeof v === 'number') return Math.round(v / 60)
+
+  if (typeof v === 'number') {
+    // Fração de dia → minutos (1 dia = 1440 minutos)
+    if (v >= 0 && v < 1) return Math.round(v * 1440)
+    // Total de segundos (inteiro > 1)
+    if (v >= 1) return Math.round(v / 60)
+    return 0
+  }
+
   if (typeof v === 'string') {
-    const neg   = v.startsWith('-')
-    const parts = v.replace('-','').split(':').map(Number)
+    const s     = v.trim()
+    const neg   = s.startsWith('-')
+    const clean = s.replace('-','').trim()
+    const parts = clean.split(':').map(Number)
     const mins  = (parts[0]||0)*60 + (parts[1]||0)
     return neg ? -mins : mins
   }
+
   return null
 }
 
