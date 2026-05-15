@@ -666,13 +666,14 @@ function TabEspera({ rows }) {
 
           {(() => {
             // Aplica filtro de hora no feed (HR_REGISTRO_ESPERA)
-            const feedFiltrado = horaFilt === 'TODAS'
+            const horaNum = horaFilt === 'TODAS' ? null : parseInt(horaFilt, 10)
+            const feedFiltrado = horaNum === null
               ? feed
-              : feed.filter(item => item.hora === Number(horaFilt))
+              : feed.filter(item => item.hora === horaNum)
             if (feedFiltrado.length === 0) return (
               <div style={{ textAlign:'center', padding:'32px 0', color:C.muted, fontSize:12 }}>
                 {horaFilt !== 'TODAS'
-                  ? `Sem esperas ≥ 15min às ${String(horaFilt).padStart(2,'0')}:00.`
+                  ? `Sem esperas ≥ 15min às ${String(horaNum).padStart(2,'0')}:00.`
                   : 'Sem esperas ≥ 15min no período selecionado.'}
               </div>
             )
