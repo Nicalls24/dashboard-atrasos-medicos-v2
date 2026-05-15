@@ -283,7 +283,7 @@ function TabAgendas({ rows }) {
     <div>
       {/* Periodo */}
       <div style={{ marginBottom:18 }}>
-        <PeriodoBar value={periodo} onChange={p=>{setPeriodo(p);setDateFrom('');setDateTo('')}}
+        <PeriodoBar value={periodo} onChange={p=>{setPeriodo(p);setDateFrom('');setDateTo('');setUnidFilt('')}}
           allDates={allDates} dateFrom={dateFrom} dateTo={dateTo} onDateFrom={setDateFrom} onDateTo={setDateTo} total={total} />
       </div>
 
@@ -412,6 +412,7 @@ function TabEspera({ rows }) {
   const [ufFilt,   setUfFilt]   = useState('TODOS')
   const [search,   setSearch]   = useState('')
   const [horaFilt, setHoraFilt] = useState('TODAS')
+  const [unidFilt, setUnidFilt] = useState('')
 
   const allDates = useMemo(() =>
     [...new Set(rows.map(r => r.data_agenda).filter(Boolean))].sort()
@@ -455,8 +456,10 @@ function TabEspera({ rows }) {
         return Math.floor(h / 60) === horaNum
       })
     }
+    // Filtro por unidade — ativado ao clicar no feed
+    if (unidFilt) r = r.filter(d => d.nm_local === unidFilt)
     return r
-  }, [rows, periodoFn, ufFilt, search, horaFilt])
+  }, [rows, periodoFn, ufFilt, search, horaFilt, unidFilt])
 
   const stats = useMemo(() => {
     // Apenas registros com TEMPO_DE_ESPERA >= 15min
@@ -637,16 +640,25 @@ function TabEspera({ rows }) {
           background:'rgba(255,255,255,0.025)', border:'1px solid rgba(255,255,255,0.06)',
           borderRadius:14, padding:'20px 22px',
         }}>
+          {unidFilt && (
+            <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:12, padding:'8px 12px', background:'rgba(245,158,11,0.08)', border:'0.5px solid rgba(245,158,11,0.25)', borderRadius:9 }}>
+              <div style={{ width:6, height:6, borderRadius:'50%', background:C.amber, flexShrink:0 }} />
+              <span style={{ fontSize:11, color:C.amber, flex:1, fontWeight:600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                Filtrando: {unidFilt}
+              </span>
+              <button onClick={()=>setUnidFilt('')} style={{ background:'transparent', border:'none', color:C.muted, cursor:'pointer', fontSize:12, padding:'0 4px', flexShrink:0 }}>✕</button>
+            </div>
+          )}
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:16 }}>
             <div>
               <div style={{ fontSize:13, fontWeight:700, color:C.text }}>Feed de Esperas por Hora</div>
               <div style={{ fontSize:10.5, color:C.muted, marginTop:3 }}>
-                Classificado por TEMPO_DE_ESPERA · hora via HR_REGISTRO_ESPERA · ordenado por gravidade
+                Classificado por TEMPO_DE_ESPERA · hora via HR_REGISTRO_ESPERA · {unidFilt ? 'clique em ✕ para limpar filtro' : 'clique na unidade para filtrar'}
               </div>
             </div>
             <div style={{ display:'flex', alignItems:'center', gap:12, flexShrink:0 }}>
               {/* Filtro por hora — baseado em HR_REGISTRO_ESPERA, só esperas >= 15min */}
-              <select value={horaFilt} onChange={e=>setHoraFilt(e.target.value)} style={{
+              <select value={horaFilt} onChange={e=>{setHoraFilt(e.target.value);setUnidFilt('')}} style={{
                 background:'rgba(255,255,255,0.05)', border:`0.5px solid rgba(245,158,11,0.2)`,
                 borderRadius:8, color:C.text, fontSize:11, padding:'5px 10px',
                 outline:'none', cursor:'pointer',
@@ -684,15 +696,21 @@ function TabEspera({ rows }) {
                 const isCrit = item.maxTempo >= 90
                 const isGrv  = item.maxTempo >= 31 && item.maxTempo < 90
                 return (
-                  <div key={i} style={{
-                    display:'flex', alignItems:'center', gap:12,
-                    padding:'10px 14px', borderRadius:10,
-                    background: isCrit ? 'rgba(244,63,94,0.06)' : isGrv ? 'rgba(249,115,22,0.04)' : 'rgba(255,255,255,0.02)',
-                    border: `0.5px solid ${i < 3 ? cls.border : 'rgba(255,255,255,0.05)'}`,
-                    transition:'background .12s', cursor:'default',
-                  }}
-                    onMouseEnter={e => e.currentTarget.style.background = cls.bg}
-                    onMouseLeave={e => e.currentTarget.style.background = isCrit?'rgba(244,63,94,0.06)':isGrv?'rgba(249,115,22,0.04)':'rgba(255,255,255,0.02)'}
+                  <div key={i}
+                    onClick={() => setUnidFilt(unidFilt === item.nm_local ? '' : item.nm_local)}
+                    style={{
+                      display:'flex', alignItems:'center', gap:12,
+                      padding:'10px 14px', borderRadius:10,
+                      background: unidFilt === item.nm_local
+                        ? `${cls.color}18`
+                        : isCrit ? 'rgba(244,63,94,0.06)' : isGrv ? 'rgba(249,115,22,0.04)' : 'rgba(255,255,255,0.02)',
+                      border: unidFilt === item.nm_local
+                        ? `1px solid ${cls.color}55`
+                        : `0.5px solid ${i < 3 ? cls.border : 'rgba(255,255,255,0.05)'}`,
+                      transition:'all .15s', cursor:'pointer',
+                    }}
+                    onMouseEnter={e => { if(unidFilt!==item.nm_local) e.currentTarget.style.background = cls.bg }}
+                    onMouseLeave={e => { if(unidFilt!==item.nm_local) e.currentTarget.style.background = isCrit?'rgba(244,63,94,0.06)':isGrv?'rgba(249,115,22,0.04)':'rgba(255,255,255,0.02)' }}
                   >
                     {/* Dot */}
                     <div style={{
