@@ -445,11 +445,18 @@ function TabEspera({ rows }) {
       const q = search.toLowerCase()
       r = r.filter(d => [d.nm_local, d.nm_medico, d.cidade].some(v => String(v||'').toLowerCase().includes(q)))
     }
-    // Filtro por hora: aplica sobre HR_REGISTRO_ESPERA (apenas para esperas >= 15min)
-    // Registros sem espera (< 15min ou null) são mantidos para os KPIs totais
-    // mas o feed filtra por hora internamente
+    // Filtro por hora: baseado em HR_REGISTRO_ESPERA
+    // Filtra todos os registros pela hora do registro de espera
+    if (horaFilt !== 'TODAS') {
+      const horaNum = parseInt(horaFilt, 10)
+      r = r.filter(d => {
+        const h = d.hr_registro_espera_min
+        if (h === null || h === undefined) return false
+        return Math.floor(h / 60) === horaNum
+      })
+    }
     return r
-  }, [rows, periodoFn, ufFilt, search])
+  }, [rows, periodoFn, ufFilt, search, horaFilt])
 
   const stats = useMemo(() => {
     // Apenas registros com TEMPO_DE_ESPERA >= 15min
@@ -664,22 +671,15 @@ function TabEspera({ rows }) {
             </div>
           </div>
 
-          {(() => {
-            // Aplica filtro de hora no feed (HR_REGISTRO_ESPERA)
-            const horaNum = horaFilt === 'TODAS' ? null : parseInt(horaFilt, 10)
-            const feedFiltrado = horaNum === null
-              ? feed
-              : feed.filter(item => item.hora === horaNum)
-            if (feedFiltrado.length === 0) return (
-              <div style={{ textAlign:'center', padding:'32px 0', color:C.muted, fontSize:12 }}>
-                {horaFilt !== 'TODAS'
-                  ? `Sem esperas ≥ 15min às ${String(horaNum).padStart(2,'0')}:00.`
-                  : 'Sem esperas ≥ 15min no período selecionado.'}
-              </div>
-            )
-            return (
+          {feed.length === 0 ? (
+            <div style={{ textAlign:'center', padding:'32px 0', color:C.muted, fontSize:12 }}>
+              {horaFilt !== 'TODAS'
+                ? `Sem esperas ≥ 15min às ${String(horaFilt).padStart(2,'0')}:00.`
+                : 'Sem esperas ≥ 15min no período selecionado.'}
+            </div>
+          ) : (
             <div style={{ display:'flex', flexDirection:'column', gap:5, maxHeight:420, overflowY:'auto' }}>
-              {feedFiltrado.map((item, i) => {
+              {feed.map((item, i) => {
                 const cls = CLS_ESPERA.get(item.maxTempo)
                 const isCrit = item.maxTempo >= 90
                 const isGrv  = item.maxTempo >= 31 && item.maxTempo < 90
@@ -740,8 +740,7 @@ function TabEspera({ rows }) {
                 )
               })}
             </div>
-            )
-          })()}
+          )}
         </div>
 
         {/* TOP UNIDADES */}
