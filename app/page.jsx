@@ -825,17 +825,17 @@ function TabEspera({ rows }) {
 
             {/* KPIs */}
             <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:10, marginBottom:16 }}>
-              {trendView==='real' ? [
-                { label:'Esperas Críticas (hoje)',  value:lastReal?.crit??'—',                                       color:C.rose   },
+              {(trendView==='real' ? [
+                { label:'Esperas Críticas (hoje)',  value:lastReal?.crit??'—',                                            color:C.rose   },
                 { label:'Variação no período',      value:byDate.length>=2?(varCrit>=0?`+${varCrit}`:String(varCrit)):'—', color:varCrit>0?C.rose:varCrit<0?C.emerald:C.muted },
-                { label:'Média diária crítica',     value:avgCrit||'—',                                              color:C.amber  },
+                { label:'Média diária crítica',     value:avgCrit||'—',                                                   color:C.amber  },
                 { label:'Pior dia registrado',      value:maxDay?`${maxDay.crit} em ${maxDay.date.slice(5).replace('-','/')}`:'—', color:C.orange },
               ] : [
-                { label:'Projeção amanhã',          value:projData[0]?.crit??'—',         color:C.rose   },
-                { label:'Projeção +5 dias',         value:projData[4]?.crit??'—',         color:C.orange },
-                { label:'Tendência diária',         value:slope>=0?`+${slope}`:String(slope), color:slope>0?C.rose:slope<0?C.emerald:C.muted },
-                { label:'Média atual (base)',        value:avgCrit||'—',                   color:C.amber  },
-              ].map((k,i)=>(
+                { label:'Projeção amanhã',          value:projData[0]?.crit??'—',              color:C.rose   },
+                { label:'Projeção +5 dias',         value:projData[4]?.crit??'—',              color:C.orange },
+                { label:'Tendência diária',         value:slope>=0?`+${slope}`:String(slope),  color:slope>0?C.rose:slope<0?C.emerald:C.muted },
+                { label:'Média atual (base)',        value:avgCrit||'—',                        color:C.amber  },
+              ]).map((k,i)=>(
                 <div key={k.label} style={{ background:`${k.color}08`, border:`0.5px solid ${k.color}20`, borderRadius:10, padding:'11px 14px' }}>
                   <div style={{ fontSize:9, fontWeight:700, color:C.muted, textTransform:'uppercase', letterSpacing:'.08em', marginBottom:7 }}>{k.label}</div>
                   <div style={{ fontSize:22, fontWeight:800, color:k.color, letterSpacing:'-.5px' }}>{k.value}</div>
