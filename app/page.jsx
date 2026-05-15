@@ -512,6 +512,18 @@ function TabAgendas({ rows }) {
   )
 }
 
+// ── RÉGUAS DE ESPERA ──────────────────────────────────────────────────────────
+// < 15min    → ignorar
+// 15–30min   → Espera Moderada  (amber)
+// 31–89min   → Espera Grave     (orange)
+// >= 90min   → Espera Crítica   (rose)
+const classEspera = m => {
+  if (m === null || m === undefined || m < 15) return null
+  if (m <= 30) return { label:'Espera Moderada', color:'#F59E0B', bg:'rgba(245,158,11,0.12)', border:'rgba(245,158,11,0.3)' }
+  if (m <= 89) return { label:'Espera Grave',    color:'#F97316', bg:'rgba(249,115,22,0.12)', border:'rgba(249,115,22,0.3)' }
+  return             { label:'Espera Crítica',  color:'#F43F5E', bg:'rgba(244,63,94,0.12)',  border:'rgba(244,63,94,0.3)'  }
+}
+
 // ── TAB ESPERA ────────────────────────────────────────────────────────────────
 function TabEspera({ rows }) {
   const [periodo,  setPeriodo]  = useState('MES')
@@ -527,30 +539,76 @@ function TabEspera({ rows }) {
   const filtered = useMemo(() => {
     let r = rows.filter(d=>periodoFn(d.data_agenda))
     if (ufFilt!=='TODOS') r=r.filter(d=>d.uf===ufFilt)
-    if (search) { const q=search.toLowerCase(); r=r.filter(d=>[d.nm_local,d.nm_medico,d.ds_especialidade,d.cidade].some(v=>String(v||'').toLowerCase().includes(q))) }
+    if (search) { const q=search.toLowerCase(); r=r.filter(d=>[d.nm_local,d.nm_medico,d.cidade].some(v=>String(v||'').toLowerCase().includes(q))) }
     return r
   }, [rows, periodoFn, ufFilt, search])
 
   const stats = useMemo(() => {
-    const com     = filtered.filter(d=>d.tempo_espera_min!==null&&d.tempo_espera_min!==undefined)
-    const total   = filtered.length
-    const totalPac= filtered.reduce((a,d)=>a+(d.qt_pacientes_aguardando||0),0)
-    const soma    = com.reduce((a,d)=>a+d.tempo_espera_min,0)
-    const media   = com.length>0?soma/com.length:null
-    const maxE    = com.length>0?Math.max(...com.map(d=>d.tempo_espera_min)):null
-    const uMap={},mMap={}
-    com.forEach(d=>{
-      const u=d.nm_local||'?'; if(!uMap[u]) uMap[u]={s:0,c:0}; uMap[u].s+=d.tempo_espera_min; uMap[u].c+=1
-      const m=d.nm_medico||''; if(!m) return; if(!mMap[m]) mMap[m]={s:0,c:0}; mMap[m].s+=d.tempo_espera_min; mMap[m].c+=1
+    // Só considera esperas >= 15min
+    const comEspera = filtered.filter(d => d.tempo_espera_min !== null && d.tempo_espera_min !== undefined && d.tempo_espera_min >= 15)
+    const total     = filtered.length
+    const totalPac  = filtered.reduce((a,d)=>a+(d.qt_pacientes_aguardando||0), 0)
+
+    // KPIs de classificação
+    const moderada = comEspera.filter(d=>d.tempo_espera_min>=15&&d.tempo_espera_min<=30).length  // 15-30min Moderada
+    const grave    = comEspera.filter(d=>d.tempo_espera_min>30&&d.tempo_espera_min<=89).length   // 31-89min Grave
+    const critico  = comEspera.filter(d=>d.tempo_espera_min>=90).length                          // >=90min Critico
+
+    // Esperas por hora do dia (HR_REGISTRO_ESPERA em minutos desde meia-noite)
+    const horaMap = {}
+    filtered.forEach(d => {
+      const h = d.hr_registro_espera_min
+      if (h === null || h === undefined) return
+      const hora = Math.floor(h / 60)
+      if (hora < 0 || hora > 23) return
+      const key = String(hora).padStart(2,'0') + 'h'
+      if (!horaMap[key]) horaMap[key] = { hora, totalPac:0, esperas:0, criticos:0 }
+      horaMap[key].totalPac += d.qt_pacientes_aguardando || 0
+      horaMap[key].esperas  += 1
+      if (d.tempo_espera_min >= 90) horaMap[key].criticos += 1
     })
-    const topU = Object.entries(uMap).map(([n,{s,c}])=>({n,v:Math.round(s/c),cnt:c})).sort((a,b)=>b.v-a.v).slice(0,8)
-    const topM = Object.entries(mMap).map(([n,{s,c}])=>({n,v:Math.round(s/c),cnt:c})).sort((a,b)=>b.v-a.v).slice(0,8)
-    const dMap={}; com.forEach(d=>{ if(!d.data_agenda) return; if(!dMap[d.data_agenda]) dMap[d.data_agenda]={s:0,c:0}; dMap[d.data_agenda].s+=d.tempo_espera_min; dMap[d.data_agenda].c+=1 })
-    const byDate = Object.entries(dMap).map(([k,{s,c}])=>({k,v:Math.round(s/c)})).sort((a,b)=>a.k.localeCompare(b.k)).slice(-28)
-    const fx={'0–15min':0,'16–30min':0,'31–60min':0,'61–120min':0,'+120min':0}
-    com.forEach(d=>{ const m=d.tempo_espera_min; if(m<=15) fx['0–15min']++; else if(m<=30) fx['16–30min']++; else if(m<=60) fx['31–60min']++; else if(m<=120) fx['61–120min']++; else fx['+120min']++ })
-    const dist = Object.entries(fx).map(([k,v])=>({k,v}))
-    return { total, totalPac, media, maxE, topU, topM, byDate, dist }
+    const porHora = Object.values(horaMap).sort((a,b)=>a.hora-b.hora)
+
+    // Top unidades por espera crítica
+    const unidMap = {}
+    comEspera.forEach(d => {
+      const u = d.nm_local||'?'
+      if (!unidMap[u]) unidMap[u] = { n:u, criticos:0, total:0, somaPac:0 }
+      unidMap[u].total   += 1
+      unidMap[u].somaPac += d.qt_pacientes_aguardando||0
+      if (d.tempo_espera_min >= 90) unidMap[u].criticos += 1
+    })
+    const topUnidades = Object.values(unidMap).sort((a,b)=>b.criticos-a.criticos).slice(0,8)
+
+    // Análise falta/atraso — usando colunas atraso e status da tabela espera
+    // atraso = 'SIM' + tempo_atraso > 31min → atraso real
+    // atraso = 'FALTA' → falta médica
+    const faltas   = filtered.filter(d => String(d.atraso||'').toUpperCase() === 'FALTA')
+    const atrasosReais = filtered.filter(d => {
+      if (String(d.atraso||'').toUpperCase() !== 'SIM') return false
+      // tempo_atraso em minutos (já convertido no save)
+      const t = d.tempo_atraso_min
+      return t !== null && t !== undefined && Math.abs(t) > 31
+    })
+
+    // Por status de atraso (coluna U / status)
+    const statusAtrasoMap = {}
+    atrasosReais.forEach(d => {
+      const s = d.status || 'Sem Status'
+      statusAtrasoMap[s] = (statusAtrasoMap[s]||0)+1
+    })
+    const statusAtraso = Object.entries(statusAtrasoMap).map(([k,v])=>({k,v})).sort((a,b)=>b.v-a.v)
+
+    // Tendência diária (esperas >= 15min por dia)
+    const dMap = {}
+    comEspera.forEach(d => {
+      if (!d.data_agenda) return
+      if (!dMap[d.data_agenda]) dMap[d.data_agenda] = 0
+      dMap[d.data_agenda] += 1
+    })
+    const byDate = Object.entries(dMap).map(([k,v])=>({k,v})).sort((a,b)=>a.k.localeCompare(b.k)).slice(-28)
+
+    return { total, totalPac, moderada, grave, critico, porHora, topUnidades, faltas, atrasosReais, statusAtraso, byDate, comEspera }
   }, [filtered])
 
   if (!rows.length) return (
@@ -561,9 +619,9 @@ function TabEspera({ rows }) {
     </div>
   )
 
-  const { total, totalPac, media, maxE, topU, topM, byDate, dist } = stats
-  const maxU=topU[0]?.v||1, maxM=topM[0]?.v||1
-  const distColors=[C.emerald,C.cyan,C.amber,C.rose,'#FF1040']
+  const { total, totalPac, moderada, grave, critico, porHora, topUnidades, faltas, atrasosReais, statusAtraso, byDate } = stats
+  const maxPorHora = Math.max(...porHora.map(h=>h.totalPac), 1)
+  const maxUnid    = topUnidades[0]?.criticos || 1
 
   return (
     <div>
@@ -574,87 +632,180 @@ function TabEspera({ rows }) {
       <SearchBar search={search} onSearch={setSearch} uf={ufFilt} onUf={setUfFilt} ufs={ufs}
         showClear={ufFilt!=='TODOS'||!!search} onClear={()=>{setUfFilt('TODOS');setSearch('')}} />
 
-      {/* KPIs */}
+      {/* KPIs — réguas de espera */}
       <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:12, marginBottom:18 }}>
-        <KpiCard icon="⏱️" label="Registros de Espera"  value={total.toLocaleString('pt-BR')}    color={C.teal}   />
-        <KpiCard icon="👥" label="Pacientes na Fila"    value={totalPac.toLocaleString('pt-BR')} color={C.blue}   />
-        <KpiCard icon="📊" label="Espera Média"          value={fmtMin(media)} sub="TEMPO_DE_ESPERA"  color={C.amber}  />
-        <KpiCard icon="🔴" label="Maior Espera"          value={fmtMin(maxE)}  sub="pior caso"        color={C.rose}   />
+        <KpiCard icon="👥" label="Pacientes na Fila"   value={totalPac.toLocaleString('pt-BR')}  color={C.teal}    />
+        <KpiCard icon="🟢" label="Espera Moderada 15–30min"  value={moderada.toLocaleString('pt-BR')} color={C.emerald} />
+        <KpiCard icon="🟡" label="Espera Grave 31min–1h29"     value={grave.toLocaleString('pt-BR')}    color={C.amber}   />
+        <KpiCard icon="🔴" label="Espera Crítica +1h30"      value={critico.toLocaleString('pt-BR')}   color={C.rose}    />
       </div>
 
-      {/* Faixas */}
-      <Panel accent={C.amber} style={{ marginBottom:14 }}>
-        <SecHead sub="Classificação por faixa — TEMPO_DE_ESPERA · Réguas a definir">⏳ Distribuição por Faixa</SecHead>
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(5,1fr)', gap:10 }}>
-          {dist.map(({k,v},i)=>{
-            const col=distColors[i], maxD=Math.max(...dist.map(d=>d.v),1)
+      {/* Esperas por hora do dia */}
+      <Panel accent={C.teal} style={{ marginBottom:14 }}>
+        <SecHead sub="Pacientes aguardando e esperas críticas por hora do dia · HR_REGISTRO_ESPERA">🕐 Esperas por Hora do Dia</SecHead>
+        {porHora.length === 0 && <div style={{ color:C.muted, fontSize:12 }}>Sem dados de hora de registro no período.</div>}
+        <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+          {porHora.map(h => {
+            const barW = maxPorHora > 0 ? (h.totalPac/maxPorHora)*100 : 0
+            const critPct = h.esperas > 0 ? ((h.criticos/h.esperas)*100).toFixed(0) : 0
             return (
-              <div key={k} style={{ background:`${col}0A`, border:`1px solid ${col}25`, borderRadius:12, padding:'14px 12px', textAlign:'center', position:'relative', overflow:'hidden' }}>
-                <div style={{ position:'absolute', bottom:0, left:0, right:0, height:2, background:col, opacity:v/maxD }} />
-                <div style={{ fontSize:9, fontWeight:800, color:col, textTransform:'uppercase', letterSpacing:'.09em', marginBottom:8 }}>{k}</div>
-                <div style={{ fontSize:28, fontWeight:900, color:col, fontFamily:"'Syne',sans-serif" }}>{v.toLocaleString('pt-BR')}</div>
+              <div key={h.hora} style={{ display:'grid', gridTemplateColumns:'44px 1fr 80px 90px 80px', alignItems:'center', gap:10 }}>
+                <span style={{ fontSize:12, fontWeight:700, color:C.sub }}>{String(h.hora).padStart(2,'0')}h</span>
+                <div style={{ background:'rgba(255,255,255,0.05)', borderRadius:4, height:8, overflow:'hidden' }}>
+                  <div style={{ height:'100%', borderRadius:4, background:`linear-gradient(90deg,${C.teal},${C.cyan})`, width:`${barW}%`, transition:'width .6s ease' }} />
+                </div>
+                <span style={{ fontSize:11, fontWeight:700, color:C.teal, textAlign:'right' }}>👥 {h.totalPac}</span>
+                <span style={{ fontSize:11, color:C.muted, textAlign:'right' }}>{h.esperas} espera{h.esperas!==1?'s':''}</span>
+                {h.criticos > 0
+                  ? <span style={{ fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:20, background:'rgba(244,63,94,0.15)', color:C.rose, border:`1px solid rgba(244,63,94,0.3)`, textAlign:'center' }}>🔴 {h.criticos} crít.</span>
+                  : <span style={{ fontSize:10, color:C.muted, textAlign:'center' }}>—</span>
+                }
               </div>
             )
           })}
         </div>
       </Panel>
 
-      {/* Tendência */}
-      {byDate.length>1 && (
-        <Panel accent={C.amber} style={{ marginBottom:14 }}>
-          <SecHead sub={`Média diária de TEMPO_DE_ESPERA — ${byDate.length} dias`}>📈 Evolução da Espera Média</SecHead>
-          <MiniChart data={byDate} color={C.amber} height={60} />
+      {/* Análise falta/atraso + top unidades críticas */}
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14, marginBottom:14 }}>
+
+        {/* Faltas e atrasos */}
+        <Panel accent={C.rose}>
+          <SecHead sub="Coluna ATRASO — SIM com >31min · FALTA">⚠️ Análise Médico — Falta e Atraso</SecHead>
+
+          {/* Totais */}
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:16 }}>
+            <div style={{ background:'rgba(244,63,94,0.08)', border:`1px solid rgba(244,63,94,0.25)`, borderRadius:11, padding:'12px 14px', textAlign:'center' }}>
+              <div style={{ fontSize:9, fontWeight:700, color:C.rose, textTransform:'uppercase', letterSpacing:'.1em', marginBottom:6 }}>Faltas</div>
+              <div style={{ fontSize:28, fontWeight:900, color:C.rose, fontFamily:"'Syne',sans-serif" }}>{faltas.length.toLocaleString('pt-BR')}</div>
+            </div>
+            <div style={{ background:'rgba(245,158,11,0.08)', border:`1px solid rgba(245,158,11,0.25)`, borderRadius:11, padding:'12px 14px', textAlign:'center' }}>
+              <div style={{ fontSize:9, fontWeight:700, color:C.amber, textTransform:'uppercase', letterSpacing:'.1em', marginBottom:6 }}>Atrasos &gt;31min</div>
+              <div style={{ fontSize:28, fontWeight:900, color:C.amber, fontFamily:"'Syne',sans-serif" }}>{atrasosReais.length.toLocaleString('pt-BR')}</div>
+            </div>
+          </div>
+
+          {/* Status de atraso (coluna U) */}
+          {statusAtraso.length > 0 && (
+            <>
+              <div style={{ fontSize:10, fontWeight:700, color:C.muted, textTransform:'uppercase', letterSpacing:'.1em', marginBottom:10 }}>Classificação do Atraso</div>
+              {statusAtraso.map(({k,v}) => {
+                const cfg = getStatusCfg(k)
+                return (
+                  <div key={k} style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8 }}>
+                    <span style={{ fontSize:10, fontWeight:700, padding:'2px 10px', borderRadius:20, background:cfg.glow, color:cfg.color, border:`1px solid ${cfg.color}30`, whiteSpace:'nowrap' }}>{cfg.label}</span>
+                    <div style={{ flex:1, background:'rgba(255,255,255,0.05)', borderRadius:3, height:4, overflow:'hidden' }}>
+                      <div style={{ height:'100%', background:cfg.color, width:`${(v/(statusAtraso[0]?.v||1))*100}%` }} />
+                    </div>
+                    <span style={{ fontSize:12, fontWeight:700, color:cfg.color, minWidth:28, textAlign:'right' }}>{v}</span>
+                  </div>
+                )
+              })}
+            </>
+          )}
+          {!statusAtraso.length && atrasosReais.length===0 && faltas.length===0 && (
+            <div style={{ color:C.muted, fontSize:12 }}>Nenhuma falta ou atraso no período.</div>
+          )}
+        </Panel>
+
+        {/* Top unidades com espera crítica */}
+        <Panel accent={C.amber}>
+          <SecHead sub="Unidades com mais esperas acima de 46min">🏥 Unidades — Espera Crítica</SecHead>
+          {topUnidades.map((u,i) => (
+            <div key={u.n} style={{ marginBottom:12 }}>
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:4 }}>
+                <div style={{ display:'flex', alignItems:'center', gap:6, minWidth:0 }}>
+                  <span style={{ fontSize:10, fontWeight:800, color:i===0?C.amber:C.muted, minWidth:18 }}>#{i+1}</span>
+                  <span style={{ fontSize:12, color:C.text, fontWeight:500, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{u.n}</span>
+                </div>
+                <div style={{ display:'flex', gap:8, flexShrink:0 }}>
+                  <span style={{ fontSize:10, color:C.rose, fontWeight:700 }}>🔴 {u.criticos}</span>
+                  <span style={{ fontSize:10, color:C.muted }}>/ {u.total}</span>
+                </div>
+              </div>
+              <div style={{ background:'rgba(255,255,255,0.05)', borderRadius:4, height:4, overflow:'hidden' }}>
+                <div style={{ height:'100%', borderRadius:4, background:i===0?C.rose:C.amber, width:`${(u.criticos/maxUnid)*100}%`, transition:'width .6s ease' }} />
+              </div>
+            </div>
+          ))}
+          {!topUnidades.length && <div style={{ color:C.muted, fontSize:12 }}>Sem esperas acima de 46min.</div>}
+        </Panel>
+      </div>
+
+      {/* Tendência diária */}
+      {byDate.length > 1 && (
+        <Panel accent={C.teal} style={{ marginBottom:14 }}>
+          <SecHead sub={`Esperas ≥15min por dia — últimos ${byDate.length} dias`}>📈 Tendência de Esperas</SecHead>
+          <MiniChart data={byDate} color={C.teal} height={56} />
           <div style={{ display:'flex', justifyContent:'space-between', marginTop:8 }}>
-            <span style={{ fontSize:10, color:C.muted }}>{fmtDate(byDate[0]?.k)} · {fmtMin(byDate[0]?.v)}</span>
-            <span style={{ fontSize:10, color:C.muted }}>{fmtDate(byDate[byDate.length-1]?.k)} · {fmtMin(byDate[byDate.length-1]?.v)}</span>
+            <span style={{ fontSize:10, color:C.muted }}>{fmtDate(byDate[0]?.k)} · {byDate[0]?.v} esperas</span>
+            <span style={{ fontSize:10, color:C.muted }}>{fmtDate(byDate[byDate.length-1]?.k)} · {byDate[byDate.length-1]?.v} esperas</span>
           </div>
         </Panel>
       )}
 
-      {/* Rankings */}
-      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14, marginBottom:14 }}>
-        <Panel accent={C.rose}>
-          <SecHead sub="Média de TEMPO_DE_ESPERA">🏥 Unidades — Maior Espera</SecHead>
-          {topU.map((u,i)=><Bar key={u.n} rank={i} label={u.n} value={fmtMin(u.v)} max={maxU} sub={`${u.cnt} registros`} color={i===0?C.rose:i<3?C.amber:C.cyan} />)}
-          {!topU.length && <div style={{color:C.muted,fontSize:12}}>Sem dados no período.</div>}
-        </Panel>
-        <Panel accent={C.violet}>
-          <SecHead sub="Média de TEMPO_DE_ESPERA">👨‍⚕️ Médicos — Maior Espera</SecHead>
-          {topM.map((m,i)=><Bar key={m.n} rank={i} label={m.n} value={fmtMin(m.v)} max={maxM} sub={`${m.cnt} registros`} color={i<3?C.violet:C.blue} />)}
-          {!topM.length && <div style={{color:C.muted,fontSize:12}}>Sem dados no período.</div>}
-        </Panel>
-      </div>
-
-      {/* Table */}
+      {/* Tabela detalhada */}
       <Panel accent={C.borderGray}>
-        <SecHead sub="Ordenado por maior TEMPO_DE_ESPERA — top 50">📋 Detalhamento de Espera</SecHead>
+        <SecHead sub="Esperas ≥15min · ordenado por maior tempo · top 100">📋 Detalhamento de Espera</SecHead>
         <div style={{ overflowX:'auto' }}>
-          <table style={{ width:'100%', borderCollapse:'collapse', fontSize:11.5 }}>
+          <table style={{ width:'100%', borderCollapse:'collapse', fontSize:11 }}>
             <thead>
               <tr style={{ borderBottom:`1px solid ${C.border}` }}>
-                {['Data','Unidade','Médico','UF','Pac. Aguardando','Tempo de Espera'].map(h=>(
-                  <th key={h} style={{ padding:'7px 10px', textAlign:'left', color:C.muted, fontWeight:700, fontSize:9.5, textTransform:'uppercase', letterSpacing:'.08em', whiteSpace:'nowrap' }}>{h}</th>
+                {['Data','Hora Registro','Unidade','Médico','UF','Pac.','Tempo Espera','Classificação','Atraso Médico','Status Atraso'].map(h=>(
+                  <th key={h} style={{ padding:'7px 10px', textAlign:'left', color:C.muted, fontWeight:700, fontSize:9, textTransform:'uppercase', letterSpacing:'.07em', whiteSpace:'nowrap' }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {[...filtered].sort((a,b)=>(b.tempo_espera_min||0)-(a.tempo_espera_min||0)).slice(0,50).map((r,i)=>{
-                const m=r.tempo_espera_min, col=m>120?C.rose:m>60?C.amber:m>30?C.cyan:C.emerald
-                return (
-                  <tr key={i} style={{ borderBottom:`1px solid ${C.borderGray}`, transition:'background .12s' }}
-                    onMouseEnter={e=>e.currentTarget.style.background='rgba(0,201,167,0.04)'}
-                    onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
-                    <td style={{ padding:'8px 10px', color:C.sub, whiteSpace:'nowrap' }}>{fmtDate(r.data_agenda)}</td>
-                    <td style={{ padding:'8px 10px', color:C.text, fontWeight:600, maxWidth:180, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{r.nm_local}</td>
-                    <td style={{ padding:'8px 10px', color:C.sub, whiteSpace:'nowrap' }}>{r.nm_medico}</td>
-                    <td style={{ padding:'8px 10px', color:C.muted }}>{r.uf}</td>
-                    <td style={{ padding:'8px 10px', color:C.cyan, fontWeight:700, textAlign:'center' }}>{r.qt_pacientes_aguardando??'—'}</td>
-                    <td style={{ padding:'8px 10px' }}>
-                      <span style={{ fontSize:13, fontWeight:900, color:col }}>{fmtMin(m)}</span>
-                    </td>
-                  </tr>
-                )
-              })}
+              {[...filtered]
+                .filter(d=>d.tempo_espera_min!==null&&d.tempo_espera_min!==undefined&&d.tempo_espera_min>=15)
+                .sort((a,b)=>(b.tempo_espera_min||0)-(a.tempo_espera_min||0))
+                .slice(0,100)
+                .map((r,i) => {
+                  const cls = classEspera(r.tempo_espera_min)
+                  const horaReg = r.hr_registro_espera_min !== null && r.hr_registro_espera_min !== undefined
+                    ? `${String(Math.floor(r.hr_registro_espera_min/60)).padStart(2,'0')}:${String(r.hr_registro_espera_min%60).padStart(2,'0')}`
+                    : '—'
+                  const isFalta   = String(r.atraso||'').toUpperCase() === 'FALTA'
+                  const isAtraso  = String(r.atraso||'').toUpperCase() === 'SIM'
+                  const tempoAtr  = r.tempo_atraso_min
+                  const atrasoReal= isAtraso && tempoAtr !== null && tempoAtr !== undefined && Math.abs(tempoAtr) > 31
+                  const cfgStatus = getStatusCfg(r.status||'')
+                  return (
+                    <tr key={i} style={{ borderBottom:`1px solid ${C.borderGray}`, transition:'background .12s' }}
+                      onMouseEnter={e=>e.currentTarget.style.background='rgba(0,201,167,0.04)'}
+                      onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                      <td style={{ padding:'8px 10px', color:C.sub, whiteSpace:'nowrap' }}>{fmtDate(r.data_agenda)}</td>
+                      <td style={{ padding:'8px 10px', color:C.sub, whiteSpace:'nowrap', fontFamily:'monospace' }}>{horaReg}</td>
+                      <td style={{ padding:'8px 10px', color:C.text, fontWeight:600, maxWidth:160, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{r.nm_local}</td>
+                      <td style={{ padding:'8px 10px', color:C.sub, maxWidth:130, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{r.nm_medico}</td>
+                      <td style={{ padding:'8px 10px', color:C.muted }}>{r.uf}</td>
+                      <td style={{ padding:'8px 10px', color:C.cyan, fontWeight:700, textAlign:'center' }}>{r.qt_pacientes_aguardando??'—'}</td>
+                      <td style={{ padding:'8px 10px' }}>
+                        <span style={{ fontSize:12, fontWeight:900, color:cls?.color||C.muted }}>{fmtMin(r.tempo_espera_min)}</span>
+                      </td>
+                      <td style={{ padding:'8px 10px' }}>
+                        {cls ? (
+                          <span style={{ fontSize:9.5, fontWeight:700, padding:'2px 8px', borderRadius:20, background:cls.bg, color:cls.color, border:`1px solid ${cls.border}`, whiteSpace:'nowrap' }}>{cls.label}</span>
+                        ) : '—'}
+                      </td>
+                      <td style={{ padding:'8px 10px' }}>
+                        {isFalta
+                          ? <span style={{ fontSize:9.5, fontWeight:700, padding:'2px 8px', borderRadius:20, background:'rgba(59,130,246,0.15)', color:C.blue, border:`1px solid rgba(59,130,246,0.3)` }}>Falta</span>
+                          : atrasoReal
+                          ? <span style={{ fontSize:9.5, fontWeight:700, padding:'2px 8px', borderRadius:20, background:'rgba(245,158,11,0.15)', color:C.amber, border:`1px solid rgba(245,158,11,0.3)` }}>Atraso {fmtMin(Math.abs(tempoAtr))}</span>
+                          : <span style={{ fontSize:9.5, color:C.muted }}>—</span>
+                        }
+                      </td>
+                      <td style={{ padding:'8px 10px' }}>
+                        {(isFalta||atrasoReal) && r.status
+                          ? <span style={{ fontSize:9.5, fontWeight:700, padding:'2px 8px', borderRadius:20, background:cfgStatus.glow, color:cfgStatus.color, border:`1px solid ${cfgStatus.color}30`, whiteSpace:'nowrap' }}>{r.status}</span>
+                          : <span style={{ fontSize:9.5, color:C.muted }}>—</span>
+                        }
+                      </td>
+                    </tr>
+                  )
+                })}
             </tbody>
           </table>
         </div>
