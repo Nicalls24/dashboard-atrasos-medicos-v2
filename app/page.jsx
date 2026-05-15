@@ -411,6 +411,7 @@ function TabEspera({ rows }) {
   const [dateTo,   setDateTo]   = useState('')
   const [ufFilt,   setUfFilt]   = useState('TODOS')
   const [search,   setSearch]   = useState('')
+  const [horaFilt, setHoraFilt] = useState('TODAS')
 
   const allDates = useMemo(() =>
     [...new Set(rows.map(r => r.data_agenda).filter(Boolean))].sort()
@@ -424,6 +425,19 @@ function TabEspera({ rows }) {
     [...new Set(rows.map(r => r.uf).filter(Boolean))].sort()
   , [rows])
 
+  // Horas disponíveis baseadas em HR_REGISTRO_ESPERA (somente para esperas >= 15min)
+  const horasDisp = useMemo(() => {
+    const set = new Set()
+    rows.filter(d => periodoFn(d.data_agenda) && d.tempo_espera_min >= 15)
+      .forEach(d => {
+        const h = d.hr_registro_espera_min
+        if (h === null || h === undefined) return
+        const hora = Math.floor(h / 60)
+        if (hora >= 0 && hora <= 23) set.add(hora)
+      })
+    return [...set].sort((a,b) => a-b)
+  }, [rows, periodoFn])
+
   const filtered = useMemo(() => {
     let r = rows.filter(d => periodoFn(d.data_agenda))
     if (ufFilt !== 'TODOS') r = r.filter(d => d.uf === ufFilt)
@@ -431,6 +445,9 @@ function TabEspera({ rows }) {
       const q = search.toLowerCase()
       r = r.filter(d => [d.nm_local, d.nm_medico, d.cidade].some(v => String(v||'').toLowerCase().includes(q)))
     }
+    // Filtro por hora: aplica sobre HR_REGISTRO_ESPERA (apenas para esperas >= 15min)
+    // Registros sem espera (< 15min ou null) são mantidos para os KPIs totais
+    // mas o feed filtra por hora internamente
     return r
   }, [rows, periodoFn, ufFilt, search])
 
@@ -470,6 +487,7 @@ function TabEspera({ rows }) {
           nm_local:  unidade,
           nm_medico: d.nm_medico || '—',
           uf:        d.uf || '—',
+          cidade:    d.cidade || '',
           maxTempo:  0,
           totalPac:  0,
           count:     0,
@@ -619,27 +637,48 @@ function TabEspera({ rows }) {
                 Classificado por TEMPO_DE_ESPERA · hora via HR_REGISTRO_ESPERA · ordenado por gravidade
               </div>
             </div>
-            <div style={{ display:'flex', gap:10, flexShrink:0 }}>
-              {[
-                { color:'#F59E0B', label:'Moderada' },
-                { color:'#F97316', label:'Grave'    },
-                { color:'#F43F5E', label:'Crítica'  },
-              ].map(l => (
-                <div key={l.label} style={{ display:'flex', alignItems:'center', gap:4 }}>
-                  <div style={{ width:6, height:6, borderRadius:'50%', background:l.color }} />
-                  <span style={{ fontSize:9, color:C.muted }}>{l.label}</span>
-                </div>
-              ))}
+            <div style={{ display:'flex', alignItems:'center', gap:12, flexShrink:0 }}>
+              {/* Filtro por hora — baseado em HR_REGISTRO_ESPERA, só esperas >= 15min */}
+              <select value={horaFilt} onChange={e=>setHoraFilt(e.target.value)} style={{
+                background:'rgba(255,255,255,0.05)', border:`0.5px solid rgba(245,158,11,0.2)`,
+                borderRadius:8, color:C.text, fontSize:11, padding:'5px 10px',
+                outline:'none', cursor:'pointer',
+              }}>
+                <option value="TODAS">Todas as horas</option>
+                {horasDisp.map(h => (
+                  <option key={h} value={h}>{String(h).padStart(2,'0')}:00</option>
+                ))}
+              </select>
+              <div style={{ display:'flex', gap:10 }}>
+                {[
+                  { color:'#F59E0B', label:'Moderada' },
+                  { color:'#F97316', label:'Grave'    },
+                  { color:'#F43F5E', label:'Crítica'  },
+                ].map(l => (
+                  <div key={l.label} style={{ display:'flex', alignItems:'center', gap:4 }}>
+                    <div style={{ width:6, height:6, borderRadius:'50%', background:l.color }} />
+                    <span style={{ fontSize:9, color:C.muted }}>{l.label}</span>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
 
-          {feed.length === 0 ? (
-            <div style={{ textAlign:'center', padding:'32px 0', color:C.muted, fontSize:12 }}>
-              Sem esperas ≥ 15min no período selecionado.
-            </div>
-          ) : (
+          {(() => {
+            // Aplica filtro de hora no feed (HR_REGISTRO_ESPERA)
+            const feedFiltrado = horaFilt === 'TODAS'
+              ? feed
+              : feed.filter(item => item.hora === Number(horaFilt))
+            if (feedFiltrado.length === 0) return (
+              <div style={{ textAlign:'center', padding:'32px 0', color:C.muted, fontSize:12 }}>
+                {horaFilt !== 'TODAS'
+                  ? `Sem esperas ≥ 15min às ${String(horaFilt).padStart(2,'0')}:00.`
+                  : 'Sem esperas ≥ 15min no período selecionado.'}
+              </div>
+            )
+            return (
             <div style={{ display:'flex', flexDirection:'column', gap:5, maxHeight:420, overflowY:'auto' }}>
-              {feed.map((item, i) => {
+              {feedFiltrado.map((item, i) => {
                 const cls = CLS_ESPERA.get(item.maxTempo)
                 const isCrit = item.maxTempo >= 90
                 const isGrv  = item.maxTempo >= 31 && item.maxTempo < 90
@@ -671,7 +710,7 @@ function TabEspera({ rows }) {
                         {item.nm_local}
                       </div>
                       <div style={{ fontSize:10, color:C.muted, marginTop:2, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                        {item.nm_medico} {item.uf ? `· ${item.uf}` : ''}
+                        {[item.cidade, item.uf].filter(Boolean).join(' · ')}
                       </div>
                     </div>
 
@@ -700,7 +739,8 @@ function TabEspera({ rows }) {
                 )
               })}
             </div>
-          )}
+            )
+          })()}
         </div>
 
         {/* TOP UNIDADES */}
