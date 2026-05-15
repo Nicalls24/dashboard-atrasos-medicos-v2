@@ -182,7 +182,7 @@ function PeriodoBar({ value, onChange, allDates, dateFrom, dateTo, onDateFrom, o
             style={{ background:'rgba(255,255,255,0.04)', border:`1px solid ${C.border2}`, borderRadius:8, color:C.text, fontSize:11, padding:'5px 9px', outline:'none', colorScheme:'dark' }} />
         </>
       )}
-      {total !== undefined && <span style={{ fontSize:11, color:C.muted }}>{total.toLocaleString('pt-BR')} registros</span>}
+      {total !== undefined && <span style={{ fontSize:11, color:C.muted }}>{totalAg.toLocaleString('pt-BR')} registros</span>}
     </div>
   )
 }
@@ -249,8 +249,8 @@ function TabAgendas({ rows }) {
     return r
   }, [rows, periodoFn, ufFilt, statusFilt, search])
 
-  const { total, emAtraso, semPonto, topUnidades, topMedicos, statusBreak, byDate, atrasoPct, semPontoPct } = useMemo(() => {
-    const total    = filtered.length
+  const { total: totalAg, emAtraso, semPonto, topUnidades, topMedicos, statusBreak, byDate, atrasoPct, semPontoPct } = useMemo(() => {
+    const n      = filtered.length
     const emAtraso = filtered.filter(d=>String(d.status||'').toUpperCase().includes('ATRASO')).length
     const semPonto = filtered.filter(d=>d.hr_entrada_min===null||d.hr_entrada_min===undefined).length
     const uMap={},mMap={},sMap={}
@@ -259,295 +259,14 @@ function TabAgendas({ rows }) {
       const m=d.nm_medico||''; if(m) mMap[m]=(mMap[m]||0)+1
       const s=d.status||'OK'; sMap[s]=(sMap[s]||0)+1
     })
-    const topUnidades = Object.entries(uMap).map(([n,v])=>({n,v})).sort((a,b)=>b.v-a.v).slice(0,8)
-    const topMedicos  = Object.entries(mMap).map(([n,v])=>({n,v})).sort((a,b)=>b.v-a.v).slice(0,8)
+    const topUnidades = Object.entries(uMap).map(([nm,v])=>({n:nm,v})).sort((a,b)=>b.v-a.v).slice(0,8)
+    const topMedicos  = Object.entries(mMap).map(([nm,v])=>({n:nm,v})).sort((a,b)=>b.v-a.v).slice(0,8)
     const statusBreak = Object.entries(sMap).map(([k,v])=>({k,v})).sort((a,b)=>b.v-a.v)
     const dMap={}; filtered.forEach(d=>{ if(d.data_agenda) dMap[d.data_agenda]=(dMap[d.data_agenda]||0)+1 })
     const byDate = Object.entries(dMap).map(([k,v])=>({k,v})).sort((a,b)=>a.k.localeCompare(b.k)).slice(-28)
-    return { total, emAtraso, semPonto, topUnidades, topMedicos, statusBreak, byDate,
-      atrasoPct: total>0?((emAtraso/total)*100).toFixed(1):'0',
-      semPontoPct: total>0?((semPonto/total)*100).toFixed(1):'0' }
-  }, [filtered])
-
-  if (!rows.length) return (
-    <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'60vh', gap:14 }}>
-      <div style={{ fontSize:52 }}>📋</div>
-      <div style={{ fontSize:20, fontWeight:800, color:C.text, fontFamily:"'Syne',sans-serif" }}>Nenhuma agenda carregada</div>
-      <div style={{ fontSize:13, color:C.muted }}>Use o menu lateral para carregar uma planilha</div>
-    </div>
-  )
-
-  const maxU=topUnidades[0]?.v||1, maxM=topMedicos[0]?.v||1, maxS=statusBreak[0]?.v||1
-
-  return (
-    <div>
-      {/* Periodo */}
-      <div style={{ marginBottom:18 }}>
-        <PeriodoBar value={periodo} onChange={p=>{setPeriodo(p);setDateFrom('');setDateTo('');setUnidFilt('')}}
-          allDates={allDates} dateFrom={dateFrom} dateTo={dateTo} onDateFrom={setDateFrom} onDateTo={setDateTo} total={total} />
-      </div>
-
-      {/* Filters */}
-      <SearchBar search={search} onSearch={setSearch} uf={ufFilt} onUf={setUfFilt} ufs={ufs}
-        showClear={ufFilt!=='TODOS'||statusFilt!=='TODOS'||!!search}
-        onClear={()=>{setUfFilt('TODOS');setStatusFilt('TODOS');setSearch('')}}
-        extra={<select value={statusFilt} onChange={e=>setStatusFilt(e.target.value)}
-          style={{ background:'rgba(6,12,24,0.95)', border:`1px solid ${C.border}`, borderRadius:10, color:C.text, fontSize:12, padding:'8px 12px', outline:'none', cursor:'pointer' }}>
-          <option value="TODOS">Todos os Status</option>
-          {statuses.map(s=><option key={s}>{s}</option>)}
-        </select>} />
-
-      {/* KPIs */}
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:12, marginBottom:18 }}>
-        <KpiCard icon="🗓" label="Total Agendas"    value={total.toLocaleString('pt-BR')}          color={C.teal}    />
-        <KpiCard icon="⚠️" label="Em Atraso"        value={emAtraso.toLocaleString('pt-BR')}       sub={`${atrasoPct}% do total`}    color={C.rose}    />
-        <KpiCard icon="🚫" label="Sem Ponto"        value={semPonto.toLocaleString('pt-BR')}       sub={`${semPontoPct}% do total`}  color={C.violet}  />
-        <KpiCard icon="✅" label="Com Atendimento"  value={(total-semPonto).toLocaleString('pt-BR')} sub={`${(100-Number(semPontoPct)).toFixed(1)}% presentes`} color={C.emerald} />
-      </div>
-
-      {/* Charts row */}
-      <div style={{ display:'grid', gridTemplateColumns:'1.6fr 1fr', gap:14, marginBottom:14 }}>
-        {byDate.length>1 && (
-          <Panel accent={C.teal}>
-            <SecHead sub={`Últimos ${byDate.length} dias com dados`}>📈 Agendas por Dia</SecHead>
-            <MiniChart data={byDate} color={C.teal} height={60} />
-            <div style={{ display:'flex', justifyContent:'space-between', marginTop:8 }}>
-              <span style={{ fontSize:10, color:C.muted }}>{fmtDate(byDate[0]?.k)}</span>
-              <span style={{ fontSize:10, color:C.muted }}>{fmtDate(byDate[byDate.length-1]?.k)}</span>
-            </div>
-          </Panel>
-        )}
-        <Panel accent={C.violet}>
-          <SecHead>📊 Por Status</SecHead>
-          {statusBreak.slice(0,6).map(({k,v})=>{
-            const cfg=getStatusCfg(k)
-            const pct=total>0?((v/total)*100).toFixed(1):'0'
-            return (
-              <div key={k} style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8 }}>
-                <div style={{ width:8,height:8,borderRadius:'50%',background:cfg.color,flexShrink:0 }} />
-                <div style={{ flex:1, fontSize:11, color:C.sub, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{cfg.label}</div>
-                <span style={{ fontSize:11, fontWeight:700, color:cfg.color, minWidth:32, textAlign:'right' }}>{v.toLocaleString('pt-BR')}</span>
-                <div style={{ width:50, background:'rgba(255,255,255,0.05)', borderRadius:3, height:3, overflow:'hidden', flexShrink:0 }}>
-                  <div style={{ height:'100%', background:cfg.color, width:`${(v/maxS)*100}%` }} />
-                </div>
-                <span style={{ fontSize:10, color:C.muted, minWidth:28, textAlign:'right' }}>{pct}%</span>
-              </div>
-            )
-          })}
-        </Panel>
-      </div>
-
-      {/* Rankings */}
-      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14, marginBottom:14 }}>
-        <Panel accent={C.cyan}>
-          <SecHead>🏥 Top Unidades</SecHead>
-          {topUnidades.map((u,i)=><Bar key={u.n} rank={i} label={u.n} value={u.v} max={maxU} color={i===0?C.amber:i<3?C.cyan:C.teal} />)}
-        </Panel>
-        <Panel accent={C.violet}>
-          <SecHead>👨‍⚕️ Top Médicos</SecHead>
-          {topMedicos.map((m,i)=><Bar key={m.n} rank={i} label={m.n} value={m.v} max={maxM} color={i===0?C.amber:i<3?C.violet:C.blue} />)}
-        </Panel>
-      </div>
-
-      {/* Table */}
-      <Panel accent={C.borderGray}>
-        <SecHead sub="Últimos 50 registros filtrados">📋 Detalhamento</SecHead>
-        <div style={{ overflowX:'auto' }}>
-          <table style={{ width:'100%', borderCollapse:'collapse', fontSize:11.5 }}>
-            <thead>
-              <tr style={{ borderBottom:`1px solid ${C.border}` }}>
-                {['Data','Unidade','Médico','Especialidade','UF','Status','Atraso'].map(h=>(
-                  <th key={h} style={{ padding:'7px 10px', textAlign:'left', color:C.muted, fontWeight:700, fontSize:9.5, textTransform:'uppercase', letterSpacing:'.08em', whiteSpace:'nowrap' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.slice(0,50).map((r,i)=>{
-                const cfg=getStatusCfg(r.status)
-                return (
-                  <tr key={i} style={{ borderBottom:`1px solid ${C.borderGray}`, transition:'background .12s' }}
-                    onMouseEnter={e=>e.currentTarget.style.background='rgba(0,201,167,0.04)'}
-                    onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
-                    <td style={{ padding:'8px 10px', color:C.sub, whiteSpace:'nowrap' }}>{fmtDate(r.data_agenda)}</td>
-                    <td style={{ padding:'8px 10px', color:C.text, fontWeight:600, maxWidth:180, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{r.nm_local}</td>
-                    <td style={{ padding:'8px 10px', color:C.sub, whiteSpace:'nowrap' }}>{r.nm_medico}</td>
-                    <td style={{ padding:'8px 10px', color:C.muted, maxWidth:140, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{r.ds_especialidade}</td>
-                    <td style={{ padding:'8px 10px', color:C.muted }}>{r.uf}</td>
-                    <td style={{ padding:'8px 10px' }}>
-                      <span style={{ fontSize:9.5, fontWeight:700, padding:'2px 8px', borderRadius:20, background:cfg.glow, color:cfg.color, border:`1px solid ${cfg.color}30` }}>{r.status||'—'}</span>
-                    </td>
-                    <td style={{ padding:'8px 10px', color:r.atraso==='SIM'?C.rose:C.emerald, fontWeight:700, fontSize:11 }}>{r.atraso||'—'}</td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-      </Panel>
-    </div>
-  )
-}
-
-// ── RÉGUAS DE ESPERA ──────────────────────────────────────────────────────────
-// Baseado em TEMPO_DE_ESPERA (coluna AB)
-// HR_REGISTRO_ESPERA → apenas para saber a hora do registro
-// < 15min    → ignorar
-// 15–30min   → Espera Moderada
-// 31–89min   → Espera Grave
-// >= 90min   → Espera Crítica
-const CLS_ESPERA = {
-  get: m => {
-    if (!m || m < 15) return null
-    if (m <= 30) return { key:'MOD',  label:'Espera Moderada', color:'#F59E0B', bg:'rgba(245,158,11,0.08)',  border:'rgba(245,158,11,0.22)' }
-    if (m <= 89) return { key:'GRV',  label:'Espera Grave',    color:'#F97316', bg:'rgba(249,115,22,0.1)',   border:'rgba(249,115,22,0.28)' }
-    return             { key:'CRIT', label:'Espera Crítica',  color:'#F43F5E', bg:'rgba(244,63,94,0.1)',    border:'rgba(244,63,94,0.28)'  }
-  }
-}
-
-// ── TAB ESPERA ────────────────────────────────────────────────────────────────
-function TabEspera({ rows }) {
-  const [periodo,  setPeriodo]  = useState('MES')
-  const [dateFrom, setDateFrom] = useState('')
-  const [dateTo,   setDateTo]   = useState('')
-  const [ufFilt,   setUfFilt]   = useState('TODOS')
-  const [search,   setSearch]   = useState('')
-  const [horaFilt, setHoraFilt] = useState('TODAS')
-  const [unidFilt, setUnidFilt] = useState('')
-
-  const allDates = useMemo(() =>
-    [...new Set(rows.map(r => r.data_agenda).filter(Boolean))].sort()
-  , [rows])
-
-  const periodoFn = useMemo(() =>
-    buildFilter(allDates, periodo, dateFrom, dateTo)
-  , [allDates, periodo, dateFrom, dateTo])
-
-  const ufs = useMemo(() =>
-    [...new Set(rows.map(r => r.uf).filter(Boolean))].sort()
-  , [rows])
-
-  // Horas disponíveis baseadas em HR_REGISTRO_ESPERA (somente para esperas >= 15min)
-  const horasDisp = useMemo(() => {
-    const set = new Set()
-    rows.filter(d => periodoFn(d.data_agenda) && d.tempo_espera_min >= 15)
-      .forEach(d => {
-        const h = d.hr_registro_espera_min
-        if (h === null || h === undefined) return
-        const hora = Math.floor(h / 60)
-        if (hora >= 0 && hora <= 23) set.add(hora)
-      })
-    return [...set].sort((a,b) => a-b)
-  }, [rows, periodoFn])
-
-  const filtered = useMemo(() => {
-    let r = rows.filter(d => periodoFn(d.data_agenda))
-    if (ufFilt !== 'TODOS') r = r.filter(d => d.uf === ufFilt)
-    if (search) {
-      const q = search.toLowerCase()
-      r = r.filter(d => [d.nm_local, d.nm_medico, d.cidade].some(v => String(v||'').toLowerCase().includes(q)))
-    }
-    // Filtro por hora: baseado em HR_REGISTRO_ESPERA
-    // Filtra todos os registros pela hora do registro de espera
-    if (horaFilt !== 'TODAS') {
-      const horaNum = parseInt(horaFilt, 10)
-      r = r.filter(d => {
-        const h = d.hr_registro_espera_min
-        if (h === null || h === undefined) return false
-        return Math.floor(h / 60) === horaNum
-      })
-    }
-    // Filtro por unidade — ativado ao clicar no feed
-    if (unidFilt) r = r.filter(d => d.nm_local === unidFilt)
-    return r
-  }, [rows, periodoFn, ufFilt, search, horaFilt, unidFilt])
-
-  const stats = useMemo(() => {
-    // Apenas registros com TEMPO_DE_ESPERA >= 15min
-    const comEspera = filtered.filter(d =>
-      d.tempo_espera_min !== null && d.tempo_espera_min !== undefined && d.tempo_espera_min >= 15
-    )
-
-    const total     = filtered.length
-    const totalPac  = filtered.reduce((a, d) => a + (d.qt_pacientes_aguardando || 0), 0)
-    const moderada  = comEspera.filter(d => d.tempo_espera_min <= 30).length
-    const grave     = comEspera.filter(d => d.tempo_espera_min > 30 && d.tempo_espera_min <= 89).length
-    const critico   = comEspera.filter(d => d.tempo_espera_min >= 90).length
-    const totalEsp  = moderada + grave + critico
-
-    // Feed de alertas:
-    // Agrupa por hora (HR_REGISTRO_ESPERA) + unidade
-    // Pega o pior TEMPO_DE_ESPERA de cada grupo
-    // HR_REGISTRO_ESPERA → apenas para definir a hora do evento
-    const grupoMap = {}
-    comEspera.forEach(d => {
-      const h = d.hr_registro_espera_min
-      if (h === null || h === undefined) return
-      const hora    = Math.floor(h / 60)
-      const minutos = Math.floor(h % 60)
-      if (hora < 0 || hora > 23) return
-      const horaStr = String(hora).padStart(2,'0') + ':' + String(minutos).padStart(2,'0')
-      const unidade = d.nm_local || 'Sem Unidade'
-      const key     = `${horaStr}||${unidade}`
-
-      if (!grupoMap[key]) {
-        grupoMap[key] = {
-          horaStr,
-          hora,
-          minutos,
-          nm_local:  unidade,
-          nm_medico: d.nm_medico || '—',
-          uf:        d.uf || '—',
-          cidade:    d.cidade || '',
-          maxTempo:  0,
-          totalPac:  0,
-          count:     0,
-        }
-      }
-      if (d.tempo_espera_min > grupoMap[key].maxTempo) {
-        grupoMap[key].maxTempo  = d.tempo_espera_min
-        grupoMap[key].nm_medico = d.nm_medico || '—'
-      }
-      grupoMap[key].totalPac += d.qt_pacientes_aguardando || 0
-      grupoMap[key].count    += 1
-    })
-
-    // Ordena: críticos primeiro, depois graves, depois moderados
-    // Dentro de cada categoria: maior tempo primeiro
-    const feed = Object.values(grupoMap)
-      .sort((a, b) => b.maxTempo - a.maxTempo)
-      .slice(0, 25)
-
-    // Top unidades por esperas críticas
-    const unidMap = {}
-    comEspera.forEach(d => {
-      const u = d.nm_local || 'Sem Unidade'
-      if (!unidMap[u]) unidMap[u] = { n: u, total: 0, criticos: 0, graves: 0, moderadas: 0, pac: 0 }
-      unidMap[u].total++
-      unidMap[u].pac += d.qt_pacientes_aguardando || 0
-      const m = d.tempo_espera_min
-      if (m >= 90)      unidMap[u].criticos++
-      else if (m >= 31) unidMap[u].graves++
-      else              unidMap[u].moderadas++
-    })
-    const topUnidades = Object.values(unidMap)
-      .sort((a, b) => b.criticos - a.criticos || b.graves - a.graves)
-      .slice(0, 6)
-
-    // Faltas e atrasos médicos
-    const faltas       = filtered.filter(d => String(d.atraso||'').toUpperCase() === 'FALTA')
-    const atrasosReais = filtered.filter(d => {
-      if (String(d.atraso||'').toUpperCase() !== 'SIM') return false
-      const t = d.tempo_atraso_min
-      return t !== null && t !== undefined && Math.abs(t) > 31
-    })
-    const sMap = {}
-    atrasosReais.forEach(d => { const s = d.status||'Sem Status'; sMap[s] = (sMap[s]||0)+1 })
-    const statusAtraso = Object.entries(sMap).map(([k,v]) => ({k,v})).sort((a,b) => b.v-a.v)
-
-    return {
-      total, totalPac, moderada, grave, critico, totalEsp,
-      feed, topUnidades, faltas, atrasosReais, statusAtraso
-    }
+    return { total: n, emAtraso, semPonto, topUnidades, topMedicos, statusBreak, byDate,
+      atrasoPct: n>0?((emAtraso/n)*100).toFixed(1):'0',
+      semPontoPct: n>0?((semPonto/n)*100).toFixed(1):'0' }
   }, [filtered])
 
   if (!rows.length) return (
@@ -559,7 +278,7 @@ function TabEspera({ rows }) {
   )
 
   const {
-    total, totalPac, moderada, grave, critico, totalEsp,
+    totalRegs: total, totalPac, moderada, grave, critico, totalEsp,
     feed, topUnidades, faltas, atrasosReais, statusAtraso
   } = stats
 
@@ -570,113 +289,205 @@ function TabEspera({ rows }) {
     return `${Math.floor(abs/60)}h${abs%60>0?` ${abs%60}m`:''}`
   }
 
+  // Horas disponíveis para o filtro FIM (só >= hora início)
+  const horasDispFim = horaFilt === 'TODAS' ? [] : horasDisp.filter(h => h >= parseInt(horaFilt))
+
   return (
     <div>
+      {/* Modal de Justificativas */}
+      {justModal && (
+        <div style={{
+          position:'fixed', inset:0, zIndex:200,
+          background:'rgba(0,0,0,0.7)', backdropFilter:'blur(4px)',
+          display:'flex', alignItems:'center', justifyContent:'center',
+        }} onClick={()=>setJustModal(false)}>
+          <div style={{
+            background:'#0A0D16', border:`1px solid rgba(245,158,11,0.3)`,
+            borderRadius:16, padding:'24px 28px', minWidth:360, maxWidth:460,
+            boxShadow:'0 24px 80px rgba(0,0,0,0.6)',
+          }} onClick={e=>e.stopPropagation()}>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:20 }}>
+              <div>
+                <div style={{ fontSize:14, fontWeight:700, color:C.text }}>Registrar Justificativas</div>
+                <div style={{ fontSize:10.5, color:C.muted, marginTop:3 }}>Meta: 80% das esperas com retorno · {dataRef}</div>
+              </div>
+              <button onClick={()=>setJustModal(false)} style={{ background:'transparent', border:'none', color:C.muted, fontSize:18, cursor:'pointer' }}>✕</button>
+            </div>
+
+            {/* Progresso atual */}
+            <div style={{ background:'rgba(255,255,255,0.03)', border:`0.5px solid rgba(255,255,255,0.07)`, borderRadius:10, padding:'12px 14px', marginBottom:18 }}>
+              <div style={{ display:'flex', justifyContent:'space-between', marginBottom:8 }}>
+                <span style={{ fontSize:11, color:C.muted }}>Progresso atual</span>
+                <span style={{ fontSize:12, fontWeight:700, color:metaColor }}>{metaPct}% de 80%</span>
+              </div>
+              <div style={{ background:'rgba(255,255,255,0.06)', borderRadius:4, height:8, overflow:'hidden' }}>
+                <div style={{ height:'100%', width:`${metaPct}%`, background:metaColor, borderRadius:4, transition:'width .4s ease' }} />
+              </div>
+              <div style={{ display:'flex', justifyContent:'space-between', marginTop:6 }}>
+                <span style={{ fontSize:10, color:C.muted }}>{totalJust} justificativas</span>
+                <span style={{ fontSize:10, color:C.muted }}>de {totalEsp} esperas</span>
+              </div>
+            </div>
+
+            {/* Inputs por hora */}
+            <div style={{ display:'flex', flexDirection:'column', gap:8, maxHeight:280, overflowY:'auto' }}>
+              {horasDisp.length === 0 && <div style={{ color:C.muted, fontSize:12, textAlign:'center', padding:'16px 0' }}>Sem horas disponíveis no período.</div>}
+              {horasDisp.map(h => (
+                <div key={h} style={{ display:'flex', alignItems:'center', gap:10 }}>
+                  <div style={{ width:44, fontSize:12, fontWeight:700, color:C.sub, fontFamily:'monospace', flexShrink:0 }}>
+                    {String(h).padStart(2,'0')}:00
+                  </div>
+                  <div style={{ flex:1, background:'rgba(255,255,255,0.04)', borderRadius:6, height:4, overflow:'hidden' }}>
+                    <div style={{
+                      height:'100%', borderRadius:6, background:C.amber, transition:'width .3s',
+                      width: `${Math.min(((justificativas[h]||0) / Math.max(totalEsp/24,1))*100, 100)}%`
+                    }} />
+                  </div>
+                  <input
+                    type="number" min="0"
+                    value={justificativas[h] || ''}
+                    placeholder="0"
+                    onChange={e => saveJustificativa(h, e.target.value)}
+                    style={{
+                      width:60, background:'rgba(255,255,255,0.05)',
+                      border:`0.5px solid ${justificativas[h]>0?'rgba(245,158,11,0.4)':'rgba(255,255,255,0.1)'}`,
+                      borderRadius:7, color:justificativas[h]>0?C.amber:C.text,
+                      fontSize:12, fontWeight:700, padding:'5px 8px', outline:'none', textAlign:'center',
+                    }}
+                  />
+                  <span style={{ fontSize:10, color:C.muted, minWidth:28 }}>just.</span>
+                </div>
+              ))}
+            </div>
+
+            {justLoading && <div style={{ textAlign:'center', marginTop:12, fontSize:11, color:C.amber }}>Salvando…</div>}
+          </div>
+        </div>
+      )}
+
       {/* Periodo + Filtros */}
       <div style={{ marginBottom:16 }}>
-        <PeriodoBar value={periodo} onChange={p=>{setPeriodo(p);setDateFrom('');setDateTo('')}}
+        <PeriodoBar value={periodo} onChange={p=>{setPeriodo(p);setDateFrom('');setDateTo('');setUnidFilt('');setHoraFilt('TODAS');setHoraFiltFim('TODAS')}}
           allDates={allDates} dateFrom={dateFrom} dateTo={dateTo}
           onDateFrom={setDateFrom} onDateTo={setDateTo} total={total} />
       </div>
       <SearchBar search={search} onSearch={setSearch} uf={ufFilt} onUf={setUfFilt} ufs={ufs}
         showClear={ufFilt!=='TODOS'||!!search} onClear={()=>{setUfFilt('TODOS');setSearch('')}} />
 
-      {/* ROW 1 — KPIs + Distribuição */}
-      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr 1fr 1.4fr', gap:12, marginBottom:14 }}>
-        {[
-          { label:'Pacientes na Fila',    value:totalPac.toLocaleString('pt-BR'), sub:`${total} registros`,  color:'#00C9A7' },
-          { label:'Espera Moderada',      value:moderada,  sub:'15 – 30 min',                               color:'#F59E0B' },
-          { label:'Espera Grave',         value:grave,     sub:'31 min – 1h29',                             color:'#F97316' },
-          { label:'Espera Crítica',       value:critico,   sub:'acima de 1h30',                             color:'#F43F5E' },
-        ].map(k => (
-          <div key={k.label} style={{
-            background:'rgba(255,255,255,0.025)', border:`1px solid ${k.color}20`,
-            borderRadius:14, padding:'18px 18px 14px', position:'relative', overflow:'hidden',
-          }}>
-            <div style={{ position:'absolute', top:0, left:0, right:0, height:2, background:`linear-gradient(90deg,${k.color},transparent)` }} />
-            <div style={{ fontSize:9.5, fontWeight:700, color:C.muted, textTransform:'uppercase', letterSpacing:'.1em', marginBottom:12 }}>{k.label}</div>
-            <div style={{ fontSize:28, fontWeight:800, color:k.color, letterSpacing:'-1px', lineHeight:1 }}>
-              {typeof k.value === 'number' ? k.value.toLocaleString('pt-BR') : k.value}
-            </div>
-            <div style={{ fontSize:10, color:C.muted, marginTop:7 }}>{k.sub}</div>
+      {/* BARRA DE META — Progresso vs Meta 80% */}
+      <div style={{
+        background:'rgba(255,255,255,0.025)', border:'1px solid rgba(255,255,255,0.06)',
+        borderRadius:14, padding:'16px 20px', marginBottom:14,
+      }}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10 }}>
+          <div style={{ fontSize:11, fontWeight:700, color:C.muted, textTransform:'uppercase', letterSpacing:'.1em' }}>
+            Progresso vs Meta 80% — Justificativas de Retorno
           </div>
-        ))}
+          <button onClick={()=>setJustModal(true)} style={{
+            background:`rgba(245,158,11,0.1)`, border:`0.5px solid rgba(245,158,11,0.3)`,
+            borderRadius:8, color:C.amber, fontSize:11, fontWeight:700, padding:'5px 12px', cursor:'pointer',
+          }}>
+            + Registrar
+          </button>
+        </div>
 
-        {/* Distribuição empilhada */}
-        <div style={{
-          background:'rgba(255,255,255,0.025)', border:'1px solid rgba(255,255,255,0.06)',
-          borderRadius:14, padding:'18px',
-        }}>
-          <div style={{ fontSize:9.5, fontWeight:700, color:C.muted, textTransform:'uppercase', letterSpacing:'.1em', marginBottom:12 }}>Distribuição</div>
-          {totalEsp > 0 ? (<>
-            <div style={{ display:'flex', height:8, borderRadius:4, overflow:'hidden', marginBottom:12, gap:2 }}>
-              {moderada>0&&<div style={{ flex:moderada, background:'#F59E0B' }} />}
-              {grave>0&&<div style={{ flex:grave, background:'#F97316' }} />}
-              {critico>0&&<div style={{ flex:critico, background:'#F43F5E' }} />}
-            </div>
-            {[
-              { label:'Moderada', v:moderada, color:'#F59E0B' },
-              { label:'Grave',    v:grave,    color:'#F97316' },
-              { label:'Crítica',  v:critico,  color:'#F43F5E' },
-            ].map(x => (
-              <div key={x.label} style={{ display:'flex', alignItems:'center', gap:7, marginBottom:7 }}>
-                <div style={{ width:7, height:7, borderRadius:2, background:x.color, flexShrink:0 }} />
-                <span style={{ fontSize:10.5, color:C.sub, flex:1 }}>{x.label}</span>
-                <span style={{ fontSize:11, fontWeight:700, color:x.color }}>{x.v}</span>
-                <span style={{ fontSize:9.5, color:C.muted, minWidth:28, textAlign:'right' }}>
-                  {totalEsp>0?Math.round((x.v/totalEsp)*100):0}%
-                </span>
+        {/* Barra de progresso */}
+        <div style={{ position:'relative', marginBottom:10 }}>
+          <div style={{ background:'rgba(255,255,255,0.06)', borderRadius:6, height:12, overflow:'hidden', position:'relative' }}>
+            <div style={{
+              height:'100%', borderRadius:6, transition:'width .6s ease',
+              width:`${metaPct}%`,
+              background: metaPct >= 80
+                ? 'linear-gradient(90deg,#10B981,#059669)'
+                : metaPct >= 50
+                ? 'linear-gradient(90deg,#F59E0B,#D97706)'
+                : 'linear-gradient(90deg,#F43F5E,#DC2626)',
+            }} />
+            {/* Linha da meta 80% */}
+            <div style={{ position:'absolute', top:0, bottom:0, left:'80%', width:2, background:'rgba(255,255,255,0.4)' }} />
+          </div>
+          <div style={{ position:'absolute', top:16, left:'80%', transform:'translateX(-50%)', fontSize:9, color:C.muted, whiteSpace:'nowrap' }}>
+            ← Meta 80%
+          </div>
+        </div>
+
+        {/* 3 cards de status */}
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:10, marginTop:18 }}>
+          {[
+            { label:'Espera Moderada', value:moderada,  sub:'15 – 30 min',   color:'#F59E0B' },
+            { label:'Espera Grave',    value:grave,     sub:'31 min – 1h29', color:'#F97316' },
+            { label:'Espera Crítica',  value:critico,   sub:'acima de 1h30', color:'#F43F5E' },
+          ].map(k => (
+            <div key={k.label} style={{
+              background:`${k.color}08`, border:`1px solid ${k.color}22`,
+              borderRadius:11, padding:'12px 16px', position:'relative', overflow:'hidden',
+            }}>
+              <div style={{ position:'absolute', top:0, left:0, right:0, height:2, background:k.color }} />
+              <div style={{ fontSize:9.5, fontWeight:700, color:k.color, textTransform:'uppercase', letterSpacing:'.09em', marginBottom:10 }}>{k.label}</div>
+              <div style={{ fontSize:26, fontWeight:800, color:k.color, letterSpacing:'-1px', lineHeight:1 }}>
+                {k.value.toLocaleString('pt-BR')}
               </div>
-            ))}
-          </>) : <div style={{ color:C.muted, fontSize:11 }}>Sem esperas no período</div>}
+              <div style={{ fontSize:10, color:C.muted, marginTop:6 }}>{k.sub}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Resumo de justificativas */}
+        <div style={{ display:'flex', alignItems:'center', gap:16, marginTop:12, paddingTop:12, borderTop:'0.5px solid rgba(255,255,255,0.05)' }}>
+          <span style={{ fontSize:11, color:C.muted }}>
+            <span style={{ color:metaColor, fontWeight:700 }}>{totalJust}</span> justificativas registradas
+            de <span style={{ color:C.sub, fontWeight:600 }}>{totalEsp}</span> esperas ≥ 15min
+          </span>
+          <span style={{ fontSize:13, fontWeight:800, color:metaColor, marginLeft:'auto' }}>{metaPct}%</span>
+          <span style={{ fontSize:10, color:C.muted }}>meta: 80%</span>
         </div>
       </div>
 
-      {/* ROW 2 — Feed de Alertas + Top Unidades */}
-      <div style={{ display:'grid', gridTemplateColumns:'1fr 320px', gap:14, marginBottom:14 }}>
+      {/* ROW 2 — Feed + Top Unidades */}
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 340px', gap:14, marginBottom:14 }}>
 
-        {/* FEED DE ALERTAS */}
-        <div style={{
-          background:'rgba(255,255,255,0.025)', border:'1px solid rgba(255,255,255,0.06)',
-          borderRadius:14, padding:'20px 22px',
-        }}>
+        {/* FEED */}
+        <div style={{ background:'rgba(255,255,255,0.025)', border:'1px solid rgba(255,255,255,0.06)', borderRadius:14, padding:'20px 22px' }}>
           {unidFilt && (
             <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:12, padding:'8px 12px', background:'rgba(245,158,11,0.08)', border:'0.5px solid rgba(245,158,11,0.25)', borderRadius:9 }}>
               <div style={{ width:6, height:6, borderRadius:'50%', background:C.amber, flexShrink:0 }} />
               <span style={{ fontSize:11, color:C.amber, flex:1, fontWeight:600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
                 Filtrando: {unidFilt}
               </span>
-              <button onClick={()=>setUnidFilt('')} style={{ background:'transparent', border:'none', color:C.muted, cursor:'pointer', fontSize:12, padding:'0 4px', flexShrink:0 }}>✕</button>
+              <button onClick={()=>setUnidFilt('')} style={{ background:'transparent', border:'none', color:C.muted, cursor:'pointer', fontSize:12 }}>✕</button>
             </div>
           )}
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:16 }}>
             <div>
               <div style={{ fontSize:13, fontWeight:700, color:C.text }}>Feed de Esperas por Hora</div>
               <div style={{ fontSize:10.5, color:C.muted, marginTop:3 }}>
-                Classificado por TEMPO_DE_ESPERA · hora via HR_REGISTRO_ESPERA · {unidFilt ? 'clique em ✕ para limpar filtro' : 'clique na unidade para filtrar'}
+                TEMPO_DE_ESPERA · hora via HR_REGISTRO_ESPERA · {unidFilt ? 'clique em ✕ para limpar' : 'clique na unidade para filtrar'}
               </div>
             </div>
-            <div style={{ display:'flex', alignItems:'center', gap:12, flexShrink:0 }}>
-              {/* Filtro por hora — baseado em HR_REGISTRO_ESPERA, só esperas >= 15min */}
-              <select value={horaFilt} onChange={e=>{setHoraFilt(e.target.value);setUnidFilt('')}} style={{
+            {/* Filtro de hora — intervalo */}
+            <div style={{ display:'flex', alignItems:'center', gap:6, flexShrink:0 }}>
+              <select value={horaFilt} onChange={e=>{setHoraFilt(e.target.value);setHoraFiltFim('TODAS');setUnidFilt('')}} style={{
                 background:'rgba(255,255,255,0.05)', border:`0.5px solid rgba(245,158,11,0.2)`,
-                borderRadius:8, color:C.text, fontSize:11, padding:'5px 10px',
-                outline:'none', cursor:'pointer',
+                borderRadius:8, color:C.text, fontSize:11, padding:'5px 8px', outline:'none', cursor:'pointer',
               }}>
-                <option value="TODAS">Todas as horas</option>
-                {horasDisp.map(h => (
-                  <option key={h} value={h}>{String(h).padStart(2,'0')}:00</option>
-                ))}
+                <option value="TODAS">Todas</option>
+                {horasDisp.map(h => <option key={h} value={h}>{String(h).padStart(2,'0')}:00</option>)}
               </select>
-              <div style={{ display:'flex', gap:10 }}>
-                {[
-                  { color:'#F59E0B', label:'Moderada' },
-                  { color:'#F97316', label:'Grave'    },
-                  { color:'#F43F5E', label:'Crítica'  },
-                ].map(l => (
-                  <div key={l.label} style={{ display:'flex', alignItems:'center', gap:4 }}>
+              {horaFilt !== 'TODAS' && (<>
+                <span style={{ fontSize:11, color:C.muted }}>→</span>
+                <select value={horaFiltFim} onChange={e=>setHoraFiltFim(e.target.value)} style={{
+                  background:'rgba(255,255,255,0.05)', border:`0.5px solid rgba(245,158,11,0.2)`,
+                  borderRadius:8, color:C.text, fontSize:11, padding:'5px 8px', outline:'none', cursor:'pointer',
+                }}>
+                  <option value="TODAS">{String(horaFilt).padStart(2,'0')}:00 (só)</option>
+                  {horasDispFim.filter(h=>h>parseInt(horaFilt)).map(h => <option key={h} value={h}>{String(h).padStart(2,'0')}:00</option>)}
+                </select>
+              </>)}
+              <div style={{ display:'flex', gap:8, marginLeft:4 }}>
+                {[{color:'#F59E0B',l:'M'},{color:'#F97316',l:'G'},{color:'#F43F5E',l:'C'}].map(l=>(
+                  <div key={l.l} style={{ display:'flex', alignItems:'center', gap:3 }}>
                     <div style={{ width:6, height:6, borderRadius:'50%', background:l.color }} />
-                    <span style={{ fontSize:9, color:C.muted }}>{l.label}</span>
+                    <span style={{ fontSize:9, color:C.muted }}>{l.l}</span>
                   </div>
                 ))}
               </div>
@@ -685,75 +496,40 @@ function TabEspera({ rows }) {
 
           {feed.length === 0 ? (
             <div style={{ textAlign:'center', padding:'32px 0', color:C.muted, fontSize:12 }}>
-              {horaFilt !== 'TODAS'
-                ? `Sem esperas ≥ 15min às ${String(horaFilt).padStart(2,'0')}:00.`
-                : 'Sem esperas ≥ 15min no período selecionado.'}
+              Sem esperas ≥ 15min no período/filtro selecionado.
             </div>
           ) : (
-            <div style={{ display:'flex', flexDirection:'column', gap:5, maxHeight:420, overflowY:'auto' }}>
+            <div style={{ display:'flex', flexDirection:'column', gap:5, maxHeight:440, overflowY:'auto' }}>
               {feed.map((item, i) => {
                 const cls = CLS_ESPERA.get(item.maxTempo)
                 const isCrit = item.maxTempo >= 90
                 const isGrv  = item.maxTempo >= 31 && item.maxTempo < 90
+                const isSelected = unidFilt === item.nm_local
                 return (
                   <div key={i}
-                    onClick={() => setUnidFilt(unidFilt === item.nm_local ? '' : item.nm_local)}
+                    onClick={() => setUnidFilt(isSelected ? '' : item.nm_local)}
                     style={{
                       display:'flex', alignItems:'center', gap:12,
-                      padding:'10px 14px', borderRadius:10,
-                      background: unidFilt === item.nm_local
-                        ? `${cls.color}18`
-                        : isCrit ? 'rgba(244,63,94,0.06)' : isGrv ? 'rgba(249,115,22,0.04)' : 'rgba(255,255,255,0.02)',
-                      border: unidFilt === item.nm_local
-                        ? `1px solid ${cls.color}55`
-                        : `0.5px solid ${i < 3 ? cls.border : 'rgba(255,255,255,0.05)'}`,
-                      transition:'all .15s', cursor:'pointer',
+                      padding:'10px 14px', borderRadius:10, cursor:'pointer',
+                      background: isSelected ? `${cls.color}18` : isCrit ? 'rgba(244,63,94,0.06)' : isGrv ? 'rgba(249,115,22,0.04)' : 'rgba(255,255,255,0.02)',
+                      border: isSelected ? `1px solid ${cls.color}55` : `0.5px solid ${i<3?cls.border:'rgba(255,255,255,0.05)'}`,
+                      transition:'all .15s',
                     }}
-                    onMouseEnter={e => { if(unidFilt!==item.nm_local) e.currentTarget.style.background = cls.bg }}
-                    onMouseLeave={e => { if(unidFilt!==item.nm_local) e.currentTarget.style.background = isCrit?'rgba(244,63,94,0.06)':isGrv?'rgba(249,115,22,0.04)':'rgba(255,255,255,0.02)' }}
+                    onMouseEnter={e=>{ if(!isSelected) e.currentTarget.style.background=cls.bg }}
+                    onMouseLeave={e=>{ if(!isSelected) e.currentTarget.style.background=isCrit?'rgba(244,63,94,0.06)':isGrv?'rgba(249,115,22,0.04)':'rgba(255,255,255,0.02)' }}
                   >
-                    {/* Dot */}
-                    <div style={{
-                      width:8, height:8, borderRadius:'50%', background:cls.color, flexShrink:0,
-                      boxShadow: isCrit ? `0 0 8px ${cls.color}` : 'none',
-                    }} />
-
-                    {/* Hora */}
-                    <div style={{ fontFamily:'monospace', fontSize:13, fontWeight:700, color:C.sub, flexShrink:0, minWidth:44 }}>
-                      {item.horaStr}
-                    </div>
-
-                    {/* Unidade + médico */}
+                    <div style={{ width:8, height:8, borderRadius:'50%', background:cls.color, flexShrink:0, boxShadow:isCrit?`0 0 8px ${cls.color}`:'none' }} />
+                    <div style={{ fontFamily:'monospace', fontSize:13, fontWeight:700, color:C.sub, flexShrink:0, minWidth:44 }}>{item.horaStr}</div>
                     <div style={{ flex:1, minWidth:0 }}>
-                      <div style={{ fontSize:12, fontWeight:600, color:C.text, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                        {item.nm_local}
-                      </div>
-                      <div style={{ fontSize:10, color:C.muted, marginTop:2, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                        {[item.cidade, item.uf].filter(Boolean).join(' · ')}
-                      </div>
+                      <div style={{ fontSize:12, fontWeight:600, color:C.text, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{item.nm_local}</div>
+                      <div style={{ fontSize:10, color:C.muted, marginTop:2 }}>{[item.cidade, item.uf].filter(Boolean).join(' · ')}</div>
                     </div>
-
-                    {/* Pacientes */}
-                    <div style={{ textAlign:'center', flexShrink:0, minWidth:48 }}>
-                      <div style={{ fontSize:12, fontWeight:700, color:'#0EA5E9' }}>
-                        {item.totalPac > 0 ? item.totalPac.toLocaleString('pt-BR') : '—'}
-                      </div>
+                    <div style={{ textAlign:'center', flexShrink:0, minWidth:42 }}>
+                      <div style={{ fontSize:12, fontWeight:700, color:'#0EA5E9' }}>{item.totalPac>0?item.totalPac:'—'}</div>
                       <div style={{ fontSize:9, color:C.muted }}>pac.</div>
                     </div>
-
-                    {/* Tempo */}
-                    <div style={{ fontSize:15, fontWeight:900, color:cls.color, flexShrink:0, minWidth:52, textAlign:'right', letterSpacing:'-.3px' }}>
-                      {fmtMin(item.maxTempo)}
-                    </div>
-
-                    {/* Badge classificação */}
-                    <span style={{
-                      fontSize:9.5, fontWeight:700, padding:'3px 9px', borderRadius:20,
-                      background:cls.bg, color:cls.color, border:`0.5px solid ${cls.border}`,
-                      whiteSpace:'nowrap', flexShrink:0,
-                    }}>
-                      {cls.label}
-                    </span>
+                    <div style={{ fontSize:15, fontWeight:900, color:cls.color, flexShrink:0, minWidth:52, textAlign:'right' }}>{fmtMin(item.maxTempo)}</div>
+                    <span style={{ fontSize:9.5, fontWeight:700, padding:'3px 9px', borderRadius:20, background:cls.bg, color:cls.color, border:`0.5px solid ${cls.border}`, whiteSpace:'nowrap', flexShrink:0 }}>{cls.label}</span>
                   </div>
                 )
               })}
@@ -761,28 +537,29 @@ function TabEspera({ rows }) {
           )}
         </div>
 
-        {/* TOP UNIDADES */}
-        <div style={{
-          background:'rgba(255,255,255,0.025)', border:'1px solid rgba(255,255,255,0.06)',
-          borderRadius:14, padding:'20px 22px', display:'flex', flexDirection:'column',
-        }}>
+        {/* TOP UNIDADES — tabela rica */}
+        <div style={{ background:'rgba(255,255,255,0.025)', border:'1px solid rgba(255,255,255,0.06)', borderRadius:14, padding:'20px 22px' }}>
           <div style={{ fontSize:13, fontWeight:700, color:C.text, marginBottom:4 }}>Top Unidades</div>
-          <div style={{ fontSize:10.5, color:C.muted, marginBottom:16 }}>Maior volume de esperas críticas</div>
+          <div style={{ fontSize:10.5, color:C.muted, marginBottom:14 }}>Maior volume de esperas críticas</div>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 28px 28px 28px', gap:4, marginBottom:8, paddingBottom:6, borderBottom:'0.5px solid rgba(255,255,255,0.06)' }}>
+            <span style={{ fontSize:9, color:C.muted, textTransform:'uppercase', letterSpacing:'.07em' }}>Unidade</span>
+            <span style={{ fontSize:9, color:'#F43F5E', textTransform:'uppercase', textAlign:'center' }}>C</span>
+            <span style={{ fontSize:9, color:'#F97316', textTransform:'uppercase', textAlign:'center' }}>G</span>
+            <span style={{ fontSize:9, color:'#F59E0B', textTransform:'uppercase', textAlign:'center' }}>M</span>
+          </div>
           {topUnidades.length === 0 && <div style={{ color:C.muted, fontSize:11 }}>Sem dados no período.</div>}
-          {topUnidades.map((u, i) => (
-            <div key={u.n} style={{ marginBottom:14 }}>
-              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:5 }}>
-                <div style={{ display:'flex', alignItems:'center', gap:7, minWidth:0 }}>
+          {topUnidades.map((u,i) => (
+            <div key={u.n} style={{ marginBottom:12 }}>
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 28px 28px 28px', alignItems:'center', gap:4, marginBottom:4 }}>
+                <div style={{ display:'flex', alignItems:'center', gap:6, minWidth:0 }}>
                   <span style={{ fontSize:10, fontWeight:800, color:i<3?'#F59E0B':C.muted, minWidth:16, flexShrink:0 }}>#{i+1}</span>
-                  <span style={{ fontSize:11.5, color:C.text, fontWeight:500, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{u.n}</span>
+                  <span style={{ fontSize:11, color:C.text, fontWeight:500, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{u.n}</span>
                 </div>
-                <div style={{ display:'flex', gap:7, flexShrink:0, fontSize:10.5 }}>
-                  {u.criticos>0&&<span style={{ color:'#F43F5E', fontWeight:700 }}>🔴{u.criticos}</span>}
-                  {u.graves>0&&<span style={{ color:'#F97316', fontWeight:700 }}>🟠{u.graves}</span>}
-                  {u.moderadas>0&&<span style={{ color:'#F59E0B', fontWeight:700 }}>🟡{u.moderadas}</span>}
-                </div>
+                <span style={{ fontSize:11, fontWeight:700, color:'#F43F5E', textAlign:'center' }}>{u.criticos}</span>
+                <span style={{ fontSize:11, fontWeight:700, color:'#F97316', textAlign:'center' }}>{u.graves}</span>
+                <span style={{ fontSize:11, fontWeight:700, color:'#F59E0B', textAlign:'center' }}>{u.moderadas}</span>
               </div>
-              <div style={{ display:'flex', height:5, borderRadius:3, overflow:'hidden', gap:1 }}>
+              <div style={{ display:'flex', height:4, borderRadius:3, overflow:'hidden', gap:1 }}>
                 {u.moderadas>0&&<div style={{ flex:u.moderadas, background:'#F59E0B' }} />}
                 {u.graves>0&&<div style={{ flex:u.graves, background:'#F97316' }} />}
                 {u.criticos>0&&<div style={{ flex:u.criticos, background:'#F43F5E' }} />}
@@ -793,12 +570,9 @@ function TabEspera({ rows }) {
       </div>
 
       {/* ROW 3 — Médicos complemento */}
-      <div style={{
-        background:'rgba(255,255,255,0.025)', border:'1px solid rgba(255,255,255,0.06)',
-        borderRadius:14, padding:'20px 22px', marginBottom:14,
-      }}>
+      <div style={{ background:'rgba(255,255,255,0.025)', border:'1px solid rgba(255,255,255,0.06)', borderRadius:14, padding:'20px 22px' }}>
         <div style={{ fontSize:13, fontWeight:700, color:C.text, marginBottom:4 }}>Médicos — Falta e Atraso</div>
-        <div style={{ fontSize:10.5, color:C.muted, marginBottom:16 }}>Complemento · coluna ATRASO da base</div>
+        <div style={{ fontSize:10.5, color:C.muted, marginBottom:16 }}>Complemento · coluna ATRASO da base{unidFilt?` · ${unidFilt}`:''}</div>
         <div style={{ display:'grid', gridTemplateColumns:'120px 120px 1fr', gap:12, alignItems:'start' }}>
           {[
             { label:'Faltas',         value:faltas.length,        color:'#F43F5E' },
@@ -809,7 +583,7 @@ function TabEspera({ rows }) {
               <div style={{ fontSize:26, fontWeight:800, color:k.color }}>{k.value.toLocaleString('pt-BR')}</div>
             </div>
           ))}
-          {statusAtraso.length > 0 && (
+          {statusAtraso.length > 0 ? (
             <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
               {statusAtraso.map(({k,v}) => {
                 const cfg = getStatusCfg(k)
@@ -824,8 +598,7 @@ function TabEspera({ rows }) {
                 )
               })}
             </div>
-          )}
-          {!statusAtraso.length&&faltas.length===0&&atrasosReais.length===0&&(
+          ) : (
             <div style={{ color:C.muted, fontSize:11 }}>Nenhuma ocorrência no período.</div>
           )}
         </div>
@@ -833,6 +606,7 @@ function TabEspera({ rows }) {
     </div>
   )
 }
+
 
 
 // ── ROOT ──────────────────────────────────────────────────────────────────────
