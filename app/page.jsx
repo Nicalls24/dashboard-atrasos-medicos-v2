@@ -179,36 +179,6 @@ function TabAgendas({ rows }) {
       sponPct:   cnt>0?((sponto/cnt)*100).toFixed(1):'0' }
   }, [filtered])
 
-  // Médicos — computed values for donut
-  const medTotalProb = faltasList.length + atrasosList.length
-  const medFPct  = medTotalProb>0 ? Math.round((faltasList.length/medTotalProb)*100)  : 0
-  const medAPct  = medTotalProb>0 ? Math.round((atrasosList.length/medTotalProb)*100) : 0
-  const medRate  = totalReg>0 ? ((medTotalProb/totalReg)*100).toFixed(1) : '0'
-  const medR=44, medCX=54, medCY=54, medCirc=2*Math.PI*medR
-  const medFDash = (medFPct/100)*medCirc
-  const medADash = (medAPct/100)*medCirc
-
-  // Trend — computed values
-  const trendAllData  = trendView==='real' ? byDate : [...byDate, ...projData]
-  const trendMaxCrit  = Math.max(...trendAllData.map(d=>d.crit||0), 1)
-  const trendMaxPac   = Math.max(...trendAllData.map(d=>d.pac||0),  1)
-  const trendTotal    = trendAllData.length
-  const trendRealCnt  = byDate.length
-  const trendLastReal = byDate[byDate.length-1]
-  const trendFirst    = byDate[0]
-  const trendVarCrit  = byDate.length>=2 ? ((trendLastReal?.crit||0)-(trendFirst?.crit||0)) : 0
-  const trendAvgCrit  = byDate.length>0  ? Math.round(byDate.reduce((a,d)=>a+d.crit,0)/byDate.length) : 0
-  const trendMaxDay   = byDate.length>0  ? byDate.reduce((a,d)=>d.crit>a.crit?d:a, byDate[0]) : null
-  const trendSlope    = projData.length>0 ? ((projData[0]?.crit||0)-(trendLastReal?.crit||0)) : 0
-
-  const VW=800, VH=160, PL=48, PR=48, PT=10, PB=32
-  const CW=VW-PL-PR, CH=VH-PT-PB
-  const txPos = (i) => trendTotal<=1 ? PL+CW/2 : PL+(i/(trendTotal-1))*CW
-  const tyPos = (v, mx) => PT+CH-(mx>0?(v/mx)*CH:0)
-  const tMakePath = (data, key, mx, startI=0) =>
-    data.map((d,i)=>`${i+startI===0?'M':'L'}${txPos(i+startI).toFixed(1)},${tyPos(d[key]||0,mx).toFixed(1)}`).join(' ')
-  const tYTicks = [0, Math.round(trendMaxCrit*0.5), trendMaxCrit]
-
   if (!rows.length) return (
     <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'60vh', gap:14 }}>
       <div style={{ fontSize:44 }}>📋</div>
