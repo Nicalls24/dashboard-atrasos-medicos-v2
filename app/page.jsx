@@ -47,8 +47,13 @@ const todayStr = () => {
 const buildFilter = (allDates, periodo, df, dt) => {
   if (!allDates.length) return () => true
   const s = [...allDates].sort(), max = s[s.length-1]
-  if (periodo==='HOJE')   return d => d === todayStr()
-  if (periodo==='ONTEM')  { const r=new Date(max+'T00:00:00Z'); r.setUTCDate(r.getUTCDate()-1); const x=r.toISOString().slice(0,10); return d=>d===x }
+  // HOJE = data mais recente do dataset (não o sistema)
+  if (periodo==='HOJE')   return d => d === max
+  // ONTEM = penúltima data do dataset
+  if (periodo==='ONTEM')  {
+    const prev = s.length>=2 ? s[s.length-2] : null
+    return d => prev ? d===prev : false
+  }
   if (periodo==='SEMANA') { const r=new Date(max+'T00:00:00Z'); r.setUTCDate(r.getUTCDate()-6); const c=r.toISOString().slice(0,10); return d=>d>=c&&d<=max }
   if (periodo==='MES')    return d => d.slice(0,7)===max.slice(0,7)
   if (periodo==='ANO')    return d => d.slice(0,4)===max.slice(0,4)
@@ -418,9 +423,12 @@ function TabEspera({ rows }) {
       const horaStr=String(hora).padStart(2,'0')+':'+String(mins).padStart(2,'0')
       const unidade=d.nm_local||'Sem Unidade'
       const key=`${horaStr}||${unidade}`
-      if (!grupoMap[key]) grupoMap[key]={ horaStr, hora, nm_local:unidade, uf:d.uf||'', cidade:d.cidade||'', maxTempo:0, totalPac:0, count:0 }
-      if (d.tempo_espera_min>grupoMap[key].maxTempo) grupoMap[key].maxTempo=d.tempo_espera_min
-      grupoMap[key].totalPac+=d.qt_pacientes_aguardando||0
+      if (!grupoMap[key]) grupoMap[key]={ horaStr, hora, nm_local:unidade, uf:d.uf||'', cidade:d.cidade||'', maxTempo:0, pac:0, count:0 }
+      // Pacientes vem do registro com MAIOR TEMPO_DE_ESPERA (não soma)
+      if (d.tempo_espera_min>grupoMap[key].maxTempo) {
+        grupoMap[key].maxTempo=d.tempo_espera_min
+        grupoMap[key].pac=d.qt_pacientes_aguardando||0
+      }
       grupoMap[key].count+=1
     })
     const feedList=Object.values(grupoMap).sort((a,b)=>b.maxTempo-a.maxTempo).slice(0,25)
@@ -619,7 +627,7 @@ function TabEspera({ rows }) {
                       <div style={{ fontSize:10,color:C.muted,marginTop:2 }}>{[item.cidade,item.uf].filter(Boolean).join(' · ')}</div>
                     </div>
                     <div style={{ textAlign:'center',flexShrink:0,minWidth:42 }}>
-                      <div style={{ fontSize:12,fontWeight:700,color:'#0EA5E9' }}>{item.totalPac>0?item.totalPac:'—'}</div>
+                      <div style={{ fontSize:12,fontWeight:700,color:'#0EA5E9' }}>{item.pac>0?item.pac:'—'}</div>
                       <div style={{ fontSize:9,color:C.muted }}>pac.</div>
                     </div>
                     <div style={{ fontSize:15,fontWeight:900,color:cls.color,flexShrink:0,minWidth:52,textAlign:'right' }}>{fmtMin(item.maxTempo)}</div>
@@ -711,14 +719,19 @@ export default function Home() {
   const [storageInfo, setStorageInfo] = useState({ agendas:0, espera:0 })
 
   const loadTable = useCallback(async table => {
-    const PAGE=1000; let all=[], offset=0
-    while(true) {
-      const res=await fetch(`${SB_URL}/rest/v1/${table}?select=*&order=id.asc&limit=${PAGE}&offset=${offset}`,{headers:SBH})
-      if(!res.ok) break
+    // Usa paginação com Range header para contornar o limite padrão do Supabase PostgREST
+    const PAGE=1000; let all=[], offset=0, maxTries=50
+    while(maxTries-->0) {
+      const from=offset, to=offset+PAGE-1
+      const res=await fetch(`${SB_URL}/rest/v1/${table}?select=*&order=id.asc`, {
+        headers: { ...SBH, 'Range':`${from}-${to}`, 'Range-Unit':'items', 'Prefer':'count=none' }
+      })
+      // 200 = all results, 206 = partial (has more), 416 = range out of bounds (done)
+      if (res.status===416||!res.ok) break
       const batch=await res.json()
       if(!Array.isArray(batch)||!batch.length) break
       all=all.concat(batch)
-      if(batch.length<PAGE) break
+      if (res.status===200) break  // 200 = retornou tudo
       offset+=PAGE
     }
     return all
