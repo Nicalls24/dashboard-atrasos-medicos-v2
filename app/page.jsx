@@ -742,10 +742,10 @@ function TabEspera({ rows }) {
               <circle cx={medCX} cy={medCY} r={medR} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="10" />
               {faltasList.length>0 && <circle cx={medCX} cy={medCY} r={medR} fill="none" stroke="#F43F5E" strokeWidth="10" strokeLinecap="round"
                 strokeDasharray={`${medFDash.toFixed(1)} ${(medCirc-medFDash).toFixed(1)}`}
-                transform={`rotate(-90 ${medCX} ${medCY})`} opacity="0.9" />}
+                transform={`rotate(-90 ${medCX} ${medCY})`} opacity={0.9} />}
               {atrasosList.length>0 && <circle cx={medCX} cy={medCY} r={medR} fill="none" stroke="#F59E0B" strokeWidth="10" strokeLinecap="round"
                 strokeDasharray={`${medADash.toFixed(1)} ${(medCirc-medADash).toFixed(1)}`}
-                transform={`rotate(${(-90+medFPct*3.6).toFixed(1)} ${medCX} ${medCY})`} opacity="0.85" />}
+                transform={`rotate(${(-90+medFPct*3.6).toFixed(1)} ${medCX} ${medCY})`} opacity={0.85} />}
               <text x={medCX} y={medCY-6} textAnchor="middle" fontSize="18" fontWeight="800" fill={medTotalProb>0?'#F97316':'#475569'}>{medTotalProb}</text>
               <text x={medCX} y={medCY+10} textAnchor="middle" fontSize="9" fill="#475569">ocorrências</text>
               <text x={medCX} y={medCY+22} textAnchor="middle" fontSize="8" fill="#334155">{medRate}% do total</text>
@@ -848,12 +848,7 @@ function TabEspera({ rows }) {
         ) : (
           <div>
             <svg width="100%" viewBox={`0 0 ${VW} ${VH}`} style={{ display:'block', overflow:'visible' }}>
-              <defs>
-                <linearGradient id="gCrit" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#F43F5E" stopOpacity="0.25"/>
-                  <stop offset="100%" stopColor="#F43F5E" stopOpacity="0"/>
-                </linearGradient>
-              </defs>
+
 
               {/* Grid */}
               {tYTicks.map((v,ti)=>(
@@ -866,7 +861,7 @@ function TabEspera({ rows }) {
               {/* Area */}
               {trendRealCnt>=2 && (
                 <path d={`${tMakePath(byDate,'crit',trendMaxCrit)} L${txPos(trendRealCnt-1).toFixed(1)},${(PT+CH).toFixed(1)} L${txPos(0).toFixed(1)},${(PT+CH).toFixed(1)} Z`}
-                  fill="url(#gCrit)" />
+                  fill="rgba(244,63,94,0.15)" />
               )}
 
               {/* Separator */}
@@ -877,7 +872,7 @@ function TabEspera({ rows }) {
 
               {/* Lines — real */}
               {trendRealCnt>=2 && (
-                <path d={tMakePath(byDate,'grv',trendMaxCrit)} fill="none" stroke="#F97316" strokeWidth="1.5" opacity="0.7" />
+                <path d={tMakePath(byDate,'grv',trendMaxCrit)} fill="none" stroke="#F97316" strokeWidth="1.5" opacity={0.7} />
               )}
               {trendRealCnt>=2 && (
                 <path d={tMakePath(byDate,'crit',trendMaxCrit)} fill="none" stroke="#F43F5E" strokeWidth="2" />
@@ -897,7 +892,7 @@ function TabEspera({ rows }) {
 
               {/* Proj label */}
               {trendView==='proj' && trendRealCnt>0 && trendTotal>trendRealCnt && (
-                <text x={txPos(trendRealCnt)+4} y={PT+12} fontSize="8" fill="rgba(245,158,11,0.6)" fontStyle="italic">Projeção</text>
+                <text x={txPos(trendRealCnt)+4} y={PT+12} fontSize="8" fill="rgba(245,158,11,0.6)">Projeção</text>
               )}
 
               {/* X labels */}
@@ -905,7 +900,7 @@ function TabEspera({ rows }) {
                 const show = trendTotal<=10 || i===0 || i===trendTotal-1 || i%Math.ceil(trendTotal/6)===0
                 return show ? (
                   <text key={`xl-${i}`} x={txPos(i)} y={VH-4} textAnchor="middle" fontSize="9"
-                    fill={d.isProj?'rgba(245,158,11,0.45)':'#334155'} fontStyle={d.isProj?'italic':'normal'}>
+                    fill={d.isProj?'rgba(245,158,11,0.45)':'#334155'}>
                     {d.date.slice(5).replace('-','/')}
                   </text>
                 ) : null
@@ -939,6 +934,163 @@ function TabEspera({ rows }) {
             )}
           </div>
         )}
+      </div>
+    </div>
+  )
+}
+
+// ── ROOT ──────────────────────────────────────────────────────────────────────
+export default function Home() {
+  const [tab,         setTab]         = useState('espera')
+  const [agendas,     setAgendas]     = useState([])
+  const [espera,      setEspera]      = useState([])
+  const [loadingDB,   setLoadingDB]   = useState(true)
+  const [storing,     setStoring]     = useState(false)
+  const [storeMsg,    setStoreMsg]    = useState('')
+  const [timestamp,   setTimestamp]   = useState('')
+  const [storageInfo, setStorageInfo] = useState({ agendas:0, espera:0 })
+
+  const loadTable = useCallback(async table => {
+    const PAGE=1000; let all=[], offset=0, maxTries=50
+    while(maxTries-->0) {
+      const from=offset, to=offset+PAGE-1
+      const res=await fetch(`${SB_URL}/rest/v1/${table}?select=*&order=id.asc`, {
+        headers: { ...SBH, 'Range':`${from}-${to}`, 'Range-Unit':'items', 'Prefer':'count=none' }
+      })
+      if (res.status===416||!res.ok) break
+      const batch=await res.json()
+      if(!Array.isArray(batch)||!batch.length) break
+      all=all.concat(batch)
+      if (res.status===200) break
+      offset+=PAGE
+    }
+    return all
+  }, [])
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        setStoreMsg('Conectando…')
+        const [ag,esp]=await Promise.all([loadTable('agendas'),loadTable('espera')])
+        if(ag.length||esp.length) {
+          setAgendas(ag); setEspera(esp)
+          setStorageInfo({agendas:ag.length,espera:esp.length})
+          const ts=ag[0]?.verif_ts||esp[0]?.verif_ts||''; if(ts) setTimestamp(ts)
+          setStoreMsg(`☁ ${ag.length.toLocaleString('pt-BR')} agendas · ${esp.length.toLocaleString('pt-BR')} esperas`)
+          setTimeout(()=>setStoreMsg(''),4000)
+        } else setStoreMsg('')
+      } catch(e){ setStoreMsg(`Erro: ${e.message}`) }
+      setLoadingDB(false)
+    }
+    load()
+  }, [loadTable])
+
+  const handleUpload = useCallback(async e => {
+    const file=e.target.files[0]; if(!file) return; e.target.value=''
+    setStoring(true)
+    const now=new Date(), pad=n=>String(n).padStart(2,'0')
+    const ts=`${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`
+    setTimestamp(ts)
+    try {
+      setStoreMsg('Lendo planilha…')
+      const buf=await file.arrayBuffer()
+      const wb=XLSX.read(buf,{type:'buffer'})
+      const ws=wb.Sheets['PONTOS']||wb.Sheets[wb.SheetNames[0]]
+      const json=XLSX.utils.sheet_to_json(ws,{range:3,defval:''})
+      setStoreMsg(`${json.length.toLocaleString('pt-BR')} linhas — limpando banco…`)
+      const delRes=await fetch('/api/save',{method:'DELETE'})
+      if(!delRes.ok){setStoreMsg('⚠ Erro ao limpar banco');setStoring(false);return}
+      const CHUNK=500
+      for(let i=0;i<json.length;i+=CHUNK){
+        setStoreMsg(`Agendas… ${Math.min(i+CHUNK,json.length).toLocaleString('pt-BR')}/${json.length.toLocaleString('pt-BR')}`)
+        await fetch('/api/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows:json.slice(i,i+CHUNK),ts,table:'agendas'})})
+      }
+      for(let i=0;i<json.length;i+=CHUNK){
+        setStoreMsg(`Espera… ${Math.min(i+CHUNK,json.length).toLocaleString('pt-BR')}/${json.length.toLocaleString('pt-BR')}`)
+        await fetch('/api/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows:json.slice(i,i+CHUNK),ts,table:'espera'})})
+      }
+      setStoreMsg('Recarregando…')
+      const [ag,esp]=await Promise.all([loadTable('agendas'),loadTable('espera')])
+      setAgendas(ag); setEspera(esp); setStorageInfo({agendas:ag.length,espera:esp.length})
+      setStoreMsg(`✓ ${ag.length.toLocaleString('pt-BR')} agendas · ${esp.length.toLocaleString('pt-BR')} esperas`)
+      setTimeout(()=>setStoreMsg(''),4000)
+    } catch(e){setStoreMsg(`⚠ Erro: ${e.message}`)}
+    setStoring(false)
+  }, [loadTable])
+
+  const handleClear = async () => {
+    if(!confirm('Apagar TODOS os dados do banco?')) return
+    setStoring(true); setStoreMsg('Apagando…')
+    await fetch('/api/save',{method:'DELETE'})
+    setAgendas([]); setEspera([]); setStorageInfo({agendas:0,espera:0}); setTimestamp(''); setStoreMsg(''); setStoring(false)
+  }
+
+  return (
+    <div style={{ minHeight:'100vh', background:C.bg, fontFamily:"'DM Sans','Segoe UI',sans-serif", color:C.text }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800;900&family=DM+Sans:wght@300;400;500;600;700;800&display=swap');
+        *{box-sizing:border-box;margin:0;padding:0}
+        ::-webkit-scrollbar{width:4px;background:transparent}
+        ::-webkit-scrollbar-thumb{background:rgba(245,158,11,0.2);border-radius:4px}
+        select option{background:#0A0D16;color:#F1F5F9}
+        input::placeholder{color:#475569}
+        select{appearance:auto}
+      `}</style>
+      <div style={{ background:'#070910', borderBottom:'1px solid rgba(245,158,11,0.1)', display:'flex', alignItems:'center', padding:'0 32px', height:52, position:'sticky', top:0, zIndex:100, backdropFilter:'blur(12px)' }}>
+        <div style={{ position:'absolute', top:-40, left:'50%', transform:'translateX(-50%)', width:500, height:80, background:'radial-gradient(ellipse,rgba(245,158,11,0.07),transparent 70%)', pointerEvents:'none' }} />
+        <div style={{ display:'flex', alignItems:'center', gap:10, marginRight:32 }}>
+          <div style={{ width:28, height:28, borderRadius:8, background:'linear-gradient(135deg,#F59E0B,#F97316)', display:'flex', alignItems:'center', justifyContent:'center' }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+          </div>
+          <div>
+            <span style={{ fontSize:14, fontWeight:900, color:C.text, fontFamily:"'Syne',sans-serif", letterSpacing:'-.3px' }}>Monitor </span>
+            <span style={{ fontSize:14, fontWeight:900, color:C.amber, fontFamily:"'Syne',sans-serif", letterSpacing:'-.3px' }}>Clínicas</span>
+          </div>
+        </div>
+        <div style={{ display:'flex', height:'100%', gap:0 }}>
+          {[
+            { key:'espera',  label:'Fila de Espera',  count:storageInfo.espera  },
+            { key:'agendas', label:'Agendas Médicas', count:storageInfo.agendas },
+          ].map(t=>(
+            <button key={t.key} onClick={()=>setTab(t.key)} style={{
+              padding:'0 20px', border:'none', background:'transparent', cursor:'pointer',
+              fontSize:12, fontWeight:700, height:'100%',
+              color:tab===t.key?C.amber:C.muted,
+              borderBottom:tab===t.key?`2px solid ${C.amber}`:'2px solid transparent',
+              transition:'all .2s', display:'flex', alignItems:'center', gap:7,
+            }}>
+              {t.label}
+              {t.count>0 && <span style={{ fontSize:9, padding:'1px 6px', borderRadius:10, background:tab===t.key?`${C.amber}20`:'rgba(255,255,255,0.06)', color:tab===t.key?C.amber:C.muted, fontWeight:700 }}>{t.count.toLocaleString('pt-BR')}</span>}
+            </button>
+          ))}
+        </div>
+        <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:14 }}>
+          <div style={{ display:'flex', alignItems:'center', gap:5 }}>
+            <div style={{ width:6, height:6, borderRadius:'50%', background:C.emerald, boxShadow:`0 0 6px ${C.emerald}` }} />
+            <span style={{ fontSize:10, color:C.muted }}>Banco conectado</span>
+          </div>
+          {timestamp && <span style={{ fontSize:10, color:C.muted }}>{timestamp}</span>}
+          {storeMsg && <span style={{ fontSize:10, color:storeMsg.startsWith('☁')||storeMsg.startsWith('✓')?C.emerald:C.amber, fontWeight:600, maxWidth:220, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{storeMsg}</span>}
+          {(storageInfo.agendas>0||storageInfo.espera>0)&&!storing && (
+            <button onClick={handleClear} style={{ background:'transparent', border:'0.5px solid rgba(244,63,94,0.3)', borderRadius:8, color:C.rose, fontSize:11, padding:'5px 10px', cursor:'pointer' }}>🗑</button>
+          )}
+          <label style={{ background:storing?'rgba(255,255,255,0.06)':'linear-gradient(135deg,#F59E0B,#F97316)', color:storing?C.muted:'#1a0800', fontWeight:800, fontSize:12, padding:'7px 16px', borderRadius:9, cursor:storing?'default':'pointer', transition:'all .2s', whiteSpace:'nowrap', fontFamily:"'Syne',sans-serif" }}>
+            {storing?'Salvando…':'+ Carregar Planilha'}
+            <input type="file" accept=".xlsx,.xls" style={{display:'none'}} onChange={handleUpload} disabled={storing||loadingDB} />
+          </label>
+        </div>
+      </div>
+      <div style={{ padding:'24px 32px' }}>
+        {loadingDB ? (
+          <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'calc(100vh - 120px)', gap:16 }}>
+            <div style={{ fontSize:36, filter:'drop-shadow(0 0 20px #F59E0B88)' }}>⏳</div>
+            <div style={{ fontSize:16, color:C.sub, fontFamily:"'Syne',sans-serif", fontWeight:700 }}>Conectando ao banco…</div>
+            {storeMsg && <div style={{ fontSize:12, color:C.amber }}>{storeMsg}</div>}
+          </div>
+        ) : (<>
+          {tab==='agendas' && <TabAgendas rows={agendas} />}
+          {tab==='espera'  && <TabEspera  rows={espera}  />}
+        </>)}
       </div>
     </div>
   )
