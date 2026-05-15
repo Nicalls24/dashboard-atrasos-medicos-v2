@@ -249,24 +249,24 @@ function TabAgendas({ rows }) {
     return r
   }, [rows, periodoFn, ufFilt, statusFilt, search])
 
-  const { total: totalAg, emAtraso, semPonto, topUnidades, topMedicos, statusBreak, byDate, atrasoPct, semPontoPct } = useMemo(() => {
+  const { total: totalAg, emAtrasoAg, semPontoAg, topUnidadesAg, topMedicosAg, statusBreakAg, byDateAg, atrasoPctAg, semPontoAgPct } = useMemo(() => {
     const n      = filtered.length
-    const emAtraso = filtered.filter(d=>String(d.status||'').toUpperCase().includes('ATRASO')).length
-    const semPonto = filtered.filter(d=>d.hr_entrada_min===null||d.hr_entrada_min===undefined).length
+    const emAtrasoAg = filtered.filter(d=>String(d.status||'').toUpperCase().includes('ATRASO')).length
+    const semPontoAg = filtered.filter(d=>d.hr_entrada_min===null||d.hr_entrada_min===undefined).length
     const uMap={},mMap={},sMap={}
     filtered.forEach(d=>{
       const u=d.nm_local||'?'; uMap[u]=(uMap[u]||0)+1
       const m=d.nm_medico||''; if(m) mMap[m]=(mMap[m]||0)+1
       const s=d.status||'OK'; sMap[s]=(sMap[s]||0)+1
     })
-    const topUnidades = Object.entries(uMap).map(([nm,v])=>({n:nm,v})).sort((a,b)=>b.v-a.v).slice(0,8)
-    const topMedicos  = Object.entries(mMap).map(([nm,v])=>({n:nm,v})).sort((a,b)=>b.v-a.v).slice(0,8)
-    const statusBreak = Object.entries(sMap).map(([k,v])=>({k,v})).sort((a,b)=>b.v-a.v)
+    const topUnidadesAg = Object.entries(uMap).map(([nm,v])=>({n:nm,v})).sort((a,b)=>b.v-a.v).slice(0,8)
+    const topMedicosAg  = Object.entries(mMap).map(([nm,v])=>({n:nm,v})).sort((a,b)=>b.v-a.v).slice(0,8)
+    const statusBreakAg = Object.entries(sMap).map(([k,v])=>({k,v})).sort((a,b)=>b.v-a.v)
     const dMap={}; filtered.forEach(d=>{ if(d.data_agenda) dMap[d.data_agenda]=(dMap[d.data_agenda]||0)+1 })
-    const byDate = Object.entries(dMap).map(([k,v])=>({k,v})).sort((a,b)=>a.k.localeCompare(b.k)).slice(-28)
-    return { total: n, emAtraso, semPonto, topUnidades, topMedicos, statusBreak, byDate,
-      atrasoPct: n>0?((emAtraso/n)*100).toFixed(1):'0',
-      semPontoPct: n>0?((semPonto/n)*100).toFixed(1):'0' }
+    const byDateAg = Object.entries(dMap).map(([k,v])=>({k,v})).sort((a,b)=>a.k.localeCompare(b.k)).slice(-28)
+    return { total: n, emAtrasoAg, semPontoAg, topUnidadesAg, topMedicosAg, statusBreakAg, byDateAg,
+      atrasoPctAg: n>0?((emAtrasoAg/n)*100).toFixed(1):'0',
+      semPontoAgPct: n>0?((semPontoAg/n)*100).toFixed(1):'0' }
   }, [filtered])
 
   if (!rows.length) return (
@@ -279,7 +279,7 @@ function TabAgendas({ rows }) {
 
   const {
     totalRegs: total, totalPac, moderada, grave, critico, totalEsp,
-    feed, topUnidades, faltas, atrasosReais, statusAtraso
+    feed, topUnidadesAg, faltas, atrasosReais, statusAtraso
   } = stats
 
   const fmtMin = m => {
@@ -547,8 +547,8 @@ function TabAgendas({ rows }) {
             <span style={{ fontSize:9, color:'#F97316', textTransform:'uppercase', textAlign:'center' }}>G</span>
             <span style={{ fontSize:9, color:'#F59E0B', textTransform:'uppercase', textAlign:'center' }}>M</span>
           </div>
-          {topUnidades.length === 0 && <div style={{ color:C.muted, fontSize:11 }}>Sem dados no período.</div>}
-          {topUnidades.map((u,i) => (
+          {topUnidadesAg.length === 0 && <div style={{ color:C.muted, fontSize:11 }}>Sem dados no período.</div>}
+          {topUnidadesAg.map((u,i) => (
             <div key={u.n} style={{ marginBottom:12 }}>
               <div style={{ display:'grid', gridTemplateColumns:'1fr 28px 28px 28px', alignItems:'center', gap:4, marginBottom:4 }}>
                 <div style={{ display:'flex', alignItems:'center', gap:6, minWidth:0 }}>
