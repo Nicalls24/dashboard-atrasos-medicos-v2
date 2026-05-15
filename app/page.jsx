@@ -341,6 +341,7 @@ function TabEspera({ rows }) {
   const [justModal,   setJustModal]   = useState(false)
   const [justificativas, setJustificativas] = useState({})
   const [justLoading, setJustLoading] = useState(false)
+  const [trendView,   setTrendView]   = useState('real')
 
   const allDates  = useMemo(() => [...new Set(rows.map(r=>r.data_agenda).filter(Boolean))].sort(), [rows])
   const periodoFn = useMemo(() => buildFilter(allDates, periodo, dateFrom, dateTo), [allDates, periodo, dateFrom, dateTo])
@@ -454,7 +455,40 @@ function TabEspera({ rows }) {
     atrasosList.forEach(d=>{ const s=d.status||'Sem Status'; sMap[s]=(sMap[s]||0)+1 })
     const statusAt=Object.entries(sMap).map(([k,v])=>({k,v})).sort((a,b)=>b.v-a.v)
 
-    return { totalReg, totalPac, modCnt, grvCnt, critCnt, totalEsp, feedList, topU, faltasList, atrasosList, statusAt }
+    // Por data — para o gráfico de tendência
+    const dMap = {}
+    filtered.forEach(d => {
+      const dt = d.data_agenda; if (!dt) return
+      if (!dMap[dt]) dMap[dt] = { date:dt, mod:0, grv:0, crit:0, pac:0, faltas:0, atrasos:0 }
+      const m = d.tempo_espera_min
+      if (m>=90)      dMap[dt].crit++
+      else if (m>=31) dMap[dt].grv++
+      else if (m>=15) dMap[dt].mod++
+      dMap[dt].pac += d.qt_pacientes_aguardando||0
+      if (String(d.atraso||'').toUpperCase()==='FALTA') dMap[dt].faltas++
+      if (String(d.atraso||'').toUpperCase()==='SIM' && d.tempo_atraso_min && Math.abs(d.tempo_atraso_min)>31) dMap[dt].atrasos++
+    })
+    const byDate = Object.values(dMap).sort((a,b)=>a.date.localeCompare(b.date))
+
+    // Projeção — média móvel dos últimos 3 dias projetada +5 dias
+    const addDay = (dateStr, n) => {
+      const d = new Date(dateStr+'T00:00:00Z'); d.setUTCDate(d.getUTCDate()+n)
+      return d.toISOString().slice(0,10)
+    }
+    const pts = byDate.slice(-3)
+    const slopeCrit = pts.length>=2 ? (pts[pts.length-1].crit - pts[0].crit)/(pts.length-1) : 0
+    const slopePac  = pts.length>=2 ? (pts[pts.length-1].pac  - pts[0].pac) /(pts.length-1) : 0
+    const lastDate  = byDate[byDate.length-1]?.date || ''
+    const lastCrit  = byDate[byDate.length-1]?.crit || 0
+    const lastPac   = byDate[byDate.length-1]?.pac  || 0
+    const projData  = lastDate ? Array.from({length:5},(_,i)=>({
+      date: addDay(lastDate, i+1),
+      crit: Math.max(0, Math.round(lastCrit + slopeCrit*(i+1))),
+      pac:  Math.max(0, Math.round(lastPac  + slopePac *(i+1))),
+      isProj: true,
+    })) : []
+
+    return { totalReg, totalPac, modCnt, grvCnt, critCnt, totalEsp, feedList, topU, faltasList, atrasosList, statusAt, byDate, projData }
   }, [filtered])
 
   const totalJust = useMemo(()=>Object.values(justificativas).reduce((a,v)=>a+(parseInt(v)||0),0),[justificativas])
@@ -469,7 +503,7 @@ function TabEspera({ rows }) {
     </div>
   )
 
-  const { totalReg, totalPac, modCnt, grvCnt, critCnt, totalEsp, feedList, topU, faltasList, atrasosList, statusAt } = espStats
+  const { totalReg, totalPac, modCnt, grvCnt, critCnt, totalEsp, feedList, topU, faltasList, atrasosList, statusAt, byDate, projData } = espStats
   const horasDispFim = horaFilt==='TODAS'?[]:horasDisp.filter(h=>h>parseInt(horaFilt))
 
   return (
@@ -639,37 +673,228 @@ function TabEspera({ rows }) {
           )}
         </div>
 
-        {/* Top Unidades */}
-        <div style={{ background:'rgba(255,255,255,0.025)', border:'1px solid rgba(255,255,255,0.06)', borderRadius:14, padding:'20px 22px' }}>
-          <div style={{ fontSize:13,fontWeight:700,color:C.text,marginBottom:4 }}>Top Unidades</div>
-          <div style={{ fontSize:10.5,color:C.muted,marginBottom:14 }}>Maior volume de esperas críticas</div>
-          <div style={{ display:'grid',gridTemplateColumns:'1fr 28px 28px 28px',gap:4,marginBottom:8,paddingBottom:6,borderBottom:'0.5px solid rgba(255,255,255,0.06)' }}>
-            <span style={{ fontSize:9,color:C.muted,textTransform:'uppercase',letterSpacing:'.07em' }}>Unidade</span>
-            <span style={{ fontSize:9,color:'#F43F5E',textTransform:'uppercase',textAlign:'center' }}>C</span>
-            <span style={{ fontSize:9,color:'#F97316',textTransform:'uppercase',textAlign:'center' }}>G</span>
-            <span style={{ fontSize:9,color:'#F59E0B',textTransform:'uppercase',textAlign:'center' }}>M</span>
-          </div>
-          {topU.length===0 && <div style={{ color:C.muted,fontSize:11 }}>Sem dados no período.</div>}
-          {topU.map((u,i)=>(
-            <div key={u.n} style={{ marginBottom:12 }}>
-              <div style={{ display:'grid',gridTemplateColumns:'1fr 28px 28px 28px',alignItems:'center',gap:4,marginBottom:4 }}>
-                <div style={{ display:'flex',alignItems:'center',gap:6,minWidth:0 }}>
-                  <span style={{ fontSize:10,fontWeight:800,color:i<3?C.amber:C.muted,minWidth:16,flexShrink:0 }}>#{i+1}</span>
-                  <span style={{ fontSize:11,color:C.text,fontWeight:500,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' }}>{u.n}</span>
+        {/* Médicos — redesenho moderno */}
+        {(() => {
+          const totalProb  = faltasList.length + atrasosList.length
+          const probRate   = totalReg>0 ? (totalProb/totalReg*100).toFixed(1) : '0'
+          const r=44, cx=54, cy=54, circ=2*Math.PI*r
+          const fPct  = totalProb>0 ? faltasList.length/totalProb : 0
+          const aPct  = totalProb>0 ? atrasosList.length/totalProb : 0
+          const fDash = fPct*circ, aDash = aPct*circ
+          const maxSt = statusAt[0]?.v||1
+          return (
+            <div style={{ background:'rgba(255,255,255,0.025)', border:'1px solid rgba(255,255,255,0.06)', borderRadius:14, padding:'20px 22px' }}>
+              <div style={{ fontSize:13,fontWeight:700,color:C.text,marginBottom:2 }}>Médicos — Falta e Atraso</div>
+              <div style={{ fontSize:10.5,color:C.muted,marginBottom:16 }}>Ocorrências no período · coluna ATRASO</div>
+
+              {/* Anel + métricas */}
+              <div style={{ display:'flex', alignItems:'center', gap:18, marginBottom:18 }}>
+                {/* SVG Donut */}
+                <svg width="108" height="108" viewBox="0 0 108 108" style={{ flexShrink:0 }}>
+                  {/* Track */}
+                  <circle cx={cx} cy={cy} r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="10" />
+                  {/* Faltas arc */}
+                  {faltasList.length>0 && (
+                    <circle cx={cx} cy={cy} r={r} fill="none" stroke="#F43F5E" strokeWidth="10" strokeLinecap="round"
+                      strokeDasharray={`${fDash} ${circ-fDash}`}
+                      transform={`rotate(-90 ${cx} ${cy})`} opacity=".9" />
+                  )}
+                  {/* Atrasos arc */}
+                  {atrasosList.length>0 && (
+                    <circle cx={cx} cy={cy} r={r} fill="none" stroke="#F59E0B" strokeWidth="10" strokeLinecap="round"
+                      strokeDasharray={`${aDash} ${circ-aDash}`}
+                      transform={`rotate(${-90+fPct*360} ${cx} ${cy})`} opacity=".85" />
+                  )}
+                  <text x={cx} y={cy-6} textAnchor="middle" fontSize="18" fontWeight="800" fill={totalProb>0?'#F97316':'#475569'}>{totalProb}</text>
+                  <text x={cx} y={cy+10} textAnchor="middle" fontSize="9" fill="#475569">ocorrências</text>
+                  <text x={cx} y={cy+22} textAnchor="middle" fontSize="8" fill="#334155">{probRate}% do total</text>
+                </svg>
+
+                {/* Legenda */}
+                <div style={{ flex:1, display:'flex', flexDirection:'column', gap:10 }}>
+                  {[
+                    { label:'Faltas',        value:faltasList.length,  color:C.rose,  pct: totalProb>0?Math.round(fPct*100):0 },
+                    { label:'Atrasos >31min',value:atrasosList.length, color:C.amber, pct: totalProb>0?Math.round(aPct*100):0 },
+                  ].map(k=>(
+                    <div key={k.label}>
+                      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:4 }}>
+                        <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                          <div style={{ width:8,height:8,borderRadius:'50%',background:k.color }} />
+                          <span style={{ fontSize:11,color:C.sub }}>{k.label}</span>
+                        </div>
+                        <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                          <span style={{ fontSize:11,fontWeight:700,color:k.color }}>{k.value}</span>
+                          <span style={{ fontSize:9.5,color:C.muted }}>{k.pct}%</span>
+                        </div>
+                      </div>
+                      <div style={{ background:'rgba(255,255,255,0.05)',borderRadius:3,height:4,overflow:'hidden' }}>
+                        <div style={{ height:'100%',background:k.color,width:`${k.pct}%`,borderRadius:3,transition:'width .6s' }} />
+                      </div>
+                    </div>
+                  ))}
                 </div>
-                <span style={{ fontSize:11,fontWeight:700,color:'#F43F5E',textAlign:'center' }}>{u.crit}</span>
-                <span style={{ fontSize:11,fontWeight:700,color:'#F97316',textAlign:'center' }}>{u.grv}</span>
-                <span style={{ fontSize:11,fontWeight:700,color:'#F59E0B',textAlign:'center' }}>{u.mod}</span>
               </div>
-              <div style={{ display:'flex',height:4,borderRadius:3,overflow:'hidden',gap:1 }}>
-                {u.mod>0&&<div style={{ flex:u.mod,background:'#F59E0B' }} />}
-                {u.grv>0&&<div style={{ flex:u.grv,background:'#F97316' }} />}
-                {u.crit>0&&<div style={{ flex:u.crit,background:'#F43F5E' }} />}
+
+              {/* Classificação do atraso */}
+              {statusAt.length>0 && (<>
+                <div style={{ borderTop:'0.5px solid rgba(255,255,255,0.06)', paddingTop:14, marginBottom:12 }}>
+                  <div style={{ fontSize:9.5,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.09em',marginBottom:12 }}>Classificação do Atraso</div>
+                  {statusAt.map(({k,v})=>{
+                    const cfg=getStatusCfg(k)
+                    return (
+                      <div key={k} style={{ marginBottom:10 }}>
+                        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:4 }}>
+                          <span style={{ fontSize:10,color:C.sub }}>{cfg.label}</span>
+                          <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                            <span style={{ fontSize:11,fontWeight:700,color:cfg.color }}>{v}</span>
+                            <span style={{ fontSize:9,color:C.muted }}>{maxSt>0?Math.round(v/maxSt*100):0}%</span>
+                          </div>
+                        </div>
+                        <div style={{ background:'rgba(255,255,255,0.05)',borderRadius:3,height:5,overflow:'hidden' }}>
+                          <div style={{ height:'100%',background:`linear-gradient(90deg,${cfg.color},${cfg.color}88)`,width:`${maxSt>0?(v/maxSt*100):0}%`,borderRadius:3,transition:'width .6s' }} />
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </>)}
+
+              {totalProb===0 && <div style={{ color:C.muted,fontSize:11,textAlign:'center',padding:'8px 0' }}>Nenhuma ocorrência no período.</div>}
+            </div>
+          )
+        })()}
+      </div>
+
+      {/* GRÁFICO DE TENDÊNCIA — Real / Projeção */}
+      {(() => {
+        const allChartData = trendView==='real'
+          ? byDate
+          : [...byDate, ...projData]
+        const maxCrit = Math.max(...allChartData.map(d=>d.crit||0), 1)
+        const maxPac  = Math.max(...allChartData.map(d=>d.pac||0),  1)
+        const totalDays = allChartData.length
+        const realDays  = byDate.length
+
+        // KPIs de tendência
+        const firstDay = byDate[0]
+        const lastDay  = byDate[byDate.length-1]
+        const varCrit  = byDate.length>=2 ? (lastDay.crit - firstDay.crit) : 0
+        const avgCrit  = byDate.length>0 ? Math.round(byDate.reduce((a,d)=>a+d.crit,0)/byDate.length) : 0
+        const maxDayCrit = byDate.length>0 ? byDate.reduce((a,d)=>d.crit>a.crit?d:a, byDate[0]) : null
+
+        return (
+          <div style={{ background:'rgba(255,255,255,0.025)', border:'1px solid rgba(255,255,255,0.06)', borderRadius:14, padding:'20px 24px', marginBottom:14 }}>
+            {/* Header */}
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:18 }}>
+              <div>
+                <div style={{ fontSize:13,fontWeight:700,color:C.text }}>Tendência de Esperas Críticas</div>
+                <div style={{ fontSize:10.5,color:C.muted,marginTop:3 }}>Esperas ≥1h30 por dia · baseado em TEMPO_DE_ESPERA e data_agenda</div>
+              </div>
+              {/* Toggle Real/Projeção */}
+              <div style={{ display:'flex', background:'rgba(255,255,255,0.04)', border:'0.5px solid rgba(255,255,255,0.08)', borderRadius:9, padding:3, gap:2 }}>
+                {[{key:'real',label:'Real'},{key:'proj',label:'Projeção'}].map(v=>(
+                  <button key={v.key} onClick={()=>setTrendView(v.key)} style={{
+                    padding:'5px 14px', borderRadius:6, border:'none', cursor:'pointer', fontSize:11, fontWeight:700, transition:'all .15s',
+                    background:trendView===v.key?C.amber:'transparent',
+                    color:trendView===v.key?'#1a0800':C.muted,
+                  }}>{v.label}</button>
+                ))}
               </div>
             </div>
-          ))}
-        </div>
-      </div>
+
+            {/* KPIs */}
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:10, marginBottom:18 }}>
+              {[
+                { label:trendView==='real'?'Esperas Críticas (hoje)':'Projeção amanhã', value:trendView==='real'?(lastDay?.crit??'—'):(projData[0]?.crit??'—'), color:C.rose },
+                { label:'Variação no período', value:byDate.length>=2?(varCrit>0?`+${varCrit}`:String(varCrit)):'—', color:varCrit>0?C.rose:varCrit<0?C.emerald:C.muted },
+                { label:'Média diária crítica', value:avgCrit||'—', color:C.amber },
+                { label:trendView==='real'?'Pior dia (críticas)':'Projeção +5 dias', value:trendView==='real'?(maxDayCrit?`${maxDayCrit.crit} (${maxDayCrit.date.slice(5).replace('-','/')})` :'—'):(projData[4]?.crit??'—'), color:C.orange },
+              ].map(k=>(
+                <div key={k.label} style={{ background:`${k.color}08`,border:`0.5px solid ${k.color}20`,borderRadius:10,padding:'12px 14px' }}>
+                  <div style={{ fontSize:9,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.09em',marginBottom:7 }}>{k.label}</div>
+                  <div style={{ fontSize:22,fontWeight:800,color:k.color,letterSpacing:'-.5px' }}>{k.value}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Gráfico de barras */}
+            {allChartData.length===0 ? (
+              <div style={{ textAlign:'center', padding:'32px 0', color:C.muted, fontSize:12 }}>Sem dados suficientes para o gráfico de tendência.</div>
+            ) : (
+              <>
+                <div style={{ position:'relative' }}>
+                  {/* Grid lines */}
+                  {[0,25,50,75,100].map(pct=>(
+                    <div key={pct} style={{ position:'absolute', left:0, right:0, bottom:`${pct}%`, borderTop:'0.5px solid rgba(255,255,255,0.04)', pointerEvents:'none' }}>
+                      <span style={{ fontSize:8, color:'#283650', paddingRight:4, position:'absolute', right:'100%', transform:'translateY(-50%)', whiteSpace:'nowrap' }}>
+                        {Math.round(maxCrit*pct/100)}
+                      </span>
+                    </div>
+                  ))}
+
+                  {/* Barras */}
+                  <div style={{ display:'flex', alignItems:'flex-end', gap:4, height:120, paddingLeft:24, paddingBottom:0 }}>
+                    {allChartData.map((d,i)=>{
+                      const isProj = d.isProj
+                      const hCrit = maxCrit>0?(d.crit/maxCrit)*100:0
+                      const hGrv  = maxCrit>0?(d.grv/maxCrit)*100:0
+                      return (
+                        <div key={d.date} title={`${d.date} · Crítica:${d.crit} Grave:${d.grv||0} Pac:${d.pac}`}
+                          style={{ flex:1, height:'100%', display:'flex', flexDirection:'column', justifyContent:'flex-end', gap:1, cursor:'default', opacity:isProj?.65:1 }}>
+                          {/* Grave */}
+                          {(d.grv||0)>0 && <div style={{ width:'100%', flex:d.grv, background:isProj?'rgba(249,115,22,0.3)':'#F97316', borderRadius:'2px 2px 0 0', maxHeight:`${hGrv}%`, minHeight:3,
+                            border:isProj?'1px dashed rgba(249,115,22,0.5)':'none' }} />}
+                          {/* Crítica */}
+                          <div style={{ width:'100%', height:`${Math.max(hCrit,d.crit>0?3:0)}%`,
+                            background:isProj?'rgba(244,63,94,0.25)':'linear-gradient(0deg,#F43F5E,#F97316)',
+                            borderRadius:(d.grv||0)>0?0:'3px 3px 0 0',
+                            border:isProj?'1px dashed rgba(244,63,94,0.5)':'none',
+                            minHeight:d.crit>0?3:0 }} />
+                        </div>
+                      )
+                    })}
+                  </div>
+
+                  {/* Labels de data */}
+                  <div style={{ display:'flex', gap:4, paddingLeft:24, marginTop:6, marginBottom:4 }}>
+                    {allChartData.map((d,i)=>(
+                      <div key={d.date} style={{ flex:1, textAlign:'center', fontSize:8, color:d.isProj?'rgba(245,158,11,0.5)':'#334155', fontStyle:d.isProj?'italic':'normal' }}>
+                        {d.date.slice(5).replace('-','/')}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Legenda */}
+                <div style={{ display:'flex', gap:16, marginTop:8, justifyContent:'center', flexWrap:'wrap' }}>
+                  {[
+                    {color:'#F43F5E',label:'Espera Crítica (real)',    dashed:false},
+                    {color:'#F97316',label:'Espera Grave (real)',      dashed:false},
+                    ...(trendView==='proj'?[
+                      {color:'rgba(244,63,94,0.4)',label:'Projeção crítica', dashed:true},
+                      {color:'rgba(249,115,22,0.4)',label:'Projeção grave',  dashed:true},
+                    ]:[]),
+                  ].map(l=>(
+                    <div key={l.label} style={{ display:'flex',alignItems:'center',gap:5 }}>
+                      <div style={{ width:16,height:4,borderRadius:2,background:l.color,
+                        border:l.dashed?`1px dashed ${l.color}`:'none',opacity:l.dashed?.8:1 }} />
+                      <span style={{ fontSize:9.5,color:C.muted }}>{l.label}</span>
+                    </div>
+                  ))}
+                </div>
+
+                {trendView==='proj' && (
+                  <div style={{ marginTop:12, padding:'8px 12px', background:'rgba(245,158,11,0.06)', border:'0.5px solid rgba(245,158,11,0.2)', borderRadius:8, fontSize:10.5, color:C.muted }}>
+                    <span style={{ color:C.amber, fontWeight:700 }}>Projeção </span>
+                    calculada pela média dos últimos {byDate.length} dia{byDate.length!==1?'s':''} com tendência linear aplicada.
+                    {byDate.length<3 && <span style={{ color:C.amber }}> Precisão aumenta com mais dias na base.</span>}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )
+      })()}
 
       {/* Médicos */}
       <div style={{ background:'rgba(255,255,255,0.025)', border:'1px solid rgba(255,255,255,0.06)', borderRadius:14, padding:'20px 22px' }}>
