@@ -62,7 +62,7 @@ const STATUS_CFG = {
   'ATRASO CRÍTICO': { label:'Atraso Crítico', color:'#F97316', glow:'rgba(249,115,22,0.2)' },
   'ATRASO GRAVE':   { label:'Atraso Grave',   color:'#F43F5E', glow:'rgba(244,63,94,0.2)' },
   'Falta Médica':   { label:'Médico Faltou',  color:'#3B82F6', glow:'rgba(59,130,246,0.2)' },
-  'SEM PONTO':      { label:'Sem Ponto',       color:'#64748B', glow:'rgba(100,116,139,0.2)' },
+  'SEM PONTO':      { label:'Sem Ponto',      color:'#64748B', glow:'rgba(100,116,139,0.2)' },
 }
 const getStatusCfg = s => {
   if (!s) return STATUS_CFG['OK']
@@ -75,114 +75,40 @@ const getStatusCfg = s => {
   return STATUS_CFG['OK']
 }
 
+// Classifica TEMPO_DE_ESPERA (coluna AB)
+const clsEspera = m => {
+  if (!m || m < 15) return null
+  if (m <= 30) return { label:'Espera Moderada', color:'#F59E0B', bg:'rgba(245,158,11,0.08)', border:'rgba(245,158,11,0.22)' }
+  if (m <= 89) return { label:'Espera Grave',    color:'#F97316', bg:'rgba(249,115,22,0.1)',  border:'rgba(249,115,22,0.28)' }
+  return             { label:'Espera Crítica',  color:'#F43F5E', bg:'rgba(244,63,94,0.1)',   border:'rgba(244,63,94,0.28)'  }
+}
+
 const PERIODOS = [
   {key:'HOJE',label:'Hoje'},{key:'ONTEM',label:'Ontem'},{key:'SEMANA',label:'Semana'},
   {key:'MES',label:'Mês'},{key:'ANO',label:'Ano'},{key:'PERIODO',label:'Período'},
 ]
 
 // ── ATOMS ─────────────────────────────────────────────────────────────────────
-const glass = (color='rgba(0,201,167,0.08)') => ({
-  background: color,
-  backdropFilter: 'blur(16px)',
-  WebkitBackdropFilter: 'blur(16px)',
-})
-
-function Panel({ children, accent=C.teal, style={} }) {
-  return (
-    <div style={{
-      ...glass(),
-      border: `1px solid ${accent}22`,
-      borderRadius: 16,
-      padding: 20,
-      position: 'relative',
-      overflow: 'hidden',
-      ...style,
-    }}>
-      <div style={{ position:'absolute', top:0, left:0, right:0, height:'1px', background:`linear-gradient(90deg,transparent,${accent}60,transparent)` }} />
-      {children}
-    </div>
-  )
-}
-
-function KpiCard({ icon, label, value, sub, color }) {
-  return (
-    <div style={{
-      ...glass(`${color}08`),
-      border: `1px solid ${color}20`,
-      borderRadius: 14,
-      padding: '18px 20px',
-      position: 'relative',
-      overflow: 'hidden',
-      cursor: 'default',
-    }}>
-      <div style={{ position:'absolute', top:-30, right:-30, width:80, height:80, borderRadius:'50%', background:color, opacity:.07, filter:'blur(16px)' }} />
-      <div style={{ position:'absolute', bottom:0, left:0, right:0, height:'2px', background:`linear-gradient(90deg,${color}80,transparent)` }} />
-      <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:12 }}>
-        <div style={{ width:32, height:32, borderRadius:9, background:`${color}20`, border:`1px solid ${color}40`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:16 }}>{icon}</div>
-        <span style={{ fontSize:10, fontWeight:700, color:C.muted, textTransform:'uppercase', letterSpacing:'.12em' }}>{label}</span>
-      </div>
-      <div style={{ fontSize:38, fontWeight:900, color:C.text, lineHeight:1, letterSpacing:'-1.5px', fontFamily:"'Syne',sans-serif" }}>{value}</div>
-      {sub && <div style={{ fontSize:11, color:C.sub, marginTop:8 }}>{sub}</div>}
-    </div>
-  )
-}
-
-function Bar({ label, value, max, color, unit='', rank, sub }) {
-  const raw = typeof value === 'number' ? value : 0
-  const pct = max > 0 ? Math.min(raw/max*100, 100) : 0
-  return (
-    <div style={{ marginBottom:12 }}>
-      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:5, gap:8 }}>
-        <div style={{ display:'flex', alignItems:'flex-start', gap:6, minWidth:0 }}>
-          {rank!=null && <span style={{ fontSize:10, fontWeight:800, color:rank===0?C.amber:C.muted, minWidth:18, flexShrink:0, marginTop:2 }}>#{rank+1}</span>}
-          <div style={{ minWidth:0 }}>
-            <div style={{ fontSize:12, color:C.text, fontWeight:500, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{label}</div>
-            {sub && <div style={{ fontSize:10, color:C.muted, marginTop:1 }}>{sub}</div>}
-          </div>
-        </div>
-        <span style={{ fontSize:12, fontWeight:700, color, flexShrink:0 }}>{value}{unit}</span>
-      </div>
-      <div style={{ background:'rgba(255,255,255,0.05)', borderRadius:4, height:5, overflow:'hidden' }}>
-        <div style={{ height:'100%', borderRadius:4, background:color, width:`${pct}%`, transition:'width .7s ease' }} />
-      </div>
-    </div>
-  )
-}
-
-function SecHead({ children, sub, right }) {
-  return (
-    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:16 }}>
-      <div>
-        <div style={{ fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:'.13em', color:C.sub }}>{children}</div>
-        {sub && <div style={{ fontSize:10, color:C.muted, marginTop:2 }}>{sub}</div>}
-      </div>
-      {right}
-    </div>
-  )
-}
-
-function PeriodoBar({ value, onChange, allDates, dateFrom, dateTo, onDateFrom, onDateTo, total }) {
+function PeriodoBar({ value, onChange, allDates, dateFrom, dateTo, onDateFrom, onDateTo, label }) {
   return (
     <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
       <div style={{ display:'flex', background:'rgba(255,255,255,0.03)', border:`1px solid ${C.border}`, borderRadius:10, padding:3, gap:2 }}>
         {PERIODOS.map(p => (
           <button key={p.key} onClick={()=>onChange(p.key)} style={{
             padding:'5px 12px', borderRadius:7, border:'none', cursor:'pointer', fontSize:11, fontWeight:700, transition:'all .2s',
-            background: value===p.key ? C.teal : 'transparent',
-            color: value===p.key ? '#001a15' : C.muted,
+            background: value===p.key ? C.amber : 'transparent',
+            color: value===p.key ? '#1a0800' : C.muted,
           }}>{p.label}</button>
         ))}
       </div>
-      {value==='PERIODO' && (
-        <>
-          <input type="date" value={dateFrom} min={allDates[0]||''} max={allDates[allDates.length-1]||''} onChange={e=>onDateFrom(e.target.value)}
-            style={{ background:'rgba(255,255,255,0.04)', border:`1px solid ${C.border2}`, borderRadius:8, color:C.text, fontSize:11, padding:'5px 9px', outline:'none', colorScheme:'dark' }} />
-          <span style={{ color:C.muted, fontSize:12 }}>→</span>
-          <input type="date" value={dateTo} min={allDates[0]||''} max={allDates[allDates.length-1]||''} onChange={e=>onDateTo(e.target.value)}
-            style={{ background:'rgba(255,255,255,0.04)', border:`1px solid ${C.border2}`, borderRadius:8, color:C.text, fontSize:11, padding:'5px 9px', outline:'none', colorScheme:'dark' }} />
-        </>
-      )}
-      {total !== undefined && <span style={{ fontSize:11, color:C.muted }}>{totalAg.toLocaleString('pt-BR')} registros</span>}
+      {value==='PERIODO' && (<>
+        <input type="date" value={dateFrom} min={allDates[0]||''} max={allDates[allDates.length-1]||''} onChange={e=>onDateFrom(e.target.value)}
+          style={{ background:'rgba(255,255,255,0.04)', border:`1px solid ${C.border2}`, borderRadius:8, color:C.text, fontSize:11, padding:'5px 9px', outline:'none', colorScheme:'dark' }} />
+        <span style={{ color:C.muted }}>→</span>
+        <input type="date" value={dateTo} min={allDates[0]||''} max={allDates[allDates.length-1]||''} onChange={e=>onDateTo(e.target.value)}
+          style={{ background:'rgba(255,255,255,0.04)', border:`1px solid ${C.border2}`, borderRadius:8, color:C.text, fontSize:11, padding:'5px 9px', outline:'none', colorScheme:'dark' }} />
+      </>)}
+      {label && <span style={{ fontSize:11, color:C.muted }}>{label}</span>}
     </div>
   )
 }
@@ -196,36 +122,15 @@ function SearchBar({ search, onSearch, uf, onUf, ufs, extra, showClear, onClear 
           style={{ width:'100%', background:'rgba(255,255,255,0.04)', border:`1px solid ${C.border}`, borderRadius:10, color:C.text, fontSize:12, padding:'8px 12px 8px 34px', outline:'none' }} />
       </div>
       <select value={uf} onChange={e=>onUf(e.target.value)}
-        style={{ background:'rgba(6,12,24,0.95)', border:`1px solid ${C.border}`, borderRadius:10, color:C.text, fontSize:12, padding:'8px 12px', outline:'none', cursor:'pointer' }}>
+        style={{ background:'rgba(6,8,15,0.95)', border:`1px solid ${C.border}`, borderRadius:10, color:C.text, fontSize:12, padding:'8px 12px', outline:'none', cursor:'pointer' }}>
         <option value="TODOS">Todos os Estados</option>
         {ufs.map(u=><option key={u}>{u}</option>)}
       </select>
       {extra}
-      {showClear && (
-        <button onClick={onClear} style={{ background:'rgba(244,63,94,0.08)', border:`1px solid rgba(244,63,94,0.25)`, borderRadius:10, color:C.rose, fontSize:12, padding:'8px 12px', cursor:'pointer' }}>✕ Limpar</button>
-      )}
+      {showClear && <button onClick={onClear} style={{ background:'rgba(244,63,94,0.08)', border:`1px solid rgba(244,63,94,0.25)`, borderRadius:10, color:C.rose, fontSize:12, padding:'8px 12px', cursor:'pointer' }}>✕ Limpar</button>}
     </div>
   )
 }
-
-function MiniChart({ data, color, height=56 }) {
-  if (!data.length) return null
-  const max = Math.max(...data.map(d=>d.v), 1)
-  return (
-    <div style={{ display:'flex', alignItems:'flex-end', gap:2, height }}>
-      {data.map((d,i) => (
-        <div key={i} title={`${fmtDate(d.k)}: ${d.v}`} style={{
-          flex:1, borderRadius:'2px 2px 0 0',
-          background:`linear-gradient(0deg,${color},${color}55)`,
-          height:`${Math.max((d.v/max)*100, 4)}%`,
-          opacity: .4+.6*(d.v/max),
-          transition:'height .5s ease',
-        }} />
-      ))}
-    </div>
-  )
-}
-
 
 // ── TAB AGENDAS ───────────────────────────────────────────────────────────────
 function TabAgendas({ rows }) {
@@ -236,7 +141,7 @@ function TabAgendas({ rows }) {
   const [statusFilt, setStatusFilt] = useState('TODOS')
   const [search,     setSearch]     = useState('')
 
-  const allDates = useMemo(() => [...new Set(rows.map(r=>r.data_agenda).filter(Boolean))].sort(), [rows])
+  const allDates  = useMemo(() => [...new Set(rows.map(r=>r.data_agenda).filter(Boolean))].sort(), [rows])
   const periodoFn = useMemo(() => buildFilter(allDates, periodo, dateFrom, dateTo), [allDates, periodo, dateFrom, dateTo])
   const ufs       = useMemo(() => [...new Set(rows.map(r=>r.uf).filter(Boolean))].sort(), [rows])
   const statuses  = useMemo(() => [...new Set(rows.map(r=>r.status).filter(Boolean))].sort(), [rows])
@@ -249,63 +154,324 @@ function TabAgendas({ rows }) {
     return r
   }, [rows, periodoFn, ufFilt, statusFilt, search])
 
-  const { total: totalAg, emAtrasoAg, semPontoAg, topUnidadesAg, topMedicosAg, statusBreakAg, byDateAg, atrasoPctAg, semPontoAgPct } = useMemo(() => {
-    const n      = filtered.length
-    const emAtrasoAg = filtered.filter(d=>String(d.status||'').toUpperCase().includes('ATRASO')).length
-    const semPontoAg = filtered.filter(d=>d.hr_entrada_min===null||d.hr_entrada_min===undefined).length
+  const agStats = useMemo(() => {
+    const cnt    = filtered.length
+    const atraso = filtered.filter(d=>String(d.status||'').toUpperCase().includes('ATRASO')).length
+    const sponto = filtered.filter(d=>d.hr_entrada_min===null||d.hr_entrada_min===undefined).length
     const uMap={},mMap={},sMap={}
     filtered.forEach(d=>{
       const u=d.nm_local||'?'; uMap[u]=(uMap[u]||0)+1
       const m=d.nm_medico||''; if(m) mMap[m]=(mMap[m]||0)+1
-      const s=d.status||'OK'; sMap[s]=(sMap[s]||0)+1
+      const s=d.status||'OK';  sMap[s]=(sMap[s]||0)+1
     })
-    const topUnidadesAg = Object.entries(uMap).map(([nm,v])=>({n:nm,v})).sort((a,b)=>b.v-a.v).slice(0,8)
-    const topMedicosAg  = Object.entries(mMap).map(([nm,v])=>({n:nm,v})).sort((a,b)=>b.v-a.v).slice(0,8)
-    const statusBreakAg = Object.entries(sMap).map(([k,v])=>({k,v})).sort((a,b)=>b.v-a.v)
+    const topU  = Object.entries(uMap).map(([n,v])=>({n,v})).sort((a,b)=>b.v-a.v).slice(0,8)
+    const topM  = Object.entries(mMap).map(([n,v])=>({n,v})).sort((a,b)=>b.v-a.v).slice(0,8)
+    const sBrk  = Object.entries(sMap).map(([k,v])=>({k,v})).sort((a,b)=>b.v-a.v)
     const dMap={}; filtered.forEach(d=>{ if(d.data_agenda) dMap[d.data_agenda]=(dMap[d.data_agenda]||0)+1 })
-    const byDateAg = Object.entries(dMap).map(([k,v])=>({k,v})).sort((a,b)=>a.k.localeCompare(b.k)).slice(-28)
-    return { total: n, emAtrasoAg, semPontoAg, topUnidadesAg, topMedicosAg, statusBreakAg, byDateAg,
-      atrasoPctAg: n>0?((emAtrasoAg/n)*100).toFixed(1):'0',
-      semPontoAgPct: n>0?((semPontoAg/n)*100).toFixed(1):'0' }
+    const byD   = Object.entries(dMap).map(([k,v])=>({k,v})).sort((a,b)=>a.k.localeCompare(b.k)).slice(-28)
+    return { cnt, atraso, sponto, topU, topM, sBrk, byD,
+      atrasoPct: cnt>0?((atraso/cnt)*100).toFixed(1):'0',
+      sponPct:   cnt>0?((sponto/cnt)*100).toFixed(1):'0' }
   }, [filtered])
+
+  if (!rows.length) return (
+    <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'60vh', gap:14 }}>
+      <div style={{ fontSize:44 }}>📋</div>
+      <div style={{ fontSize:18, fontWeight:700, color:C.text, fontFamily:"'Syne',sans-serif" }}>Nenhuma agenda carregada</div>
+      <div style={{ fontSize:13, color:C.muted }}>Use o botão para carregar uma planilha</div>
+    </div>
+  )
+
+  const { cnt, atraso, sponto, topU, topM, sBrk, byD, atrasoPct, sponPct } = agStats
+  const maxU = topU[0]?.v||1, maxM = topM[0]?.v||1
+
+  return (
+    <div>
+      <div style={{ marginBottom:18 }}>
+        <PeriodoBar value={periodo} onChange={p=>{setPeriodo(p);setDateFrom('');setDateTo('')}}
+          allDates={allDates} dateFrom={dateFrom} dateTo={dateTo} onDateFrom={setDateFrom} onDateTo={setDateTo}
+          label={`${cnt.toLocaleString('pt-BR')} registros`} />
+      </div>
+      <SearchBar search={search} onSearch={setSearch} uf={ufFilt} onUf={setUfFilt} ufs={ufs}
+        showClear={ufFilt!=='TODOS'||statusFilt!=='TODOS'||!!search}
+        onClear={()=>{setUfFilt('TODOS');setStatusFilt('TODOS');setSearch('')}}
+        extra={<select value={statusFilt} onChange={e=>setStatusFilt(e.target.value)}
+          style={{ background:'rgba(6,8,15,0.95)', border:`1px solid ${C.border}`, borderRadius:10, color:C.text, fontSize:12, padding:'8px 12px', outline:'none', cursor:'pointer' }}>
+          <option value="TODOS">Todos os Status</option>
+          {statuses.map(s=><option key={s}>{s}</option>)}
+        </select>} />
+
+      {/* KPIs */}
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:12, marginBottom:18 }}>
+        {[
+          { icon:'🗓', label:'Total Agendas',   value:cnt.toLocaleString('pt-BR'),          color:C.teal    },
+          { icon:'⚠️', label:'Em Atraso',       value:atraso.toLocaleString('pt-BR'),       color:C.rose,    sub:`${atrasoPct}% do total`  },
+          { icon:'🚫', label:'Sem Ponto',       value:sponto.toLocaleString('pt-BR'),       color:C.violet,  sub:`${sponPct}% do total`    },
+          { icon:'✅', label:'Com Atendimento', value:(cnt-sponto).toLocaleString('pt-BR'), color:C.emerald, sub:`${(100-Number(sponPct)).toFixed(1)}% presentes` },
+        ].map(k=>(
+          <div key={k.label} style={{ background:`${k.color}08`, border:`1px solid ${k.color}20`, borderRadius:14, padding:'18px 20px', position:'relative', overflow:'hidden' }}>
+            <div style={{ position:'absolute', top:0, left:0, right:0, height:2, background:`linear-gradient(90deg,${k.color},transparent)` }} />
+            <div style={{ fontSize:9.5, fontWeight:700, color:C.muted, textTransform:'uppercase', letterSpacing:'.1em', marginBottom:10 }}>{k.icon} {k.label}</div>
+            <div style={{ fontSize:32, fontWeight:800, color:k.color, letterSpacing:'-1px', lineHeight:1 }}>{k.value}</div>
+            {k.sub && <div style={{ fontSize:10, color:C.muted, marginTop:7 }}>{k.sub}</div>}
+          </div>
+        ))}
+      </div>
+
+      {/* Status breakdown */}
+      <div style={{ background:'rgba(255,255,255,0.025)', border:'1px solid rgba(255,255,255,0.06)', borderRadius:14, padding:'20px 22px', marginBottom:14 }}>
+        <div style={{ fontSize:11, fontWeight:700, color:C.sub, textTransform:'uppercase', letterSpacing:'.1em', marginBottom:14 }}>📊 Por Status</div>
+        <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+          {sBrk.slice(0,6).map(({k,v})=>{
+            const cfg=getStatusCfg(k)
+            const pct=cnt>0?((v/cnt)*100).toFixed(1):'0'
+            return (
+              <div key={k} style={{ display:'flex', alignItems:'center', gap:10 }}>
+                <div style={{ width:8,height:8,borderRadius:'50%',background:cfg.color,flexShrink:0 }} />
+                <div style={{ flex:1, fontSize:11, color:C.sub, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{cfg.label}</div>
+                <span style={{ fontSize:11, fontWeight:700, color:cfg.color, minWidth:36, textAlign:'right' }}>{v.toLocaleString('pt-BR')}</span>
+                <div style={{ width:80, background:'rgba(255,255,255,0.05)', borderRadius:3, height:4, overflow:'hidden', flexShrink:0 }}>
+                  <div style={{ height:'100%', background:cfg.color, width:`${(v/(sBrk[0]?.v||1))*100}%` }} />
+                </div>
+                <span style={{ fontSize:10, color:C.muted, minWidth:32, textAlign:'right' }}>{pct}%</span>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Rankings */}
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14, marginBottom:14 }}>
+        <div style={{ background:'rgba(255,255,255,0.025)', border:'1px solid rgba(255,255,255,0.06)', borderRadius:14, padding:'20px 22px' }}>
+          <div style={{ fontSize:11, fontWeight:700, color:C.sub, textTransform:'uppercase', letterSpacing:'.1em', marginBottom:14 }}>🏥 Top Unidades</div>
+          {topU.map((u,i)=>{
+            const pct=maxU>0?(u.v/maxU)*100:0
+            return (
+              <div key={u.n} style={{ marginBottom:11 }}>
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:4, gap:8 }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:6, minWidth:0 }}>
+                    <span style={{ fontSize:10, fontWeight:800, color:i===0?C.amber:C.muted, minWidth:18, flexShrink:0 }}>#{i+1}</span>
+                    <span style={{ fontSize:12, color:C.text, fontWeight:500, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{u.n}</span>
+                  </div>
+                  <span style={{ fontSize:12, fontWeight:700, color:i<3?C.amber:C.teal, flexShrink:0 }}>{u.v}</span>
+                </div>
+                <div style={{ background:'rgba(255,255,255,0.05)', borderRadius:4, height:4, overflow:'hidden' }}>
+                  <div style={{ height:'100%', borderRadius:4, background:i<3?C.amber:C.teal, width:`${pct}%`, transition:'width .7s ease' }} />
+                </div>
+              </div>
+            )
+          })}
+        </div>
+        <div style={{ background:'rgba(255,255,255,0.025)', border:'1px solid rgba(255,255,255,0.06)', borderRadius:14, padding:'20px 22px' }}>
+          <div style={{ fontSize:11, fontWeight:700, color:C.sub, textTransform:'uppercase', letterSpacing:'.1em', marginBottom:14 }}>👨‍⚕️ Top Médicos</div>
+          {topM.map((m,i)=>{
+            const pct=maxM>0?(m.v/maxM)*100:0
+            return (
+              <div key={m.n} style={{ marginBottom:11 }}>
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:4, gap:8 }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:6, minWidth:0 }}>
+                    <span style={{ fontSize:10, fontWeight:800, color:i===0?C.amber:C.muted, minWidth:18, flexShrink:0 }}>#{i+1}</span>
+                    <span style={{ fontSize:12, color:C.text, fontWeight:500, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{m.n}</span>
+                  </div>
+                  <span style={{ fontSize:12, fontWeight:700, color:i<3?C.violet:C.blue, flexShrink:0 }}>{m.v}</span>
+                </div>
+                <div style={{ background:'rgba(255,255,255,0.05)', borderRadius:4, height:4, overflow:'hidden' }}>
+                  <div style={{ height:'100%', borderRadius:4, background:i<3?C.violet:C.blue, width:`${pct}%`, transition:'width .7s ease' }} />
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Tabela */}
+      <div style={{ background:'rgba(255,255,255,0.025)', border:'1px solid rgba(255,255,255,0.06)', borderRadius:14, padding:'20px 22px' }}>
+        <div style={{ fontSize:11, fontWeight:700, color:C.sub, textTransform:'uppercase', letterSpacing:'.1em', marginBottom:14 }}>📋 Detalhamento</div>
+        <div style={{ overflowX:'auto' }}>
+          <table style={{ width:'100%', borderCollapse:'collapse', fontSize:11.5 }}>
+            <thead>
+              <tr style={{ borderBottom:'1px solid rgba(255,255,255,0.06)' }}>
+                {['Data','Unidade','Médico','Especialidade','UF','Status','Atraso'].map(h=>(
+                  <th key={h} style={{ padding:'7px 10px', textAlign:'left', color:C.muted, fontWeight:700, fontSize:9.5, textTransform:'uppercase', letterSpacing:'.07em', whiteSpace:'nowrap' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.slice(0,50).map((r,i)=>{
+                const cfg=getStatusCfg(r.status)
+                return (
+                  <tr key={i} style={{ borderBottom:'1px solid rgba(255,255,255,0.03)', transition:'background .1s' }}
+                    onMouseEnter={e=>e.currentTarget.style.background='rgba(245,158,11,0.04)'}
+                    onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                    <td style={{ padding:'8px 10px', color:C.sub, whiteSpace:'nowrap' }}>{fmtDate(r.data_agenda)}</td>
+                    <td style={{ padding:'8px 10px', color:C.text, fontWeight:600, maxWidth:180, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{r.nm_local}</td>
+                    <td style={{ padding:'8px 10px', color:C.sub, whiteSpace:'nowrap' }}>{r.nm_medico}</td>
+                    <td style={{ padding:'8px 10px', color:C.muted, maxWidth:140, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{r.ds_especialidade}</td>
+                    <td style={{ padding:'8px 10px', color:C.muted }}>{r.uf}</td>
+                    <td style={{ padding:'8px 10px' }}>
+                      <span style={{ fontSize:9.5, fontWeight:700, padding:'2px 8px', borderRadius:20, background:cfg.glow, color:cfg.color, border:`0.5px solid ${cfg.color}30` }}>{r.status||'—'}</span>
+                    </td>
+                    <td style={{ padding:'8px 10px', color:r.atraso==='SIM'?C.rose:C.emerald, fontWeight:700 }}>{r.atraso||'—'}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── TAB ESPERA ────────────────────────────────────────────────────────────────
+function TabEspera({ rows }) {
+  const [periodo,     setPeriodo]     = useState('MES')
+  const [dateFrom,    setDateFrom]    = useState('')
+  const [dateTo,      setDateTo]      = useState('')
+  const [ufFilt,      setUfFilt]      = useState('TODOS')
+  const [search,      setSearch]      = useState('')
+  const [horaFilt,    setHoraFilt]    = useState('TODAS')
+  const [horaFiltFim, setHoraFiltFim] = useState('TODAS')
+  const [unidFilt,    setUnidFilt]    = useState('')
+  const [justModal,   setJustModal]   = useState(false)
+  const [justificativas, setJustificativas] = useState({})
+  const [justLoading, setJustLoading] = useState(false)
+
+  const allDates  = useMemo(() => [...new Set(rows.map(r=>r.data_agenda).filter(Boolean))].sort(), [rows])
+  const periodoFn = useMemo(() => buildFilter(allDates, periodo, dateFrom, dateTo), [allDates, periodo, dateFrom, dateTo])
+  const ufs       = useMemo(() => [...new Set(rows.map(r=>r.uf).filter(Boolean))].sort(), [rows])
+  const dataRef   = useMemo(() => allDates.length ? allDates[allDates.length-1] : '', [allDates])
+
+  // Carrega justificativas do Supabase
+  useEffect(() => {
+    if (!dataRef) return
+    fetch(`${SB_URL}/rest/v1/justificativas_espera?select=hora,quantidade&data_ref=eq.${dataRef}&order=hora.asc`, { headers: SBH })
+      .then(r=>r.json()).then(data=>{
+        if (!Array.isArray(data)) return
+        const map={}; data.forEach(r=>{ map[r.hora]=r.quantidade })
+        setJustificativas(map)
+      }).catch(console.error)
+  }, [dataRef])
+
+  const saveJustificativa = useCallback(async (hora, qtd) => {
+    if (!dataRef) return
+    setJustLoading(true)
+    try {
+      await fetch(`${SB_URL}/rest/v1/justificativas_espera`, {
+        method:'POST',
+        headers:{ ...SBH, 'Prefer':'resolution=merge-duplicates' },
+        body: JSON.stringify({ data_ref:dataRef, hora:parseInt(hora), quantidade:parseInt(qtd)||0 }),
+      })
+      setJustificativas(prev=>({ ...prev, [hora]:parseInt(qtd)||0 }))
+    } catch(e){ console.error(e) }
+    setJustLoading(false)
+  }, [dataRef])
+
+  // Horas com esperas >= 15min para filtro e modal
+  const horasDisp = useMemo(() => {
+    const set = new Set()
+    rows.filter(d=>periodoFn(d.data_agenda) && d.tempo_espera_min>=15)
+      .forEach(d=>{
+        const h=d.hr_registro_espera_min
+        if (h===null||h===undefined) return
+        const hora=Math.floor(h/60)
+        if (hora>=0&&hora<=23) set.add(hora)
+      })
+    return [...set].sort((a,b)=>a-b)
+  }, [rows, periodoFn])
+
+  const filtered = useMemo(() => {
+    let r = rows.filter(d=>periodoFn(d.data_agenda))
+    if (ufFilt!=='TODOS') r=r.filter(d=>d.uf===ufFilt)
+    if (search) { const q=search.toLowerCase(); r=r.filter(d=>[d.nm_local,d.nm_medico,d.cidade].some(v=>String(v||'').toLowerCase().includes(q))) }
+    // Filtro por intervalo de hora — baseado em HR_REGISTRO_ESPERA
+    if (horaFilt!=='TODAS') {
+      const ini=parseInt(horaFilt,10)
+      const fim=horaFiltFim==='TODAS'?ini:parseInt(horaFiltFim,10)
+      r=r.filter(d=>{
+        const h=d.hr_registro_espera_min
+        if (h===null||h===undefined) return false
+        const hora=Math.floor(h/60)
+        return hora>=ini && hora<=fim
+      })
+    }
+    if (unidFilt) r=r.filter(d=>d.nm_local===unidFilt)
+    return r
+  }, [rows, periodoFn, ufFilt, search, horaFilt, horaFiltFim, unidFilt])
+
+  const espStats = useMemo(() => {
+    const comEsp = filtered.filter(d=>d.tempo_espera_min!==null&&d.tempo_espera_min!==undefined&&d.tempo_espera_min>=15)
+    const totalReg = filtered.length
+    const totalPac = filtered.reduce((a,d)=>a+(d.qt_pacientes_aguardando||0),0)
+    const modCnt   = comEsp.filter(d=>d.tempo_espera_min<=30).length
+    const grvCnt   = comEsp.filter(d=>d.tempo_espera_min>30&&d.tempo_espera_min<=89).length
+    const critCnt  = comEsp.filter(d=>d.tempo_espera_min>=90).length
+    const totalEsp = modCnt+grvCnt+critCnt
+
+    // Feed: agrupa por hora+unidade, pior TEMPO_DE_ESPERA
+    const grupoMap={}
+    comEsp.forEach(d=>{
+      const h=d.hr_registro_espera_min
+      if (h===null||h===undefined) return
+      const hora=Math.floor(h/60), mins=Math.floor(h%60)
+      if (hora<0||hora>23) return
+      const horaStr=String(hora).padStart(2,'0')+':'+String(mins).padStart(2,'0')
+      const unidade=d.nm_local||'Sem Unidade'
+      const key=`${horaStr}||${unidade}`
+      if (!grupoMap[key]) grupoMap[key]={ horaStr, hora, nm_local:unidade, uf:d.uf||'', cidade:d.cidade||'', maxTempo:0, totalPac:0, count:0 }
+      if (d.tempo_espera_min>grupoMap[key].maxTempo) grupoMap[key].maxTempo=d.tempo_espera_min
+      grupoMap[key].totalPac+=d.qt_pacientes_aguardando||0
+      grupoMap[key].count+=1
+    })
+    const feedList=Object.values(grupoMap).sort((a,b)=>b.maxTempo-a.maxTempo).slice(0,25)
+
+    // Top unidades
+    const uMap={}
+    comEsp.forEach(d=>{
+      const u=d.nm_local||'?'
+      if (!uMap[u]) uMap[u]={ n:u, total:0, crit:0, grv:0, mod:0 }
+      uMap[u].total++
+      const m=d.tempo_espera_min
+      if (m>=90) uMap[u].crit++; else if (m>=31) uMap[u].grv++; else uMap[u].mod++
+    })
+    const topU=Object.values(uMap).sort((a,b)=>b.crit-a.crit||b.grv-a.grv).slice(0,6)
+
+    // Médicos
+    const faltasList  = filtered.filter(d=>String(d.atraso||'').toUpperCase()==='FALTA')
+    const atrasosList = filtered.filter(d=>{
+      if (String(d.atraso||'').toUpperCase()!=='SIM') return false
+      const t=d.tempo_atraso_min; return t!==null&&t!==undefined&&Math.abs(t)>31
+    })
+    const sMap={}
+    atrasosList.forEach(d=>{ const s=d.status||'Sem Status'; sMap[s]=(sMap[s]||0)+1 })
+    const statusAt=Object.entries(sMap).map(([k,v])=>({k,v})).sort((a,b)=>b.v-a.v)
+
+    return { totalReg, totalPac, modCnt, grvCnt, critCnt, totalEsp, feedList, topU, faltasList, atrasosList, statusAt }
+  }, [filtered])
+
+  const totalJust = useMemo(()=>Object.values(justificativas).reduce((a,v)=>a+(parseInt(v)||0),0),[justificativas])
+  const metaPct   = espStats.totalEsp>0?Math.min(Math.round((totalJust/espStats.totalEsp)*100),100):0
+  const metaColor = metaPct>=80?C.emerald:metaPct>=50?C.amber:C.rose
 
   if (!rows.length) return (
     <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'60vh', gap:14 }}>
       <div style={{ fontSize:44 }}>⏱️</div>
       <div style={{ fontSize:18, fontWeight:700, color:C.text, fontFamily:"'Syne',sans-serif" }}>Nenhum dado de espera</div>
-      <div style={{ fontSize:13, color:C.muted }}>Use o menu lateral para carregar uma planilha</div>
+      <div style={{ fontSize:13, color:C.muted }}>Use o botão para carregar uma planilha</div>
     </div>
   )
 
-  const {
-    totalRegs: total, totalPac, moderada, grave, critico, totalEsp,
-    feed, topUnidadesAg, faltas, atrasosReais, statusAtraso
-  } = stats
-
-  const fmtMin = m => {
-    if (!m) return '—'
-    const abs = Math.round(Math.abs(m))
-    if (abs < 60) return `${abs}min`
-    return `${Math.floor(abs/60)}h${abs%60>0?` ${abs%60}m`:''}`
-  }
-
-  // Horas disponíveis para o filtro FIM (só >= hora início)
-  const horasDispFim = horaFilt === 'TODAS' ? [] : horasDisp.filter(h => h >= parseInt(horaFilt))
+  const { totalReg, totalPac, modCnt, grvCnt, critCnt, totalEsp, feedList, topU, faltasList, atrasosList, statusAt } = espStats
+  const horasDispFim = horaFilt==='TODAS'?[]:horasDisp.filter(h=>h>parseInt(horaFilt))
 
   return (
     <div>
-      {/* Modal de Justificativas */}
+      {/* Modal Justificativas */}
       {justModal && (
-        <div style={{
-          position:'fixed', inset:0, zIndex:200,
-          background:'rgba(0,0,0,0.7)', backdropFilter:'blur(4px)',
-          display:'flex', alignItems:'center', justifyContent:'center',
-        }} onClick={()=>setJustModal(false)}>
-          <div style={{
-            background:'#0A0D16', border:`1px solid rgba(245,158,11,0.3)`,
-            borderRadius:16, padding:'24px 28px', minWidth:360, maxWidth:460,
-            boxShadow:'0 24px 80px rgba(0,0,0,0.6)',
-          }} onClick={e=>e.stopPropagation()}>
+        <div style={{ position:'fixed', inset:0, zIndex:200, background:'rgba(0,0,0,0.75)', backdropFilter:'blur(4px)', display:'flex', alignItems:'center', justifyContent:'center' }}
+          onClick={()=>setJustModal(false)}>
+          <div style={{ background:'#0A0D16', border:`1px solid rgba(245,158,11,0.3)`, borderRadius:16, padding:'24px 28px', minWidth:360, maxWidth:460, boxShadow:'0 24px 80px rgba(0,0,0,0.6)' }}
+            onClick={e=>e.stopPropagation()}>
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:20 }}>
               <div>
                 <div style={{ fontSize:14, fontWeight:700, color:C.text }}>Registrar Justificativas</div>
@@ -313,10 +479,8 @@ function TabAgendas({ rows }) {
               </div>
               <button onClick={()=>setJustModal(false)} style={{ background:'transparent', border:'none', color:C.muted, fontSize:18, cursor:'pointer' }}>✕</button>
             </div>
-
-            {/* Progresso atual */}
-            <div style={{ background:'rgba(255,255,255,0.03)', border:`0.5px solid rgba(255,255,255,0.07)`, borderRadius:10, padding:'12px 14px', marginBottom:18 }}>
-              <div style={{ display:'flex', justifyContent:'space-between', marginBottom:8 }}>
+            <div style={{ background:'rgba(255,255,255,0.03)', border:'0.5px solid rgba(255,255,255,0.07)', borderRadius:10, padding:'12px 14px', marginBottom:18 }}>
+              <div style={{ display:'flex', justifyContent:'space-between', marginBottom:7 }}>
                 <span style={{ fontSize:11, color:C.muted }}>Progresso atual</span>
                 <span style={{ fontSize:12, fontWeight:700, color:metaColor }}>{metaPct}% de 80%</span>
               </div>
@@ -328,208 +492,138 @@ function TabAgendas({ rows }) {
                 <span style={{ fontSize:10, color:C.muted }}>de {totalEsp} esperas</span>
               </div>
             </div>
-
-            {/* Inputs por hora */}
             <div style={{ display:'flex', flexDirection:'column', gap:8, maxHeight:280, overflowY:'auto' }}>
-              {horasDisp.length === 0 && <div style={{ color:C.muted, fontSize:12, textAlign:'center', padding:'16px 0' }}>Sem horas disponíveis no período.</div>}
-              {horasDisp.map(h => (
+              {horasDisp.length===0 && <div style={{ color:C.muted, fontSize:12, textAlign:'center', padding:'16px 0' }}>Sem horas disponíveis.</div>}
+              {horasDisp.map(h=>(
                 <div key={h} style={{ display:'flex', alignItems:'center', gap:10 }}>
-                  <div style={{ width:44, fontSize:12, fontWeight:700, color:C.sub, fontFamily:'monospace', flexShrink:0 }}>
-                    {String(h).padStart(2,'0')}:00
-                  </div>
+                  <div style={{ width:44, fontSize:12, fontWeight:700, color:C.sub, fontFamily:'monospace', flexShrink:0 }}>{String(h).padStart(2,'0')}:00</div>
                   <div style={{ flex:1, background:'rgba(255,255,255,0.04)', borderRadius:6, height:4, overflow:'hidden' }}>
-                    <div style={{
-                      height:'100%', borderRadius:6, background:C.amber, transition:'width .3s',
-                      width: `${Math.min(((justificativas[h]||0) / Math.max(totalEsp/24,1))*100, 100)}%`
-                    }} />
+                    <div style={{ height:'100%', borderRadius:6, background:C.amber, transition:'width .3s', width:`${Math.min(((justificativas[h]||0)/Math.max(totalEsp/Math.max(horasDisp.length,1),1))*100,100)}%` }} />
                   </div>
-                  <input
-                    type="number" min="0"
-                    value={justificativas[h] || ''}
-                    placeholder="0"
-                    onChange={e => saveJustificativa(h, e.target.value)}
-                    style={{
-                      width:60, background:'rgba(255,255,255,0.05)',
-                      border:`0.5px solid ${justificativas[h]>0?'rgba(245,158,11,0.4)':'rgba(255,255,255,0.1)'}`,
-                      borderRadius:7, color:justificativas[h]>0?C.amber:C.text,
-                      fontSize:12, fontWeight:700, padding:'5px 8px', outline:'none', textAlign:'center',
-                    }}
-                  />
-                  <span style={{ fontSize:10, color:C.muted, minWidth:28 }}>just.</span>
+                  <input type="number" min="0" value={justificativas[h]||''} placeholder="0"
+                    onChange={e=>saveJustificativa(h,e.target.value)}
+                    style={{ width:60, background:'rgba(255,255,255,0.05)', border:`0.5px solid ${justificativas[h]>0?'rgba(245,158,11,0.4)':'rgba(255,255,255,0.1)'}`, borderRadius:7, color:justificativas[h]>0?C.amber:C.text, fontSize:12, fontWeight:700, padding:'5px 8px', outline:'none', textAlign:'center' }} />
+                  <span style={{ fontSize:10, color:C.muted, minWidth:24 }}>just.</span>
                 </div>
               ))}
             </div>
-
             {justLoading && <div style={{ textAlign:'center', marginTop:12, fontSize:11, color:C.amber }}>Salvando…</div>}
           </div>
         </div>
       )}
 
-      {/* Periodo + Filtros */}
+      {/* Período */}
       <div style={{ marginBottom:16 }}>
         <PeriodoBar value={periodo} onChange={p=>{setPeriodo(p);setDateFrom('');setDateTo('');setUnidFilt('');setHoraFilt('TODAS');setHoraFiltFim('TODAS')}}
-          allDates={allDates} dateFrom={dateFrom} dateTo={dateTo}
-          onDateFrom={setDateFrom} onDateTo={setDateTo} total={total} />
+          allDates={allDates} dateFrom={dateFrom} dateTo={dateTo} onDateFrom={setDateFrom} onDateTo={setDateTo}
+          label={`${totalReg.toLocaleString('pt-BR')} registros`} />
       </div>
       <SearchBar search={search} onSearch={setSearch} uf={ufFilt} onUf={setUfFilt} ufs={ufs}
         showClear={ufFilt!=='TODOS'||!!search} onClear={()=>{setUfFilt('TODOS');setSearch('')}} />
 
-      {/* BARRA DE META — Progresso vs Meta 80% */}
-      <div style={{
-        background:'rgba(255,255,255,0.025)', border:'1px solid rgba(255,255,255,0.06)',
-        borderRadius:14, padding:'16px 20px', marginBottom:14,
-      }}>
+      {/* BARRA DE META */}
+      <div style={{ background:'rgba(255,255,255,0.025)', border:'1px solid rgba(255,255,255,0.06)', borderRadius:14, padding:'16px 20px', marginBottom:14 }}>
         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10 }}>
-          <div style={{ fontSize:11, fontWeight:700, color:C.muted, textTransform:'uppercase', letterSpacing:'.1em' }}>
-            Progresso vs Meta 80% — Justificativas de Retorno
-          </div>
-          <button onClick={()=>setJustModal(true)} style={{
-            background:`rgba(245,158,11,0.1)`, border:`0.5px solid rgba(245,158,11,0.3)`,
-            borderRadius:8, color:C.amber, fontSize:11, fontWeight:700, padding:'5px 12px', cursor:'pointer',
-          }}>
-            + Registrar
-          </button>
+          <div style={{ fontSize:11, fontWeight:700, color:C.muted, textTransform:'uppercase', letterSpacing:'.1em' }}>Progresso vs Meta 80% — Justificativas de Retorno</div>
+          <button onClick={()=>setJustModal(true)} style={{ background:'rgba(245,158,11,0.1)', border:'0.5px solid rgba(245,158,11,0.3)', borderRadius:8, color:C.amber, fontSize:11, fontWeight:700, padding:'5px 12px', cursor:'pointer' }}>+ Registrar</button>
         </div>
-
-        {/* Barra de progresso */}
-        <div style={{ position:'relative', marginBottom:10 }}>
+        <div style={{ position:'relative', marginBottom:22 }}>
           <div style={{ background:'rgba(255,255,255,0.06)', borderRadius:6, height:12, overflow:'hidden', position:'relative' }}>
-            <div style={{
-              height:'100%', borderRadius:6, transition:'width .6s ease',
-              width:`${metaPct}%`,
-              background: metaPct >= 80
-                ? 'linear-gradient(90deg,#10B981,#059669)'
-                : metaPct >= 50
-                ? 'linear-gradient(90deg,#F59E0B,#D97706)'
-                : 'linear-gradient(90deg,#F43F5E,#DC2626)',
-            }} />
-            {/* Linha da meta 80% */}
+            <div style={{ height:'100%', borderRadius:6, width:`${metaPct}%`, transition:'width .6s ease',
+              background:metaPct>=80?'linear-gradient(90deg,#10B981,#059669)':metaPct>=50?'linear-gradient(90deg,#F59E0B,#D97706)':'linear-gradient(90deg,#F43F5E,#DC2626)' }} />
             <div style={{ position:'absolute', top:0, bottom:0, left:'80%', width:2, background:'rgba(255,255,255,0.4)' }} />
           </div>
-          <div style={{ position:'absolute', top:16, left:'80%', transform:'translateX(-50%)', fontSize:9, color:C.muted, whiteSpace:'nowrap' }}>
-            ← Meta 80%
-          </div>
+          <div style={{ position:'absolute', top:14, left:'80%', transform:'translateX(-50%)', fontSize:9, color:C.muted, whiteSpace:'nowrap' }}>← Meta 80%</div>
         </div>
-
-        {/* 3 cards de status */}
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:10, marginTop:18 }}>
+        {/* 3 cards classificação */}
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:10 }}>
           {[
-            { label:'Espera Moderada', value:moderada,  sub:'15 – 30 min',   color:'#F59E0B' },
-            { label:'Espera Grave',    value:grave,     sub:'31 min – 1h29', color:'#F97316' },
-            { label:'Espera Crítica',  value:critico,   sub:'acima de 1h30', color:'#F43F5E' },
-          ].map(k => (
-            <div key={k.label} style={{
-              background:`${k.color}08`, border:`1px solid ${k.color}22`,
-              borderRadius:11, padding:'12px 16px', position:'relative', overflow:'hidden',
-            }}>
+            { label:'Espera Moderada', value:modCnt,  sub:'15 – 30 min',   color:'#F59E0B' },
+            { label:'Espera Grave',    value:grvCnt,  sub:'31 min – 1h29', color:'#F97316' },
+            { label:'Espera Crítica',  value:critCnt, sub:'acima de 1h30', color:'#F43F5E' },
+          ].map(k=>(
+            <div key={k.label} style={{ background:`${k.color}08`, border:`1px solid ${k.color}22`, borderRadius:11, padding:'12px 16px', position:'relative', overflow:'hidden' }}>
               <div style={{ position:'absolute', top:0, left:0, right:0, height:2, background:k.color }} />
-              <div style={{ fontSize:9.5, fontWeight:700, color:k.color, textTransform:'uppercase', letterSpacing:'.09em', marginBottom:10 }}>{k.label}</div>
-              <div style={{ fontSize:26, fontWeight:800, color:k.color, letterSpacing:'-1px', lineHeight:1 }}>
-                {k.value.toLocaleString('pt-BR')}
-              </div>
+              <div style={{ fontSize:9.5, fontWeight:700, color:k.color, textTransform:'uppercase', letterSpacing:'.09em', marginBottom:8 }}>{k.label}</div>
+              <div style={{ fontSize:26, fontWeight:800, color:k.color, letterSpacing:'-1px', lineHeight:1 }}>{k.value.toLocaleString('pt-BR')}</div>
               <div style={{ fontSize:10, color:C.muted, marginTop:6 }}>{k.sub}</div>
             </div>
           ))}
         </div>
-
-        {/* Resumo de justificativas */}
         <div style={{ display:'flex', alignItems:'center', gap:16, marginTop:12, paddingTop:12, borderTop:'0.5px solid rgba(255,255,255,0.05)' }}>
           <span style={{ fontSize:11, color:C.muted }}>
-            <span style={{ color:metaColor, fontWeight:700 }}>{totalJust}</span> justificativas registradas
-            de <span style={{ color:C.sub, fontWeight:600 }}>{totalEsp}</span> esperas ≥ 15min
+            <span style={{ color:metaColor, fontWeight:700 }}>{totalJust}</span> justificativas de{' '}
+            <span style={{ color:C.sub, fontWeight:600 }}>{totalEsp}</span> esperas ≥ 15min
           </span>
-          <span style={{ fontSize:13, fontWeight:800, color:metaColor, marginLeft:'auto' }}>{metaPct}%</span>
+          <span style={{ fontSize:14, fontWeight:800, color:metaColor, marginLeft:'auto' }}>{metaPct}%</span>
           <span style={{ fontSize:10, color:C.muted }}>meta: 80%</span>
         </div>
       </div>
 
-      {/* ROW 2 — Feed + Top Unidades */}
-      <div style={{ display:'grid', gridTemplateColumns:'1fr 340px', gap:14, marginBottom:14 }}>
-
-        {/* FEED */}
+      {/* FEED + TOP UNIDADES */}
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 320px', gap:14, marginBottom:14 }}>
+        {/* Feed */}
         <div style={{ background:'rgba(255,255,255,0.025)', border:'1px solid rgba(255,255,255,0.06)', borderRadius:14, padding:'20px 22px' }}>
           {unidFilt && (
             <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:12, padding:'8px 12px', background:'rgba(245,158,11,0.08)', border:'0.5px solid rgba(245,158,11,0.25)', borderRadius:9 }}>
-              <div style={{ width:6, height:6, borderRadius:'50%', background:C.amber, flexShrink:0 }} />
-              <span style={{ fontSize:11, color:C.amber, flex:1, fontWeight:600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                Filtrando: {unidFilt}
-              </span>
+              <div style={{ width:6,height:6,borderRadius:'50%',background:C.amber,flexShrink:0 }} />
+              <span style={{ fontSize:11, color:C.amber, flex:1, fontWeight:600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>Filtrando: {unidFilt}</span>
               <button onClick={()=>setUnidFilt('')} style={{ background:'transparent', border:'none', color:C.muted, cursor:'pointer', fontSize:12 }}>✕</button>
             </div>
           )}
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:16 }}>
             <div>
               <div style={{ fontSize:13, fontWeight:700, color:C.text }}>Feed de Esperas por Hora</div>
-              <div style={{ fontSize:10.5, color:C.muted, marginTop:3 }}>
-                TEMPO_DE_ESPERA · hora via HR_REGISTRO_ESPERA · {unidFilt ? 'clique em ✕ para limpar' : 'clique na unidade para filtrar'}
-              </div>
+              <div style={{ fontSize:10.5, color:C.muted, marginTop:3 }}>TEMPO_DE_ESPERA · hora via HR_REGISTRO_ESPERA · {unidFilt?'clique ✕ para limpar':'clique na unidade para filtrar'}</div>
             </div>
-            {/* Filtro de hora — intervalo */}
+            {/* Filtro hora intervalo */}
             <div style={{ display:'flex', alignItems:'center', gap:6, flexShrink:0 }}>
-              <select value={horaFilt} onChange={e=>{setHoraFilt(e.target.value);setHoraFiltFim('TODAS');setUnidFilt('')}} style={{
-                background:'rgba(255,255,255,0.05)', border:`0.5px solid rgba(245,158,11,0.2)`,
-                borderRadius:8, color:C.text, fontSize:11, padding:'5px 8px', outline:'none', cursor:'pointer',
-              }}>
+              <select value={horaFilt} onChange={e=>{setHoraFilt(e.target.value);setHoraFiltFim('TODAS');setUnidFilt('')}}
+                style={{ background:'rgba(255,255,255,0.05)', border:'0.5px solid rgba(245,158,11,0.2)', borderRadius:8, color:C.text, fontSize:11, padding:'5px 8px', outline:'none', cursor:'pointer' }}>
                 <option value="TODAS">Todas</option>
-                {horasDisp.map(h => <option key={h} value={h}>{String(h).padStart(2,'0')}:00</option>)}
+                {horasDisp.map(h=><option key={h} value={h}>{String(h).padStart(2,'0')}:00</option>)}
               </select>
-              {horaFilt !== 'TODAS' && (<>
+              {horaFilt!=='TODAS' && (<>
                 <span style={{ fontSize:11, color:C.muted }}>→</span>
-                <select value={horaFiltFim} onChange={e=>setHoraFiltFim(e.target.value)} style={{
-                  background:'rgba(255,255,255,0.05)', border:`0.5px solid rgba(245,158,11,0.2)`,
-                  borderRadius:8, color:C.text, fontSize:11, padding:'5px 8px', outline:'none', cursor:'pointer',
-                }}>
-                  <option value="TODAS">{String(horaFilt).padStart(2,'0')}:00 (só)</option>
-                  {horasDispFim.filter(h=>h>parseInt(horaFilt)).map(h => <option key={h} value={h}>{String(h).padStart(2,'0')}:00</option>)}
+                <select value={horaFiltFim} onChange={e=>setHoraFiltFim(e.target.value)}
+                  style={{ background:'rgba(255,255,255,0.05)', border:'0.5px solid rgba(245,158,11,0.2)', borderRadius:8, color:C.text, fontSize:11, padding:'5px 8px', outline:'none', cursor:'pointer' }}>
+                  <option value="TODAS">{String(horaFilt).padStart(2,'0')}:00 só</option>
+                  {horasDispFim.map(h=><option key={h} value={h}>{String(h).padStart(2,'0')}:00</option>)}
                 </select>
               </>)}
-              <div style={{ display:'flex', gap:8, marginLeft:4 }}>
-                {[{color:'#F59E0B',l:'M'},{color:'#F97316',l:'G'},{color:'#F43F5E',l:'C'}].map(l=>(
-                  <div key={l.l} style={{ display:'flex', alignItems:'center', gap:3 }}>
-                    <div style={{ width:6, height:6, borderRadius:'50%', background:l.color }} />
-                    <span style={{ fontSize:9, color:C.muted }}>{l.l}</span>
-                  </div>
-                ))}
-              </div>
             </div>
           </div>
-
-          {feed.length === 0 ? (
-            <div style={{ textAlign:'center', padding:'32px 0', color:C.muted, fontSize:12 }}>
-              Sem esperas ≥ 15min no período/filtro selecionado.
-            </div>
+          {feedList.length===0 ? (
+            <div style={{ textAlign:'center', padding:'32px 0', color:C.muted, fontSize:12 }}>Sem esperas ≥ 15min no período/filtro selecionado.</div>
           ) : (
             <div style={{ display:'flex', flexDirection:'column', gap:5, maxHeight:440, overflowY:'auto' }}>
-              {feed.map((item, i) => {
-                const cls = CLS_ESPERA.get(item.maxTempo)
-                const isCrit = item.maxTempo >= 90
-                const isGrv  = item.maxTempo >= 31 && item.maxTempo < 90
-                const isSelected = unidFilt === item.nm_local
+              {feedList.map((item,i)=>{
+                const cls    = clsEspera(item.maxTempo)
+                const isCrit = item.maxTempo>=90
+                const isGrv  = item.maxTempo>=31&&item.maxTempo<90
+                const isSel  = unidFilt===item.nm_local
                 return (
-                  <div key={i}
-                    onClick={() => setUnidFilt(isSelected ? '' : item.nm_local)}
-                    style={{
-                      display:'flex', alignItems:'center', gap:12,
-                      padding:'10px 14px', borderRadius:10, cursor:'pointer',
-                      background: isSelected ? `${cls.color}18` : isCrit ? 'rgba(244,63,94,0.06)' : isGrv ? 'rgba(249,115,22,0.04)' : 'rgba(255,255,255,0.02)',
-                      border: isSelected ? `1px solid ${cls.color}55` : `0.5px solid ${i<3?cls.border:'rgba(255,255,255,0.05)'}`,
-                      transition:'all .15s',
-                    }}
-                    onMouseEnter={e=>{ if(!isSelected) e.currentTarget.style.background=cls.bg }}
-                    onMouseLeave={e=>{ if(!isSelected) e.currentTarget.style.background=isCrit?'rgba(244,63,94,0.06)':isGrv?'rgba(249,115,22,0.04)':'rgba(255,255,255,0.02)' }}
+                  <div key={i} onClick={()=>setUnidFilt(isSel?'':item.nm_local)} style={{
+                    display:'flex', alignItems:'center', gap:12, padding:'10px 14px', borderRadius:10, cursor:'pointer',
+                    background:isSel?`${cls.color}18`:isCrit?'rgba(244,63,94,0.06)':isGrv?'rgba(249,115,22,0.04)':'rgba(255,255,255,0.02)',
+                    border:isSel?`1px solid ${cls.color}55`:`0.5px solid ${i<3?cls.border:'rgba(255,255,255,0.05)'}`,
+                    transition:'all .15s',
+                  }}
+                    onMouseEnter={e=>{ if(!isSel) e.currentTarget.style.background=cls.bg }}
+                    onMouseLeave={e=>{ if(!isSel) e.currentTarget.style.background=isCrit?'rgba(244,63,94,0.06)':isGrv?'rgba(249,115,22,0.04)':'rgba(255,255,255,0.02)' }}
                   >
-                    <div style={{ width:8, height:8, borderRadius:'50%', background:cls.color, flexShrink:0, boxShadow:isCrit?`0 0 8px ${cls.color}`:'none' }} />
-                    <div style={{ fontFamily:'monospace', fontSize:13, fontWeight:700, color:C.sub, flexShrink:0, minWidth:44 }}>{item.horaStr}</div>
-                    <div style={{ flex:1, minWidth:0 }}>
-                      <div style={{ fontSize:12, fontWeight:600, color:C.text, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{item.nm_local}</div>
-                      <div style={{ fontSize:10, color:C.muted, marginTop:2 }}>{[item.cidade, item.uf].filter(Boolean).join(' · ')}</div>
+                    <div style={{ width:8,height:8,borderRadius:'50%',background:cls.color,flexShrink:0,boxShadow:isCrit?`0 0 8px ${cls.color}`:'none' }} />
+                    <div style={{ fontFamily:'monospace',fontSize:13,fontWeight:700,color:C.sub,flexShrink:0,minWidth:44 }}>{item.horaStr}</div>
+                    <div style={{ flex:1,minWidth:0 }}>
+                      <div style={{ fontSize:12,fontWeight:600,color:C.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' }}>{item.nm_local}</div>
+                      <div style={{ fontSize:10,color:C.muted,marginTop:2 }}>{[item.cidade,item.uf].filter(Boolean).join(' · ')}</div>
                     </div>
-                    <div style={{ textAlign:'center', flexShrink:0, minWidth:42 }}>
-                      <div style={{ fontSize:12, fontWeight:700, color:'#0EA5E9' }}>{item.totalPac>0?item.totalPac:'—'}</div>
-                      <div style={{ fontSize:9, color:C.muted }}>pac.</div>
+                    <div style={{ textAlign:'center',flexShrink:0,minWidth:42 }}>
+                      <div style={{ fontSize:12,fontWeight:700,color:'#0EA5E9' }}>{item.totalPac>0?item.totalPac:'—'}</div>
+                      <div style={{ fontSize:9,color:C.muted }}>pac.</div>
                     </div>
-                    <div style={{ fontSize:15, fontWeight:900, color:cls.color, flexShrink:0, minWidth:52, textAlign:'right' }}>{fmtMin(item.maxTempo)}</div>
-                    <span style={{ fontSize:9.5, fontWeight:700, padding:'3px 9px', borderRadius:20, background:cls.bg, color:cls.color, border:`0.5px solid ${cls.border}`, whiteSpace:'nowrap', flexShrink:0 }}>{cls.label}</span>
+                    <div style={{ fontSize:15,fontWeight:900,color:cls.color,flexShrink:0,minWidth:52,textAlign:'right' }}>{fmtMin(item.maxTempo)}</div>
+                    <span style={{ fontSize:9.5,fontWeight:700,padding:'3px 9px',borderRadius:20,background:cls.bg,color:cls.color,border:`0.5px solid ${cls.border}`,whiteSpace:'nowrap',flexShrink:0 }}>{cls.label}</span>
                   </div>
                 )
               })}
@@ -537,81 +631,77 @@ function TabAgendas({ rows }) {
           )}
         </div>
 
-        {/* TOP UNIDADES — tabela rica */}
+        {/* Top Unidades */}
         <div style={{ background:'rgba(255,255,255,0.025)', border:'1px solid rgba(255,255,255,0.06)', borderRadius:14, padding:'20px 22px' }}>
-          <div style={{ fontSize:13, fontWeight:700, color:C.text, marginBottom:4 }}>Top Unidades</div>
-          <div style={{ fontSize:10.5, color:C.muted, marginBottom:14 }}>Maior volume de esperas críticas</div>
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 28px 28px 28px', gap:4, marginBottom:8, paddingBottom:6, borderBottom:'0.5px solid rgba(255,255,255,0.06)' }}>
-            <span style={{ fontSize:9, color:C.muted, textTransform:'uppercase', letterSpacing:'.07em' }}>Unidade</span>
-            <span style={{ fontSize:9, color:'#F43F5E', textTransform:'uppercase', textAlign:'center' }}>C</span>
-            <span style={{ fontSize:9, color:'#F97316', textTransform:'uppercase', textAlign:'center' }}>G</span>
-            <span style={{ fontSize:9, color:'#F59E0B', textTransform:'uppercase', textAlign:'center' }}>M</span>
+          <div style={{ fontSize:13,fontWeight:700,color:C.text,marginBottom:4 }}>Top Unidades</div>
+          <div style={{ fontSize:10.5,color:C.muted,marginBottom:14 }}>Maior volume de esperas críticas</div>
+          <div style={{ display:'grid',gridTemplateColumns:'1fr 28px 28px 28px',gap:4,marginBottom:8,paddingBottom:6,borderBottom:'0.5px solid rgba(255,255,255,0.06)' }}>
+            <span style={{ fontSize:9,color:C.muted,textTransform:'uppercase',letterSpacing:'.07em' }}>Unidade</span>
+            <span style={{ fontSize:9,color:'#F43F5E',textTransform:'uppercase',textAlign:'center' }}>C</span>
+            <span style={{ fontSize:9,color:'#F97316',textTransform:'uppercase',textAlign:'center' }}>G</span>
+            <span style={{ fontSize:9,color:'#F59E0B',textTransform:'uppercase',textAlign:'center' }}>M</span>
           </div>
-          {topUnidadesAg.length === 0 && <div style={{ color:C.muted, fontSize:11 }}>Sem dados no período.</div>}
-          {topUnidadesAg.map((u,i) => (
+          {topU.length===0 && <div style={{ color:C.muted,fontSize:11 }}>Sem dados no período.</div>}
+          {topU.map((u,i)=>(
             <div key={u.n} style={{ marginBottom:12 }}>
-              <div style={{ display:'grid', gridTemplateColumns:'1fr 28px 28px 28px', alignItems:'center', gap:4, marginBottom:4 }}>
-                <div style={{ display:'flex', alignItems:'center', gap:6, minWidth:0 }}>
-                  <span style={{ fontSize:10, fontWeight:800, color:i<3?'#F59E0B':C.muted, minWidth:16, flexShrink:0 }}>#{i+1}</span>
-                  <span style={{ fontSize:11, color:C.text, fontWeight:500, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{u.n}</span>
+              <div style={{ display:'grid',gridTemplateColumns:'1fr 28px 28px 28px',alignItems:'center',gap:4,marginBottom:4 }}>
+                <div style={{ display:'flex',alignItems:'center',gap:6,minWidth:0 }}>
+                  <span style={{ fontSize:10,fontWeight:800,color:i<3?C.amber:C.muted,minWidth:16,flexShrink:0 }}>#{i+1}</span>
+                  <span style={{ fontSize:11,color:C.text,fontWeight:500,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap' }}>{u.n}</span>
                 </div>
-                <span style={{ fontSize:11, fontWeight:700, color:'#F43F5E', textAlign:'center' }}>{u.criticos}</span>
-                <span style={{ fontSize:11, fontWeight:700, color:'#F97316', textAlign:'center' }}>{u.graves}</span>
-                <span style={{ fontSize:11, fontWeight:700, color:'#F59E0B', textAlign:'center' }}>{u.moderadas}</span>
+                <span style={{ fontSize:11,fontWeight:700,color:'#F43F5E',textAlign:'center' }}>{u.crit}</span>
+                <span style={{ fontSize:11,fontWeight:700,color:'#F97316',textAlign:'center' }}>{u.grv}</span>
+                <span style={{ fontSize:11,fontWeight:700,color:'#F59E0B',textAlign:'center' }}>{u.mod}</span>
               </div>
-              <div style={{ display:'flex', height:4, borderRadius:3, overflow:'hidden', gap:1 }}>
-                {u.moderadas>0&&<div style={{ flex:u.moderadas, background:'#F59E0B' }} />}
-                {u.graves>0&&<div style={{ flex:u.graves, background:'#F97316' }} />}
-                {u.criticos>0&&<div style={{ flex:u.criticos, background:'#F43F5E' }} />}
+              <div style={{ display:'flex',height:4,borderRadius:3,overflow:'hidden',gap:1 }}>
+                {u.mod>0&&<div style={{ flex:u.mod,background:'#F59E0B' }} />}
+                {u.grv>0&&<div style={{ flex:u.grv,background:'#F97316' }} />}
+                {u.crit>0&&<div style={{ flex:u.crit,background:'#F43F5E' }} />}
               </div>
             </div>
           ))}
         </div>
       </div>
 
-      {/* ROW 3 — Médicos complemento */}
+      {/* Médicos */}
       <div style={{ background:'rgba(255,255,255,0.025)', border:'1px solid rgba(255,255,255,0.06)', borderRadius:14, padding:'20px 22px' }}>
-        <div style={{ fontSize:13, fontWeight:700, color:C.text, marginBottom:4 }}>Médicos — Falta e Atraso</div>
-        <div style={{ fontSize:10.5, color:C.muted, marginBottom:16 }}>Complemento · coluna ATRASO da base{unidFilt?` · ${unidFilt}`:''}</div>
-        <div style={{ display:'grid', gridTemplateColumns:'120px 120px 1fr', gap:12, alignItems:'start' }}>
+        <div style={{ fontSize:13,fontWeight:700,color:C.text,marginBottom:4 }}>Médicos — Falta e Atraso</div>
+        <div style={{ fontSize:10.5,color:C.muted,marginBottom:16 }}>Complemento · coluna ATRASO{unidFilt?` · ${unidFilt}`:''}</div>
+        <div style={{ display:'grid',gridTemplateColumns:'120px 120px 1fr',gap:12,alignItems:'start' }}>
           {[
-            { label:'Faltas',         value:faltas.length,        color:'#F43F5E' },
-            { label:'Atrasos >31min', value:atrasosReais.length,  color:'#F59E0B' },
-          ].map(k => (
-            <div key={k.label} style={{ background:`${k.color}08`, border:`0.5px solid ${k.color}22`, borderRadius:11, padding:'12px 14px' }}>
-              <div style={{ fontSize:9, fontWeight:700, color:k.color, textTransform:'uppercase', letterSpacing:'.1em', marginBottom:7 }}>{k.label}</div>
-              <div style={{ fontSize:26, fontWeight:800, color:k.color }}>{k.value.toLocaleString('pt-BR')}</div>
+            { label:'Faltas',        value:faltasList.length,  color:C.rose  },
+            { label:'Atrasos >31min',value:atrasosList.length, color:C.amber },
+          ].map(k=>(
+            <div key={k.label} style={{ background:`${k.color}08`,border:`0.5px solid ${k.color}22`,borderRadius:11,padding:'12px 14px' }}>
+              <div style={{ fontSize:9,fontWeight:700,color:k.color,textTransform:'uppercase',letterSpacing:'.1em',marginBottom:7 }}>{k.label}</div>
+              <div style={{ fontSize:26,fontWeight:800,color:k.color }}>{k.value.toLocaleString('pt-BR')}</div>
             </div>
           ))}
-          {statusAtraso.length > 0 ? (
-            <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
-              {statusAtraso.map(({k,v}) => {
-                const cfg = getStatusCfg(k)
+          {statusAt.length>0 ? (
+            <div style={{ display:'flex',flexDirection:'column',gap:8 }}>
+              {statusAt.map(({k,v})=>{
+                const cfg=getStatusCfg(k)
                 return (
-                  <div key={k} style={{ display:'flex', alignItems:'center', gap:10 }}>
-                    <span style={{ fontSize:10, fontWeight:700, padding:'2px 9px', borderRadius:20, background:cfg.glow, color:cfg.color, border:`0.5px solid ${cfg.color}30`, whiteSpace:'nowrap', minWidth:110 }}>{cfg.label}</span>
-                    <div style={{ flex:1, background:'rgba(255,255,255,0.05)', borderRadius:3, height:5, overflow:'hidden' }}>
-                      <div style={{ height:'100%', background:cfg.color, width:`${(v/(statusAtraso[0]?.v||1))*100}%`, transition:'width .6s ease' }} />
+                  <div key={k} style={{ display:'flex',alignItems:'center',gap:10 }}>
+                    <span style={{ fontSize:10,fontWeight:700,padding:'2px 9px',borderRadius:20,background:cfg.glow,color:cfg.color,border:`0.5px solid ${cfg.color}30`,whiteSpace:'nowrap',minWidth:110 }}>{cfg.label}</span>
+                    <div style={{ flex:1,background:'rgba(255,255,255,0.05)',borderRadius:3,height:5,overflow:'hidden' }}>
+                      <div style={{ height:'100%',background:cfg.color,width:`${(v/(statusAt[0]?.v||1))*100}%`,transition:'width .6s ease' }} />
                     </div>
-                    <span style={{ fontSize:11, fontWeight:700, color:cfg.color, minWidth:28, textAlign:'right' }}>{v}</span>
+                    <span style={{ fontSize:11,fontWeight:700,color:cfg.color,minWidth:28,textAlign:'right' }}>{v}</span>
                   </div>
                 )
               })}
             </div>
-          ) : (
-            <div style={{ color:C.muted, fontSize:11 }}>Nenhuma ocorrência no período.</div>
-          )}
+          ) : <div style={{ color:C.muted,fontSize:11 }}>Nenhuma ocorrência no período.</div>}
         </div>
       </div>
     </div>
   )
 }
 
-
-
 // ── ROOT ──────────────────────────────────────────────────────────────────────
 export default function Home() {
-  const [tab,         setTab]         = useState('agendas')
+  const [tab,         setTab]         = useState('espera')
   const [agendas,     setAgendas]     = useState([])
   const [espera,      setEspera]      = useState([])
   const [loadingDB,   setLoadingDB]   = useState(true)
@@ -646,7 +736,7 @@ export default function Home() {
           setStoreMsg(`☁ ${ag.length.toLocaleString('pt-BR')} agendas · ${esp.length.toLocaleString('pt-BR')} esperas`)
           setTimeout(()=>setStoreMsg(''),4000)
         } else setStoreMsg('')
-      } catch(e) { setStoreMsg(`Erro: ${e.message}`) }
+      } catch(e){ setStoreMsg(`Erro: ${e.message}`) }
       setLoadingDB(false)
     }
     load()
@@ -704,18 +794,9 @@ export default function Home() {
         select{appearance:auto}
       `}</style>
 
-      {/* HEADER — Estilo C: wide, tabs com underline amber */}
-      <div style={{
-        background:'#070910',
-        borderBottom:`1px solid rgba(245,158,11,0.1)`,
-        display:'flex', alignItems:'center',
-        padding:'0 32px', height:52, position:'sticky', top:0, zIndex:100,
-        backdropFilter:'blur(12px)',
-      }}>
-        {/* Glow top */}
+      {/* HEADER */}
+      <div style={{ background:'#070910', borderBottom:`1px solid rgba(245,158,11,0.1)`, display:'flex', alignItems:'center', padding:'0 32px', height:52, position:'sticky', top:0, zIndex:100, backdropFilter:'blur(12px)' }}>
         <div style={{ position:'absolute', top:-40, left:'50%', transform:'translateX(-50%)', width:500, height:80, background:'radial-gradient(ellipse,rgba(245,158,11,0.07),transparent 70%)', pointerEvents:'none' }} />
-
-        {/* Logo */}
         <div style={{ display:'flex', alignItems:'center', gap:10, marginRight:32 }}>
           <div style={{ width:28, height:28, borderRadius:8, background:'linear-gradient(135deg,#F59E0B,#F97316)', display:'flex', alignItems:'center', justifyContent:'center' }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
@@ -725,64 +806,35 @@ export default function Home() {
             <span style={{ fontSize:14, fontWeight:900, color:C.amber, fontFamily:"'Syne',sans-serif", letterSpacing:'-.3px' }}>Clínicas</span>
           </div>
         </div>
-
-        {/* Tabs com underline */}
         <div style={{ display:'flex', height:'100%', gap:0 }}>
           {[
-            { key:'espera',  label:'Fila de Espera',   count:storageInfo.espera  },
-            { key:'agendas', label:'Agendas Médicas',  count:storageInfo.agendas },
-          ].map(t => (
+            { key:'espera',  label:'Fila de Espera',  count:storageInfo.espera  },
+            { key:'agendas', label:'Agendas Médicas', count:storageInfo.agendas },
+          ].map(t=>(
             <button key={t.key} onClick={()=>setTab(t.key)} style={{
               padding:'0 20px', border:'none', background:'transparent', cursor:'pointer',
               fontSize:12, fontWeight:700, height:'100%',
-              color: tab===t.key ? C.amber : C.muted,
-              borderBottom: tab===t.key ? `2px solid ${C.amber}` : '2px solid transparent',
+              color:tab===t.key?C.amber:C.muted,
+              borderBottom:tab===t.key?`2px solid ${C.amber}`:'2px solid transparent',
               transition:'all .2s', display:'flex', alignItems:'center', gap:7,
             }}>
               {t.label}
-              {t.count>0 && (
-                <span style={{ fontSize:9, padding:'1px 6px', borderRadius:10, background:tab===t.key?`${C.amber}20`:'rgba(255,255,255,0.06)', color:tab===t.key?C.amber:C.muted, fontWeight:700 }}>
-                  {t.count.toLocaleString('pt-BR')}
-                </span>
-              )}
+              {t.count>0 && <span style={{ fontSize:9, padding:'1px 6px', borderRadius:10, background:tab===t.key?`${C.amber}20`:'rgba(255,255,255,0.06)', color:tab===t.key?C.amber:C.muted, fontWeight:700 }}>{t.count.toLocaleString('pt-BR')}</span>}
             </button>
           ))}
         </div>
-
-        {/* Right */}
         <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:14 }}>
-          {/* Status banco */}
           <div style={{ display:'flex', alignItems:'center', gap:5 }}>
             <div style={{ width:6, height:6, borderRadius:'50%', background:C.emerald, boxShadow:`0 0 6px ${C.emerald}` }} />
             <span style={{ fontSize:10, color:C.muted }}>Banco conectado</span>
           </div>
-
-          {/* Timestamp */}
           {timestamp && <span style={{ fontSize:10, color:C.muted }}>{timestamp}</span>}
-
-          {/* Store msg */}
-          {storeMsg && (
-            <span style={{ fontSize:10, color:storeMsg.startsWith('☁')||storeMsg.startsWith('✓')?C.emerald:C.amber, fontWeight:600, maxWidth:220, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-              {storeMsg}
-            </span>
+          {storeMsg && <span style={{ fontSize:10, color:storeMsg.startsWith('☁')||storeMsg.startsWith('✓')?C.emerald:C.amber, fontWeight:600, maxWidth:220, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{storeMsg}</span>}
+          {(storageInfo.agendas>0||storageInfo.espera>0)&&!storing && (
+            <button onClick={handleClear} style={{ background:'transparent', border:`0.5px solid rgba(244,63,94,0.3)`, borderRadius:8, color:C.rose, fontSize:11, padding:'5px 10px', cursor:'pointer' }}>🗑</button>
           )}
-
-          {/* Clear */}
-          {(storageInfo.agendas>0||storageInfo.espera>0) && !storing && (
-            <button onClick={handleClear} style={{ background:'transparent', border:`0.5px solid rgba(244,63,94,0.3)`, borderRadius:8, color:C.rose, fontSize:11, padding:'5px 10px', cursor:'pointer' }}>
-              🗑
-            </button>
-          )}
-
-          {/* Upload */}
-          <label style={{
-            background: storing ? 'rgba(255,255,255,0.06)' : 'linear-gradient(135deg,#F59E0B,#F97316)',
-            color: storing ? C.muted : '#1a0800',
-            fontWeight:800, fontSize:12, padding:'7px 16px',
-            borderRadius:9, cursor:storing?'default':'pointer', transition:'all .2s',
-            whiteSpace:'nowrap', fontFamily:"'Syne',sans-serif",
-          }}>
-            {storing ? 'Salvando…' : '+ Carregar Planilha'}
+          <label style={{ background:storing?'rgba(255,255,255,0.06)':'linear-gradient(135deg,#F59E0B,#F97316)', color:storing?C.muted:'#1a0800', fontWeight:800, fontSize:12, padding:'7px 16px', borderRadius:9, cursor:storing?'default':'pointer', transition:'all .2s', whiteSpace:'nowrap', fontFamily:"'Syne',sans-serif" }}>
+            {storing?'Salvando…':'+ Carregar Planilha'}
             <input type="file" accept=".xlsx,.xls" style={{display:'none'}} onChange={handleUpload} disabled={storing||loadingDB} />
           </label>
         </div>
@@ -796,12 +848,10 @@ export default function Home() {
             <div style={{ fontSize:16, color:C.sub, fontFamily:"'Syne',sans-serif", fontWeight:700 }}>Conectando ao banco…</div>
             {storeMsg && <div style={{ fontSize:12, color:C.amber }}>{storeMsg}</div>}
           </div>
-        ) : (
-          <>
-            {tab==='agendas' && <TabAgendas rows={agendas} />}
-            {tab==='espera'  && <TabEspera  rows={espera}  />}
-          </>
-        )}
+        ) : (<>
+          {tab==='agendas' && <TabAgendas rows={agendas} />}
+          {tab==='espera'  && <TabEspera  rows={espera}  />}
+        </>)}
       </div>
     </div>
   )
