@@ -5,30 +5,23 @@ import * as XLSX from 'xlsx'
 
 // ── THEME ─────────────────────────────────────────────────────────────────────
 const C = {
-  // backgrounds
-  bg:       '#060C18',
-  bgMid:    '#080F1E',
-  bgCard:   '#0B1424',
-  bgCard2:  '#0D1829',
-  // accents
-  teal:     '#00C9A7',
-  tealDim:  '#009980',
-  tealGlow: 'rgba(0,201,167,0.15)',
-  blue:     '#3B82F6',
-  blueDim:  '#2563EB',
-  violet:   '#8B5CF6',
-  amber:    '#F59E0B',
-  rose:     '#F43F5E',
-  emerald:  '#10B981',
-  cyan:     '#06B6D4',
-  // text
-  text:     '#F1F5F9',
-  sub:      '#94A3B8',
-  muted:    '#475569',
-  // borders
-  border:   'rgba(0,201,167,0.12)',
-  border2:  'rgba(0,201,167,0.25)',
-  borderGray: 'rgba(148,163,184,0.08)',
+  bg:      '#06080F',
+  bgCard:  '#0A0D16',
+  bgCard2: '#0D1020',
+  amber:   '#F59E0B',
+  orange:  '#F97316',
+  rose:    '#F43F5E',
+  teal:    '#00C9A7',
+  blue:    '#3B82F6',
+  violet:  '#8B5CF6',
+  emerald: '#10B981',
+  cyan:    '#06B6D4',
+  text:    '#F1F5F9',
+  sub:     '#94A3B8',
+  muted:   '#475569',
+  border:  'rgba(245,158,11,0.1)',
+  border2: 'rgba(245,158,11,0.22)',
+  borderGray: 'rgba(255,255,255,0.05)',
 }
 
 const SB_URL = 'https://fwdvzsywudpieqlqnxkp.supabase.co'
@@ -233,123 +226,6 @@ function MiniChart({ data, color, height=56 }) {
   )
 }
 
-// ── SIDEBAR ───────────────────────────────────────────────────────────────────
-function Sidebar({ tab, setTab, storageInfo, storeMsg, timestamp, storing, loadingDB, onUpload, onClear }) {
-  const total = storageInfo.agendas + storageInfo.espera
-  return (
-    <div style={{
-      width: 260,
-      flexShrink: 0,
-      background: C.bgCard,
-      borderRight: `1px solid ${C.border}`,
-      display: 'flex',
-      flexDirection: 'column',
-      position: 'fixed',
-      top: 0,
-      left: 0,
-      bottom: 0,
-      zIndex: 50,
-      overflow: 'hidden',
-    }}>
-      {/* Top glow */}
-      <div style={{ position:'absolute', top:-60, left:'50%', transform:'translateX(-50%)', width:200, height:120, background:C.teal, opacity:.07, borderRadius:'50%', filter:'blur(30px)', pointerEvents:'none' }} />
-
-      {/* Logo */}
-      <div style={{ padding:'28px 24px 24px', borderBottom:`1px solid ${C.border}`, textAlign:'center' }}>
-        <div style={{ fontSize:22, fontWeight:900, color:C.text, fontFamily:"'Syne',sans-serif", lineHeight:1.2, marginBottom:10 }}>
-          Monitor Clínicas
-        </div>
-        <div style={{ fontSize:11, fontWeight:700, color:C.teal, textTransform:'uppercase', letterSpacing:'.13em', marginBottom:5 }}>
-          Núcleo Observação e Controle
-        </div>
-        <div style={{ fontSize:10, color:C.muted, textTransform:'uppercase', letterSpacing:'.1em' }}>
-          Clínicas - Esperas e Agenda
-        </div>
-      </div>
-
-      {/* NAV */}
-      <div style={{ padding:'20px 16px', flex:1 }}>
-        <div style={{ fontSize:9.5, color:C.muted, textTransform:'uppercase', letterSpacing:'.12em', marginBottom:10, paddingLeft:8 }}>Painéis</div>
-        {[
-          { key:'agendas', label:'Agendas Médicas', count:storageInfo.agendas },
-          { key:'espera',  label:'Fila de Espera',  count:storageInfo.espera  },
-        ].map(item => {
-          const active = tab === item.key
-          return (
-            <button key={item.key} onClick={()=>setTab(item.key)} style={{
-              width:'100%', display:'flex', alignItems:'center', gap:10,
-              padding:'10px 12px', borderRadius:11, border:'none',
-              background: active ? `${C.teal}15` : 'transparent',
-              borderLeft: active ? `3px solid ${C.teal}` : '3px solid transparent',
-              cursor:'pointer', marginBottom:4, transition:'all .2s', textAlign:'left',
-            }}>
-              <div style={{ width:28, height:28, borderRadius:8, background: active?`${C.teal}20`:'rgba(255,255,255,0.04)', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                {item.key==='agendas' ? (
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={active?C.teal:C.muted} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
-                  </svg>
-                ) : (
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={active?C.teal:C.muted} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-                  </svg>
-                )}
-              </div>
-              <div style={{ flex:1, minWidth:0 }}>
-                <div style={{ fontSize:13, fontWeight:700, color: active ? C.teal : C.sub }}>{item.label}</div>
-              </div>
-              {item.count > 0 && (
-                <span style={{ fontSize:10, fontWeight:700, background: active?`${C.teal}25`:'rgba(255,255,255,0.06)', color: active?C.teal:C.muted, borderRadius:8, padding:'2px 7px' }}>
-                  {item.count.toLocaleString('pt-BR')}
-                </span>
-              )}
-            </button>
-          )
-        })}
-      </div>
-
-      {/* Status + upload */}
-      <div style={{ padding:'16px', borderTop:`1px solid ${C.border}` }}>
-        {/* Status */}
-        <div style={{ background:'rgba(255,255,255,0.03)', border:`1px solid ${C.border}`, borderRadius:11, padding:'12px 14px', marginBottom:12 }}>
-          <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6 }}>
-            <div style={{ width:7, height:7, borderRadius:'50%', background: storeMsg&&!storeMsg.startsWith('☁')&&!storeMsg.startsWith('✓') ? C.amber : C.teal, boxShadow:`0 0 6px ${storeMsg&&!storeMsg.startsWith('☁')&&!storeMsg.startsWith('✓') ? C.amber : C.teal}` }} />
-            <span style={{ fontSize:10, fontWeight:700, color:C.sub, textTransform:'uppercase', letterSpacing:'.08em' }}>Status</span>
-          </div>
-          {storeMsg ? (
-            <div style={{ fontSize:11, color:storeMsg.startsWith('☁')||storeMsg.startsWith('✓')?C.teal:C.amber, fontWeight:600, lineHeight:1.4 }}>{storeMsg}</div>
-          ) : total > 0 ? (
-            <>
-              <div style={{ fontSize:11, color:C.teal, fontWeight:700 }}>☁ {total.toLocaleString('pt-BR')} registros</div>
-              {timestamp && <div style={{ fontSize:10, color:C.muted, marginTop:3 }}>{timestamp}</div>}
-            </>
-          ) : (
-            <div style={{ fontSize:11, color:C.muted }}>Nenhum dado carregado</div>
-          )}
-        </div>
-
-        {/* Upload */}
-        <label style={{
-          display:'block', width:'100%', textAlign:'center',
-          background: storing ? 'rgba(255,255,255,0.05)' : `linear-gradient(135deg,${C.teal},${C.tealDim})`,
-          color: storing ? C.muted : '#001a15',
-          fontWeight:800, fontSize:13, padding:'11px',
-          borderRadius:11, cursor: storing?'default':'pointer', transition:'all .25s',
-          boxShadow: storing ? 'none' : `0 4px 24px ${C.tealGlow}`,
-          fontFamily:"'Syne',sans-serif",
-        }}>
-          {storing ? 'Salvando…' : '+ Carregar Planilha'}
-          <input type="file" accept=".xlsx,.xls" style={{display:'none'}} onChange={onUpload} disabled={storing||loadingDB} />
-        </label>
-
-        {total > 0 && !storing && (
-          <button onClick={onClear} style={{ width:'100%', marginTop:8, background:'transparent', border:`1px solid rgba(244,63,94,0.2)`, borderRadius:11, color:C.rose, fontSize:11, padding:'7px', cursor:'pointer', opacity:.7 }}>
-            🗑 Limpar banco de dados
-          </button>
-        )}
-      </div>
-    </div>
-  )
-}
 
 // ── TAB AGENDAS ───────────────────────────────────────────────────────────────
 function TabAgendas({ rows }) {
@@ -513,11 +389,19 @@ function TabAgendas({ rows }) {
 }
 
 // ── RÉGUAS DE ESPERA ──────────────────────────────────────────────────────────
-const classEspera = m => {
-  if (m === null || m === undefined || m < 15) return null
-  if (m <= 30) return { label:'Moderada',  short:'MOD',  color:'#F59E0B', bg:'rgba(245,158,11,0.12)', border:'rgba(245,158,11,0.25)' }
-  if (m <= 89) return { label:'Grave',     short:'GRV',  color:'#F97316', bg:'rgba(249,115,22,0.12)', border:'rgba(249,115,22,0.25)' }
-  return             { label:'Crítica',    short:'CRIT', color:'#F43F5E', bg:'rgba(244,63,94,0.12)',  border:'rgba(244,63,94,0.25)'  }
+// Baseado em TEMPO_DE_ESPERA (coluna AB)
+// HR_REGISTRO_ESPERA → apenas para saber a hora do registro
+// < 15min    → ignorar
+// 15–30min   → Espera Moderada
+// 31–89min   → Espera Grave
+// >= 90min   → Espera Crítica
+const CLS_ESPERA = {
+  get: m => {
+    if (!m || m < 15) return null
+    if (m <= 30) return { key:'MOD',  label:'Espera Moderada', color:'#F59E0B', bg:'rgba(245,158,11,0.08)',  border:'rgba(245,158,11,0.22)' }
+    if (m <= 89) return { key:'GRV',  label:'Espera Grave',    color:'#F97316', bg:'rgba(249,115,22,0.1)',   border:'rgba(249,115,22,0.28)' }
+    return             { key:'CRIT', label:'Espera Crítica',  color:'#F43F5E', bg:'rgba(244,63,94,0.1)',    border:'rgba(244,63,94,0.28)'  }
+  }
 }
 
 // ── TAB ESPERA ────────────────────────────────────────────────────────────────
@@ -528,84 +412,139 @@ function TabEspera({ rows }) {
   const [ufFilt,   setUfFilt]   = useState('TODOS')
   const [search,   setSearch]   = useState('')
 
-  const allDates = useMemo(() => [...new Set(rows.map(r=>r.data_agenda).filter(Boolean))].sort(), [rows])
-  const periodoFn = useMemo(() => buildFilter(allDates, periodo, dateFrom, dateTo), [allDates, periodo, dateFrom, dateTo])
-  const ufs = useMemo(() => [...new Set(rows.map(r=>r.uf).filter(Boolean))].sort(), [rows])
+  const allDates = useMemo(() =>
+    [...new Set(rows.map(r => r.data_agenda).filter(Boolean))].sort()
+  , [rows])
+
+  const periodoFn = useMemo(() =>
+    buildFilter(allDates, periodo, dateFrom, dateTo)
+  , [allDates, periodo, dateFrom, dateTo])
+
+  const ufs = useMemo(() =>
+    [...new Set(rows.map(r => r.uf).filter(Boolean))].sort()
+  , [rows])
 
   const filtered = useMemo(() => {
-    let r = rows.filter(d=>periodoFn(d.data_agenda))
-    if (ufFilt!=='TODOS') r=r.filter(d=>d.uf===ufFilt)
-    if (search) { const q=search.toLowerCase(); r=r.filter(d=>[d.nm_local,d.nm_medico,d.cidade].some(v=>String(v||'').toLowerCase().includes(q))) }
+    let r = rows.filter(d => periodoFn(d.data_agenda))
+    if (ufFilt !== 'TODOS') r = r.filter(d => d.uf === ufFilt)
+    if (search) {
+      const q = search.toLowerCase()
+      r = r.filter(d => [d.nm_local, d.nm_medico, d.cidade].some(v => String(v||'').toLowerCase().includes(q)))
+    }
     return r
   }, [rows, periodoFn, ufFilt, search])
 
   const stats = useMemo(() => {
-    const com = filtered.filter(d=>d.tempo_espera_min!==null&&d.tempo_espera_min!==undefined&&d.tempo_espera_min>=15)
-    const total    = filtered.length
-    const totalPac = filtered.reduce((a,d)=>a+(d.qt_pacientes_aguardando||0),0)
-    const moderada = com.filter(d=>d.tempo_espera_min<=30).length
-    const grave    = com.filter(d=>d.tempo_espera_min>30&&d.tempo_espera_min<=89).length
-    const critico  = com.filter(d=>d.tempo_espera_min>=90).length
+    // Apenas registros com TEMPO_DE_ESPERA >= 15min
+    const comEspera = filtered.filter(d =>
+      d.tempo_espera_min !== null && d.tempo_espera_min !== undefined && d.tempo_espera_min >= 15
+    )
 
-    // Por hora
-    const horaMap = {}
-    filtered.forEach(d => {
+    const total     = filtered.length
+    const totalPac  = filtered.reduce((a, d) => a + (d.qt_pacientes_aguardando || 0), 0)
+    const moderada  = comEspera.filter(d => d.tempo_espera_min <= 30).length
+    const grave     = comEspera.filter(d => d.tempo_espera_min > 30 && d.tempo_espera_min <= 89).length
+    const critico   = comEspera.filter(d => d.tempo_espera_min >= 90).length
+    const totalEsp  = moderada + grave + critico
+
+    // Feed de alertas:
+    // Agrupa por hora (HR_REGISTRO_ESPERA) + unidade
+    // Pega o pior TEMPO_DE_ESPERA de cada grupo
+    // HR_REGISTRO_ESPERA → apenas para definir a hora do evento
+    const grupoMap = {}
+    comEspera.forEach(d => {
       const h = d.hr_registro_espera_min
-      if (h===null||h===undefined) return
-      const hora = Math.floor(h/60)
-      if (hora<0||hora>23) return
-      const key = String(hora).padStart(2,'0')+'h'
-      if (!horaMap[key]) horaMap[key] = { hora, totalPac:0, esperas:0, criticos:0, graves:0, moderadas:0 }
-      horaMap[key].totalPac += d.qt_pacientes_aguardando||0
-      horaMap[key].esperas  += 1
-      const mh = d.tempo_espera_min
-      if (mh>=90)      horaMap[key].criticos  += 1
-      else if (mh>=31) horaMap[key].graves    += 1
-      else if (mh>=15) horaMap[key].moderadas += 1
-    })
-    const porHora = Object.values(horaMap).sort((a,b)=>a.hora-b.hora)
+      if (h === null || h === undefined) return
+      const hora    = Math.floor(h / 60)
+      const minutos = Math.floor(h % 60)
+      if (hora < 0 || hora > 23) return
+      const horaStr = String(hora).padStart(2,'0') + ':' + String(minutos).padStart(2,'0')
+      const unidade = d.nm_local || 'Sem Unidade'
+      const key     = `${horaStr}||${unidade}`
 
-    // Top unidades
-    const uMap = {}
-    com.forEach(d=>{
-      const u=d.nm_local||'?'
-      if(!uMap[u]) uMap[u]={n:u,total:0,criticos:0,graves:0,moderadas:0,pac:0}
-      uMap[u].total++; uMap[u].pac+=d.qt_pacientes_aguardando||0
-      const mh=d.tempo_espera_min
-      if(mh>=90) uMap[u].criticos++; else if(mh>=31) uMap[u].graves++; else uMap[u].moderadas++
+      if (!grupoMap[key]) {
+        grupoMap[key] = {
+          horaStr,
+          hora,
+          minutos,
+          nm_local:  unidade,
+          nm_medico: d.nm_medico || '—',
+          uf:        d.uf || '—',
+          maxTempo:  0,
+          totalPac:  0,
+          count:     0,
+        }
+      }
+      if (d.tempo_espera_min > grupoMap[key].maxTempo) {
+        grupoMap[key].maxTempo  = d.tempo_espera_min
+        grupoMap[key].nm_medico = d.nm_medico || '—'
+      }
+      grupoMap[key].totalPac += d.qt_pacientes_aguardando || 0
+      grupoMap[key].count    += 1
     })
-    const topUnidades = Object.values(uMap).sort((a,b)=>b.criticos-a.criticos||b.graves-a.graves).slice(0,8)
 
-    // Faltas e atrasos
-    const faltas      = filtered.filter(d=>String(d.atraso||'').toUpperCase()==='FALTA')
-    const atrasosReais= filtered.filter(d=>{
-      if(String(d.atraso||'').toUpperCase()!=='SIM') return false
-      const t=d.tempo_atraso_min
-      return t!==null&&t!==undefined&&Math.abs(t)>31
+    // Ordena: críticos primeiro, depois graves, depois moderados
+    // Dentro de cada categoria: maior tempo primeiro
+    const feed = Object.values(grupoMap)
+      .sort((a, b) => b.maxTempo - a.maxTempo)
+      .slice(0, 25)
+
+    // Top unidades por esperas críticas
+    const unidMap = {}
+    comEspera.forEach(d => {
+      const u = d.nm_local || 'Sem Unidade'
+      if (!unidMap[u]) unidMap[u] = { n: u, total: 0, criticos: 0, graves: 0, moderadas: 0, pac: 0 }
+      unidMap[u].total++
+      unidMap[u].pac += d.qt_pacientes_aguardando || 0
+      const m = d.tempo_espera_min
+      if (m >= 90)      unidMap[u].criticos++
+      else if (m >= 31) unidMap[u].graves++
+      else              unidMap[u].moderadas++
     })
-    const sMap={}
-    atrasosReais.forEach(d=>{ const s=d.status||'Sem Status'; sMap[s]=(sMap[s]||0)+1 })
-    const statusAtraso=Object.entries(sMap).map(([k,v])=>({k,v})).sort((a,b)=>b.v-a.v)
+    const topUnidades = Object.values(unidMap)
+      .sort((a, b) => b.criticos - a.criticos || b.graves - a.graves)
+      .slice(0, 6)
 
-    return { total, totalPac, moderada, grave, critico, porHora, topUnidades, faltas, atrasosReais, statusAtraso }
+    // Faltas e atrasos médicos
+    const faltas       = filtered.filter(d => String(d.atraso||'').toUpperCase() === 'FALTA')
+    const atrasosReais = filtered.filter(d => {
+      if (String(d.atraso||'').toUpperCase() !== 'SIM') return false
+      const t = d.tempo_atraso_min
+      return t !== null && t !== undefined && Math.abs(t) > 31
+    })
+    const sMap = {}
+    atrasosReais.forEach(d => { const s = d.status||'Sem Status'; sMap[s] = (sMap[s]||0)+1 })
+    const statusAtraso = Object.entries(sMap).map(([k,v]) => ({k,v})).sort((a,b) => b.v-a.v)
+
+    return {
+      total, totalPac, moderada, grave, critico, totalEsp,
+      feed, topUnidades, faltas, atrasosReais, statusAtraso
+    }
   }, [filtered])
 
   if (!rows.length) return (
     <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'60vh', gap:14 }}>
       <div style={{ fontSize:44 }}>⏱️</div>
-      <div style={{ fontSize:18, fontWeight:700, color:C.text }}>Nenhum dado de espera</div>
+      <div style={{ fontSize:18, fontWeight:700, color:C.text, fontFamily:"'Syne',sans-serif" }}>Nenhum dado de espera</div>
       <div style={{ fontSize:13, color:C.muted }}>Use o menu lateral para carregar uma planilha</div>
     </div>
   )
 
-  const { total, totalPac, moderada, grave, critico, porHora, topUnidades, faltas, atrasosReais, statusAtraso } = stats
-  const maxEsp = Math.max(...porHora.map(h=>h.esperas), 1)
-  const maxUnid = topUnidades[0]?.total||1
-  const totalEsperas = moderada+grave+critico
+  const {
+    total, totalPac, moderada, grave, critico, totalEsp,
+    feed, topUnidades, faltas, atrasosReais, statusAtraso
+  } = stats
+
+  const fmtMin = m => {
+    if (!m) return '—'
+    const abs = Math.round(Math.abs(m))
+    if (abs < 60) return `${abs}min`
+    return `${Math.floor(abs/60)}h${abs%60>0?` ${abs%60}m`:''}`
+  }
 
   return (
     <div>
-      {/* Filtros */}
+      {/* Periodo + Filtros */}
       <div style={{ marginBottom:16 }}>
         <PeriodoBar value={periodo} onChange={p=>{setPeriodo(p);setDateFrom('');setDateTo('')}}
           allDates={allDates} dateFrom={dateFrom} dateTo={dateTo}
@@ -614,301 +553,223 @@ function TabEspera({ rows }) {
       <SearchBar search={search} onSearch={setSearch} uf={ufFilt} onUf={setUfFilt} ufs={ufs}
         showClear={ufFilt!=='TODOS'||!!search} onClear={()=>{setUfFilt('TODOS');setSearch('')}} />
 
-      {/* ROW 1 — 4 métricas + donut visual */}
-      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr 1fr 1.4fr', gap:14, marginBottom:14 }}>
-        {/* Métricas */}
+      {/* ROW 1 — KPIs + Distribuição */}
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr 1fr 1.4fr', gap:12, marginBottom:14 }}>
         {[
-          { label:'Pacientes na Fila',    value:totalPac.toLocaleString('pt-BR'), sub:`${total} registros`,         color:'#00C9A7', icon:'👥' },
-          { label:'Espera Moderada',      value:moderada,  sub:'15 – 30 min',                                       color:'#F59E0B', icon:'🟡' },
-          { label:'Espera Grave',         value:grave,     sub:'31 min – 1h29',                                     color:'#F97316', icon:'🟠' },
-          { label:'Espera Crítica',       value:critico,   sub:'acima de 1h30',                                     color:'#F43F5E', icon:'🔴' },
+          { label:'Pacientes na Fila',    value:totalPac.toLocaleString('pt-BR'), sub:`${total} registros`,  color:'#00C9A7' },
+          { label:'Espera Moderada',      value:moderada,  sub:'15 – 30 min',                               color:'#F59E0B' },
+          { label:'Espera Grave',         value:grave,     sub:'31 min – 1h29',                             color:'#F97316' },
+          { label:'Espera Crítica',       value:critico,   sub:'acima de 1h30',                             color:'#F43F5E' },
         ].map(k => (
           <div key={k.label} style={{
-            background:'rgba(255,255,255,0.025)',
-            border:`1px solid ${k.color}22`,
-            borderRadius:16, padding:'20px 20px 16px',
-            position:'relative', overflow:'hidden',
+            background:'rgba(255,255,255,0.025)', border:`1px solid ${k.color}20`,
+            borderRadius:14, padding:'18px 18px 14px', position:'relative', overflow:'hidden',
           }}>
             <div style={{ position:'absolute', top:0, left:0, right:0, height:2, background:`linear-gradient(90deg,${k.color},transparent)` }} />
-            <div style={{ fontSize:10, fontWeight:700, color:C.muted, textTransform:'uppercase', letterSpacing:'.1em', marginBottom:14 }}>
-              {k.icon}  {k.label}
-            </div>
-            <div style={{ fontSize:32, fontWeight:800, color:k.color, letterSpacing:'-1px', lineHeight:1 }}>
+            <div style={{ fontSize:9.5, fontWeight:700, color:C.muted, textTransform:'uppercase', letterSpacing:'.1em', marginBottom:12 }}>{k.label}</div>
+            <div style={{ fontSize:28, fontWeight:800, color:k.color, letterSpacing:'-1px', lineHeight:1 }}>
               {typeof k.value === 'number' ? k.value.toLocaleString('pt-BR') : k.value}
             </div>
-            <div style={{ fontSize:11, color:C.muted, marginTop:8 }}>{k.sub}</div>
+            <div style={{ fontSize:10, color:C.muted, marginTop:7 }}>{k.sub}</div>
           </div>
         ))}
 
-        {/* Distribuição visual */}
+        {/* Distribuição empilhada */}
         <div style={{
-          background:'rgba(255,255,255,0.025)',
-          border:`1px solid rgba(255,255,255,0.06)`,
-          borderRadius:16, padding:'20px',
-          display:'flex', flexDirection:'column', justifyContent:'space-between',
+          background:'rgba(255,255,255,0.025)', border:'1px solid rgba(255,255,255,0.06)',
+          borderRadius:14, padding:'18px',
         }}>
-          <div style={{ fontSize:10, fontWeight:700, color:C.muted, textTransform:'uppercase', letterSpacing:'.1em', marginBottom:14 }}>
-            Distribuição de Esperas
-          </div>
-          {totalEsperas > 0 ? (
-            <>
-              {/* Barra empilhada */}
-              <div style={{ display:'flex', height:10, borderRadius:6, overflow:'hidden', marginBottom:14, gap:2 }}>
-                {[
-                  { v:moderada, color:'#F59E0B' },
-                  { v:grave,    color:'#F97316' },
-                  { v:critico,  color:'#F43F5E' },
-                ].filter(x=>x.v>0).map((x,i)=>(
-                  <div key={i} style={{ flex:x.v, background:x.color, transition:'flex .6s ease' }} />
-                ))}
+          <div style={{ fontSize:9.5, fontWeight:700, color:C.muted, textTransform:'uppercase', letterSpacing:'.1em', marginBottom:12 }}>Distribuição</div>
+          {totalEsp > 0 ? (<>
+            <div style={{ display:'flex', height:8, borderRadius:4, overflow:'hidden', marginBottom:12, gap:2 }}>
+              {moderada>0&&<div style={{ flex:moderada, background:'#F59E0B' }} />}
+              {grave>0&&<div style={{ flex:grave, background:'#F97316' }} />}
+              {critico>0&&<div style={{ flex:critico, background:'#F43F5E' }} />}
+            </div>
+            {[
+              { label:'Moderada', v:moderada, color:'#F59E0B' },
+              { label:'Grave',    v:grave,    color:'#F97316' },
+              { label:'Crítica',  v:critico,  color:'#F43F5E' },
+            ].map(x => (
+              <div key={x.label} style={{ display:'flex', alignItems:'center', gap:7, marginBottom:7 }}>
+                <div style={{ width:7, height:7, borderRadius:2, background:x.color, flexShrink:0 }} />
+                <span style={{ fontSize:10.5, color:C.sub, flex:1 }}>{x.label}</span>
+                <span style={{ fontSize:11, fontWeight:700, color:x.color }}>{x.v}</span>
+                <span style={{ fontSize:9.5, color:C.muted, minWidth:28, textAlign:'right' }}>
+                  {totalEsp>0?Math.round((x.v/totalEsp)*100):0}%
+                </span>
               </div>
+            ))}
+          </>) : <div style={{ color:C.muted, fontSize:11 }}>Sem esperas no período</div>}
+        </div>
+      </div>
+
+      {/* ROW 2 — Feed de Alertas + Top Unidades */}
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 320px', gap:14, marginBottom:14 }}>
+
+        {/* FEED DE ALERTAS */}
+        <div style={{
+          background:'rgba(255,255,255,0.025)', border:'1px solid rgba(255,255,255,0.06)',
+          borderRadius:14, padding:'20px 22px',
+        }}>
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:16 }}>
+            <div>
+              <div style={{ fontSize:13, fontWeight:700, color:C.text }}>Feed de Esperas por Hora</div>
+              <div style={{ fontSize:10.5, color:C.muted, marginTop:3 }}>
+                Classificado por TEMPO_DE_ESPERA · hora via HR_REGISTRO_ESPERA · ordenado por gravidade
+              </div>
+            </div>
+            <div style={{ display:'flex', gap:10, flexShrink:0 }}>
               {[
-                { label:'Moderada', value:moderada, color:'#F59E0B', pct:totalEsperas>0?((moderada/totalEsperas)*100).toFixed(0):0 },
-                { label:'Grave',    value:grave,    color:'#F97316', pct:totalEsperas>0?((grave/totalEsperas)*100).toFixed(0):0 },
-                { label:'Crítica',  value:critico,  color:'#F43F5E', pct:totalEsperas>0?((critico/totalEsperas)*100).toFixed(0):0 },
-              ].map(x=>(
-                <div key={x.label} style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8 }}>
-                  <div style={{ width:8, height:8, borderRadius:2, background:x.color, flexShrink:0 }} />
-                  <span style={{ fontSize:11, color:C.sub, flex:1 }}>{x.label}</span>
-                  <span style={{ fontSize:11, fontWeight:700, color:x.color }}>{x.value}</span>
-                  <span style={{ fontSize:10, color:C.muted, minWidth:30, textAlign:'right' }}>{x.pct}%</span>
+                { color:'#F59E0B', label:'Moderada' },
+                { color:'#F97316', label:'Grave'    },
+                { color:'#F43F5E', label:'Crítica'  },
+              ].map(l => (
+                <div key={l.label} style={{ display:'flex', alignItems:'center', gap:4 }}>
+                  <div style={{ width:6, height:6, borderRadius:'50%', background:l.color }} />
+                  <span style={{ fontSize:9, color:C.muted }}>{l.label}</span>
                 </div>
               ))}
-            </>
+            </div>
+          </div>
+
+          {feed.length === 0 ? (
+            <div style={{ textAlign:'center', padding:'32px 0', color:C.muted, fontSize:12 }}>
+              Sem esperas ≥ 15min no período selecionado.
+            </div>
           ) : (
-            <div style={{ color:C.muted, fontSize:12 }}>Sem esperas no período</div>
+            <div style={{ display:'flex', flexDirection:'column', gap:5, maxHeight:420, overflowY:'auto' }}>
+              {feed.map((item, i) => {
+                const cls = CLS_ESPERA.get(item.maxTempo)
+                const isCrit = item.maxTempo >= 90
+                const isGrv  = item.maxTempo >= 31 && item.maxTempo < 90
+                return (
+                  <div key={i} style={{
+                    display:'flex', alignItems:'center', gap:12,
+                    padding:'10px 14px', borderRadius:10,
+                    background: isCrit ? 'rgba(244,63,94,0.06)' : isGrv ? 'rgba(249,115,22,0.04)' : 'rgba(255,255,255,0.02)',
+                    border: `0.5px solid ${i < 3 ? cls.border : 'rgba(255,255,255,0.05)'}`,
+                    transition:'background .12s', cursor:'default',
+                  }}
+                    onMouseEnter={e => e.currentTarget.style.background = cls.bg}
+                    onMouseLeave={e => e.currentTarget.style.background = isCrit?'rgba(244,63,94,0.06)':isGrv?'rgba(249,115,22,0.04)':'rgba(255,255,255,0.02)'}
+                  >
+                    {/* Dot */}
+                    <div style={{
+                      width:8, height:8, borderRadius:'50%', background:cls.color, flexShrink:0,
+                      boxShadow: isCrit ? `0 0 8px ${cls.color}` : 'none',
+                    }} />
+
+                    {/* Hora */}
+                    <div style={{ fontFamily:'monospace', fontSize:13, fontWeight:700, color:C.sub, flexShrink:0, minWidth:44 }}>
+                      {item.horaStr}
+                    </div>
+
+                    {/* Unidade + médico */}
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ fontSize:12, fontWeight:600, color:C.text, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                        {item.nm_local}
+                      </div>
+                      <div style={{ fontSize:10, color:C.muted, marginTop:2, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                        {item.nm_medico} {item.uf ? `· ${item.uf}` : ''}
+                      </div>
+                    </div>
+
+                    {/* Pacientes */}
+                    <div style={{ textAlign:'center', flexShrink:0, minWidth:48 }}>
+                      <div style={{ fontSize:12, fontWeight:700, color:'#0EA5E9' }}>
+                        {item.totalPac > 0 ? item.totalPac.toLocaleString('pt-BR') : '—'}
+                      </div>
+                      <div style={{ fontSize:9, color:C.muted }}>pac.</div>
+                    </div>
+
+                    {/* Tempo */}
+                    <div style={{ fontSize:15, fontWeight:900, color:cls.color, flexShrink:0, minWidth:52, textAlign:'right', letterSpacing:'-.3px' }}>
+                      {fmtMin(item.maxTempo)}
+                    </div>
+
+                    {/* Badge classificação */}
+                    <span style={{
+                      fontSize:9.5, fontWeight:700, padding:'3px 9px', borderRadius:20,
+                      background:cls.bg, color:cls.color, border:`0.5px solid ${cls.border}`,
+                      whiteSpace:'nowrap', flexShrink:0,
+                    }}>
+                      {cls.label}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
           )}
         </div>
+
+        {/* TOP UNIDADES */}
+        <div style={{
+          background:'rgba(255,255,255,0.025)', border:'1px solid rgba(255,255,255,0.06)',
+          borderRadius:14, padding:'20px 22px', display:'flex', flexDirection:'column',
+        }}>
+          <div style={{ fontSize:13, fontWeight:700, color:C.text, marginBottom:4 }}>Top Unidades</div>
+          <div style={{ fontSize:10.5, color:C.muted, marginBottom:16 }}>Maior volume de esperas críticas</div>
+          {topUnidades.length === 0 && <div style={{ color:C.muted, fontSize:11 }}>Sem dados no período.</div>}
+          {topUnidades.map((u, i) => (
+            <div key={u.n} style={{ marginBottom:14 }}>
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:5 }}>
+                <div style={{ display:'flex', alignItems:'center', gap:7, minWidth:0 }}>
+                  <span style={{ fontSize:10, fontWeight:800, color:i<3?'#F59E0B':C.muted, minWidth:16, flexShrink:0 }}>#{i+1}</span>
+                  <span style={{ fontSize:11.5, color:C.text, fontWeight:500, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{u.n}</span>
+                </div>
+                <div style={{ display:'flex', gap:7, flexShrink:0, fontSize:10.5 }}>
+                  {u.criticos>0&&<span style={{ color:'#F43F5E', fontWeight:700 }}>🔴{u.criticos}</span>}
+                  {u.graves>0&&<span style={{ color:'#F97316', fontWeight:700 }}>🟠{u.graves}</span>}
+                  {u.moderadas>0&&<span style={{ color:'#F59E0B', fontWeight:700 }}>🟡{u.moderadas}</span>}
+                </div>
+              </div>
+              <div style={{ display:'flex', height:5, borderRadius:3, overflow:'hidden', gap:1 }}>
+                {u.moderadas>0&&<div style={{ flex:u.moderadas, background:'#F59E0B' }} />}
+                {u.graves>0&&<div style={{ flex:u.graves, background:'#F97316' }} />}
+                {u.criticos>0&&<div style={{ flex:u.criticos, background:'#F43F5E' }} />}
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
 
-      {/* ROW 2 — Gráfico hora a hora */}
+      {/* ROW 3 — Médicos complemento */}
       <div style={{
-        background:'rgba(255,255,255,0.025)',
-        border:'1px solid rgba(255,255,255,0.06)',
-        borderRadius:16, padding:'22px 24px', marginBottom:14,
+        background:'rgba(255,255,255,0.025)', border:'1px solid rgba(255,255,255,0.06)',
+        borderRadius:14, padding:'20px 22px', marginBottom:14,
       }}>
-        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:20 }}>
-          <div>
-            <div style={{ fontSize:13, fontWeight:700, color:C.text }}>Esperas por Hora do Dia</div>
-            <div style={{ fontSize:11, color:C.muted, marginTop:3 }}>Volume de esperas e pacientes aguardando · baseado em HR_REGISTRO_ESPERA</div>
-          </div>
-          <div style={{ display:'flex', gap:14 }}>
-            {[{color:'#F59E0B',label:'Moderada'},{color:'#F97316',label:'Grave'},{color:'#F43F5E',label:'Crítica'}].map(l=>(
-              <div key={l.label} style={{ display:'flex', alignItems:'center', gap:5 }}>
-                <div style={{ width:8, height:8, borderRadius:2, background:l.color }} />
-                <span style={{ fontSize:10, color:C.muted }}>{l.label}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {porHora.length === 0 && <div style={{ color:C.muted, fontSize:12, textAlign:'center', padding:'40px 0' }}>Sem dados de hora de registro no período selecionado.</div>}
-
-        {porHora.length > 0 && (
-          <>
-            {/* Gráfico barras empilhadas */}
-            <div style={{ display:'flex', alignItems:'flex-end', gap:5, height:120, marginBottom:4 }}>
-              {porHora.map(h => {
-                const mod = h.moderadas||0, grv = h.graves||0, crit = h.criticos||0
-                const tot = mod+grv+crit
-                const hPct = maxEsp>0 ? (tot/maxEsp)*100 : 0
-                return (
-                  <div key={h.hora} style={{ flex:1, height:'100%', display:'flex', flexDirection:'column', justifyContent:'flex-end', cursor:'default', position:'relative' }}
-                    title={`${String(h.hora).padStart(2,'0')}h\n${tot} esperas · ${h.totalPac} pac.\n🟡 ${mod} · 🟠 ${grv} · 🔴 ${crit}`}>
-                    <div style={{ width:'100%', height:`${Math.max(hPct,2)}%`, minHeight:2, display:'flex', flexDirection:'column-reverse', borderRadius:'3px 3px 0 0', overflow:'hidden' }}>
-                      {crit>0 && <div style={{ flex:crit, background:'#F43F5E', minHeight:2 }} />}
-                      {grv>0  && <div style={{ flex:grv,  background:'#F97316', minHeight:2 }} />}
-                      {mod>0  && <div style={{ flex:mod,  background:'#F59E0B', minHeight:2 }} />}
-                      {tot===0 && <div style={{ flex:1, background:'rgba(255,255,255,0.05)' }} />}
-                    </div>
-                  </div>
-                )
-              })}
+        <div style={{ fontSize:13, fontWeight:700, color:C.text, marginBottom:4 }}>Médicos — Falta e Atraso</div>
+        <div style={{ fontSize:10.5, color:C.muted, marginBottom:16 }}>Complemento · coluna ATRASO da base</div>
+        <div style={{ display:'grid', gridTemplateColumns:'120px 120px 1fr', gap:12, alignItems:'start' }}>
+          {[
+            { label:'Faltas',         value:faltas.length,        color:'#F43F5E' },
+            { label:'Atrasos >31min', value:atrasosReais.length,  color:'#F59E0B' },
+          ].map(k => (
+            <div key={k.label} style={{ background:`${k.color}08`, border:`0.5px solid ${k.color}22`, borderRadius:11, padding:'12px 14px' }}>
+              <div style={{ fontSize:9, fontWeight:700, color:k.color, textTransform:'uppercase', letterSpacing:'.1em', marginBottom:7 }}>{k.label}</div>
+              <div style={{ fontSize:26, fontWeight:800, color:k.color }}>{k.value.toLocaleString('pt-BR')}</div>
             </div>
-            {/* Labels hora */}
-            <div style={{ display:'flex', gap:5, marginBottom:20 }}>
-              {porHora.map(h=>(
-                <div key={h.hora} style={{ flex:1, textAlign:'center', fontSize:9, color:C.muted }}>
-                  {String(h.hora).padStart(2,'0')}
-                </div>
-              ))}
-            </div>
-
-            {/* Tabela resumo hora a hora */}
-            <div style={{ overflowX:'auto' }}>
-              <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12 }}>
-                <thead>
-                  <tr style={{ borderBottom:`1px solid rgba(255,255,255,0.06)` }}>
-                    {['Hora','Esperas','Pacientes','🟡 Mod.','🟠 Grave','🔴 Crítica'].map(h=>(
-                      <th key={h} style={{ padding:'8px 14px', textAlign:h==='Hora'?'left':'center', color:C.muted, fontWeight:600, fontSize:10, textTransform:'uppercase', letterSpacing:'.07em', whiteSpace:'nowrap' }}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {porHora.map(h=>{
-                    const hasCrit=h.criticos>0
-                    return (
-                      <tr key={h.hora}
-                        style={{ borderBottom:'1px solid rgba(255,255,255,0.04)', background:hasCrit?'rgba(244,63,94,0.03)':'transparent', transition:'background .1s' }}
-                        onMouseEnter={e=>e.currentTarget.style.background='rgba(0,201,167,0.05)'}
-                        onMouseLeave={e=>e.currentTarget.style.background=hasCrit?'rgba(244,63,94,0.03)':'transparent'}>
-                        <td style={{ padding:'10px 14px', fontWeight:700, color:C.text, fontFamily:'monospace', fontSize:13 }}>{String(h.hora).padStart(2,'0')}:00</td>
-                        <td style={{ padding:'10px 14px', textAlign:'center', color:C.teal, fontWeight:600 }}>{(h.moderadas||0)+(h.graves||0)+(h.criticos||0)}</td>
-                        <td style={{ padding:'10px 14px', textAlign:'center', color:C.sub }}>{h.totalPac.toLocaleString('pt-BR')}</td>
-                        <td style={{ padding:'10px 14px', textAlign:'center' }}>
-                          {(h.moderadas||0)>0?<span style={{ padding:'2px 10px', borderRadius:20, background:'rgba(245,158,11,0.12)', color:'#F59E0B', fontSize:11, fontWeight:600 }}>{h.moderadas}</span>:<span style={{color:C.muted}}>—</span>}
-                        </td>
-                        <td style={{ padding:'10px 14px', textAlign:'center' }}>
-                          {(h.graves||0)>0?<span style={{ padding:'2px 10px', borderRadius:20, background:'rgba(249,115,22,0.12)', color:'#F97316', fontSize:11, fontWeight:600 }}>{h.graves}</span>:<span style={{color:C.muted}}>—</span>}
-                        </td>
-                        <td style={{ padding:'10px 14px', textAlign:'center' }}>
-                          {(h.criticos||0)>0?<span style={{ padding:'2px 10px', borderRadius:20, background:'rgba(244,63,94,0.12)', color:'#F43F5E', fontSize:11, fontWeight:600 }}>{h.criticos}</span>:<span style={{color:C.muted}}>—</span>}
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </>
-        )}
-      </div>
-
-      {/* ROW 3 — Top Unidades + Médicos */}
-      <div style={{ display:'grid', gridTemplateColumns:'1.2fr 1fr', gap:14, marginBottom:14 }}>
-
-        {/* Top unidades */}
-        <div style={{ background:'rgba(255,255,255,0.025)', border:'1px solid rgba(255,255,255,0.06)', borderRadius:16, padding:'22px 24px' }}>
-          <div style={{ fontSize:13, fontWeight:700, color:C.text, marginBottom:4 }}>Unidades com Maior Volume de Espera</div>
-          <div style={{ fontSize:11, color:C.muted, marginBottom:18 }}>Ordenado por esperas críticas</div>
-          {topUnidades.length === 0 && <div style={{ color:C.muted, fontSize:12 }}>Sem dados no período.</div>}
-          {topUnidades.map((u,i)=>{
-            const tot = u.total||1
-            const pctCrit = ((u.criticos/tot)*100).toFixed(0)
-            const pctGrv  = ((u.graves/tot)*100).toFixed(0)
-            const pctMod  = ((u.moderadas/tot)*100).toFixed(0)
-            return (
-              <div key={u.n} style={{ marginBottom:14 }}>
-                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:5 }}>
-                  <div style={{ display:'flex', alignItems:'center', gap:8, minWidth:0 }}>
-                    <span style={{ fontSize:10, fontWeight:700, color:i<3?'#F59E0B':C.muted, minWidth:16, flexShrink:0 }}>#{i+1}</span>
-                    <span style={{ fontSize:12, color:C.text, fontWeight:500, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{u.n}</span>
-                  </div>
-                  <div style={{ display:'flex', gap:8, flexShrink:0, fontSize:11 }}>
-                    {u.criticos>0&&<span style={{ color:'#F43F5E', fontWeight:700 }}>🔴{u.criticos}</span>}
-                    {u.graves>0&&<span style={{ color:'#F97316', fontWeight:700 }}>🟠{u.graves}</span>}
-                    {u.moderadas>0&&<span style={{ color:'#F59E0B', fontWeight:700 }}>🟡{u.moderadas}</span>}
-                  </div>
-                </div>
-                <div style={{ display:'flex', height:5, borderRadius:4, overflow:'hidden', gap:1 }}>
-                  {u.moderadas>0&&<div style={{ flex:u.moderadas, background:'#F59E0B' }} />}
-                  {u.graves>0&&<div style={{ flex:u.graves, background:'#F97316' }} />}
-                  {u.criticos>0&&<div style={{ flex:u.criticos, background:'#F43F5E' }} />}
-                  {u.total===0&&<div style={{ flex:1, background:'rgba(255,255,255,0.05)' }} />}
-                </div>
-              </div>
-            )
-          })}
-        </div>
-
-        {/* Médicos — complemento */}
-        <div style={{ background:'rgba(255,255,255,0.025)', border:'1px solid rgba(255,255,255,0.06)', borderRadius:16, padding:'22px 24px' }}>
-          <div style={{ fontSize:13, fontWeight:700, color:C.text, marginBottom:4 }}>Médicos — Falta e Atraso</div>
-          <div style={{ fontSize:11, color:C.muted, marginBottom:18 }}>Complemento · coluna ATRASO da base</div>
-
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:18 }}>
-            {[
-              { label:'Faltas',         value:faltas.length,        color:'#F43F5E' },
-              { label:'Atrasos >31min', value:atrasosReais.length,  color:'#F59E0B' },
-            ].map(k=>(
-              <div key={k.label} style={{ background:`${k.color}08`, border:`1px solid ${k.color}20`, borderRadius:12, padding:'14px 16px' }}>
-                <div style={{ fontSize:9, fontWeight:700, color:k.color, textTransform:'uppercase', letterSpacing:'.1em', marginBottom:8 }}>{k.label}</div>
-                <div style={{ fontSize:28, fontWeight:800, color:k.color }}>{k.value.toLocaleString('pt-BR')}</div>
-              </div>
-            ))}
-          </div>
-
+          ))}
           {statusAtraso.length > 0 && (
-            <>
-              <div style={{ fontSize:10, fontWeight:700, color:C.muted, textTransform:'uppercase', letterSpacing:'.1em', marginBottom:12 }}>Classificação do Atraso</div>
-              {statusAtraso.map(({k,v})=>{
-                const cfg=getStatusCfg(k)
-                const pct=(v/(statusAtraso[0]?.v||1))*100
+            <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+              {statusAtraso.map(({k,v}) => {
+                const cfg = getStatusCfg(k)
                 return (
-                  <div key={k} style={{ marginBottom:10 }}>
-                    <div style={{ display:'flex', justifyContent:'space-between', marginBottom:4 }}>
-                      <span style={{ fontSize:11, color:C.sub }}>{cfg.label}</span>
-                      <span style={{ fontSize:11, fontWeight:700, color:cfg.color }}>{v}</span>
+                  <div key={k} style={{ display:'flex', alignItems:'center', gap:10 }}>
+                    <span style={{ fontSize:10, fontWeight:700, padding:'2px 9px', borderRadius:20, background:cfg.glow, color:cfg.color, border:`0.5px solid ${cfg.color}30`, whiteSpace:'nowrap', minWidth:110 }}>{cfg.label}</span>
+                    <div style={{ flex:1, background:'rgba(255,255,255,0.05)', borderRadius:3, height:5, overflow:'hidden' }}>
+                      <div style={{ height:'100%', background:cfg.color, width:`${(v/(statusAtraso[0]?.v||1))*100}%`, transition:'width .6s ease' }} />
                     </div>
-                    <div style={{ background:'rgba(255,255,255,0.05)', borderRadius:3, height:4, overflow:'hidden' }}>
-                      <div style={{ height:'100%', background:cfg.color, width:`${pct}%`, transition:'width .6s ease' }} />
-                    </div>
+                    <span style={{ fontSize:11, fontWeight:700, color:cfg.color, minWidth:28, textAlign:'right' }}>{v}</span>
                   </div>
                 )
               })}
-            </>
+            </div>
           )}
           {!statusAtraso.length&&faltas.length===0&&atrasosReais.length===0&&(
-            <div style={{ color:C.muted, fontSize:12 }}>Nenhuma ocorrência no período.</div>
+            <div style={{ color:C.muted, fontSize:11 }}>Nenhuma ocorrência no período.</div>
           )}
-        </div>
-      </div>
-
-      {/* ROW 4 — Tabela detalhada */}
-      <div style={{ background:'rgba(255,255,255,0.025)', border:'1px solid rgba(255,255,255,0.06)', borderRadius:16, padding:'22px 24px' }}>
-        <div style={{ fontSize:13, fontWeight:700, color:C.text, marginBottom:4 }}>Detalhamento de Espera</div>
-        <div style={{ fontSize:11, color:C.muted, marginBottom:18 }}>Esperas ≥15min · ordenado por maior tempo · top 100</div>
-        <div style={{ overflowX:'auto' }}>
-          <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12 }}>
-            <thead>
-              <tr style={{ borderBottom:'1px solid rgba(255,255,255,0.06)' }}>
-                {['Data','Hora','Unidade','Médico','UF','Pac.','Tempo','Classif.','Médico'].map(h=>(
-                  <th key={h} style={{ padding:'8px 12px', textAlign:'left', color:C.muted, fontWeight:600, fontSize:10, textTransform:'uppercase', letterSpacing:'.07em', whiteSpace:'nowrap' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {[...filtered]
-                .filter(d=>d.tempo_espera_min!==null&&d.tempo_espera_min!==undefined&&d.tempo_espera_min>=15)
-                .sort((a,b)=>(b.tempo_espera_min||0)-(a.tempo_espera_min||0))
-                .slice(0,100)
-                .map((r,i)=>{
-                  const cls=classEspera(r.tempo_espera_min)
-                  const horaReg=r.hr_registro_espera_min!==null&&r.hr_registro_espera_min!==undefined
-                    ?`${String(Math.floor(r.hr_registro_espera_min/60)).padStart(2,'0')}:${String(r.hr_registro_espera_min%60).padStart(2,'0')}`:'—'
-                  const isFalta=String(r.atraso||'').toUpperCase()==='FALTA'
-                  const isAtraso=String(r.atraso||'').toUpperCase()==='SIM'
-                  const tempoAtr=r.tempo_atraso_min
-                  const atrasoReal=isAtraso&&tempoAtr!==null&&Math.abs(tempoAtr)>31
-                  return (
-                    <tr key={i} style={{ borderBottom:'1px solid rgba(255,255,255,0.04)', transition:'background .1s' }}
-                      onMouseEnter={e=>e.currentTarget.style.background='rgba(0,201,167,0.04)'}
-                      onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
-                      <td style={{ padding:'9px 12px', color:C.muted, whiteSpace:'nowrap', fontSize:11 }}>{fmtDate(r.data_agenda)}</td>
-                      <td style={{ padding:'9px 12px', color:C.sub, fontFamily:'monospace', fontSize:11 }}>{horaReg}</td>
-                      <td style={{ padding:'9px 12px', color:C.text, fontWeight:500, maxWidth:170, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{r.nm_local}</td>
-                      <td style={{ padding:'9px 12px', color:C.sub, maxWidth:130, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', fontSize:11 }}>{r.nm_medico}</td>
-                      <td style={{ padding:'9px 12px', color:C.muted, fontSize:11 }}>{r.uf}</td>
-                      <td style={{ padding:'9px 12px', color:C.teal, fontWeight:600, textAlign:'center' }}>{r.qt_pacientes_aguardando??'—'}</td>
-                      <td style={{ padding:'9px 12px' }}>
-                        <span style={{ fontSize:13, fontWeight:700, color:cls?.color||C.muted }}>{fmtMin(r.tempo_espera_min)}</span>
-                      </td>
-                      <td style={{ padding:'9px 12px' }}>
-                        {cls?<span style={{ fontSize:10, fontWeight:600, padding:'2px 9px', borderRadius:20, background:cls.bg, color:cls.color, border:`1px solid ${cls.border}`, whiteSpace:'nowrap' }}>{cls.label}</span>:'—'}
-                      </td>
-                      <td style={{ padding:'9px 12px' }}>
-                        {isFalta
-                          ?<span style={{ fontSize:10, fontWeight:600, padding:'2px 9px', borderRadius:20, background:'rgba(59,130,246,0.12)', color:'#60A5FA', border:'1px solid rgba(59,130,246,0.25)' }}>Falta</span>
-                          :atrasoReal
-                          ?<span style={{ fontSize:10, fontWeight:600, padding:'2px 9px', borderRadius:20, background:'rgba(245,158,11,0.12)', color:C.amber, border:'1px solid rgba(245,158,11,0.25)' }}>Atr. {fmtMin(Math.abs(tempoAtr))}</span>
-                          :<span style={{ fontSize:10, color:C.muted }}>—</span>
-                        }
-                      </td>
-                    </tr>
-                  )
-                })}
-            </tbody>
-          </table>
         </div>
       </div>
     </div>
@@ -1000,65 +861,115 @@ export default function Home() {
   }
 
   return (
-    <div style={{ display:'flex', minHeight:'100vh', background:C.bg, fontFamily:"'DM Sans','Segoe UI',sans-serif", color:C.text }}>
+    <div style={{ minHeight:'100vh', background:C.bg, fontFamily:"'DM Sans','Segoe UI',sans-serif", color:C.text }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800;900&family=DM+Sans:wght@300;400;500;600;700;800&display=swap');
         *{box-sizing:border-box;margin:0;padding:0}
         ::-webkit-scrollbar{width:4px;background:transparent}
-        ::-webkit-scrollbar-thumb{background:rgba(0,201,167,0.25);border-radius:4px}
-        select option{background:#0B1424;color:#F1F5F9}
+        ::-webkit-scrollbar-thumb{background:rgba(245,158,11,0.2);border-radius:4px}
+        select option{background:#0A0D16;color:#F1F5F9}
         input::placeholder{color:#475569}
         select{appearance:auto}
       `}</style>
 
-      {/* SIDEBAR */}
-      <Sidebar
-        tab={tab} setTab={setTab}
-        storageInfo={storageInfo} storeMsg={storeMsg}
-        timestamp={timestamp} storing={storing} loadingDB={loadingDB}
-        onUpload={handleUpload} onClear={handleClear}
-      />
+      {/* HEADER — Estilo C: wide, tabs com underline amber */}
+      <div style={{
+        background:'#070910',
+        borderBottom:`1px solid rgba(245,158,11,0.1)`,
+        display:'flex', alignItems:'center',
+        padding:'0 32px', height:52, position:'sticky', top:0, zIndex:100,
+        backdropFilter:'blur(12px)',
+      }}>
+        {/* Glow top */}
+        <div style={{ position:'absolute', top:-40, left:'50%', transform:'translateX(-50%)', width:500, height:80, background:'radial-gradient(ellipse,rgba(245,158,11,0.07),transparent 70%)', pointerEvents:'none' }} />
 
-      {/* MAIN */}
-      <div style={{ marginLeft:260, flex:1, minHeight:'100vh', display:'flex', flexDirection:'column' }}>
-        {/* Top bar */}
-        <div style={{
-          height:56, background:`${C.bgCard}CC`, backdropFilter:'blur(16px)',
-          borderBottom:`1px solid ${C.border}`,
-          display:'flex', alignItems:'center', justifyContent:'space-between',
-          padding:'0 28px', position:'sticky', top:0, zIndex:40,
-        }}>
+        {/* Logo */}
+        <div style={{ display:'flex', alignItems:'center', gap:10, marginRight:32 }}>
+          <div style={{ width:28, height:28, borderRadius:8, background:'linear-gradient(135deg,#F59E0B,#F97316)', display:'flex', alignItems:'center', justifyContent:'center' }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+          </div>
           <div>
-            <span style={{ fontSize:15, fontWeight:800, color:C.text, fontFamily:"'Syne',sans-serif" }}>
-              {tab==='agendas' ? '🗓 Agendas Médicas' : '⏱ Fila de Espera'}
-            </span>
-            {storageInfo[tab]>0 && (
-              <span style={{ marginLeft:10, fontSize:11, color:C.muted }}>
-                {storageInfo[tab].toLocaleString('pt-BR')} registros
-              </span>
-            )}
-          </div>
-          <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-            <div style={{ width:7, height:7, borderRadius:'50%', background:C.teal, boxShadow:`0 0 8px ${C.teal}` }} />
-            <span style={{ fontSize:11, color:C.sub }}>Banco conectado</span>
+            <span style={{ fontSize:14, fontWeight:900, color:C.text, fontFamily:"'Syne',sans-serif", letterSpacing:'-.3px' }}>Monitor </span>
+            <span style={{ fontSize:14, fontWeight:900, color:C.amber, fontFamily:"'Syne',sans-serif", letterSpacing:'-.3px' }}>Clínicas</span>
           </div>
         </div>
 
-        {/* Content */}
-        <div style={{ padding:'24px 28px', flex:1 }}>
-          {loadingDB ? (
-            <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'60vh', gap:16 }}>
-              <div style={{ fontSize:40 }}>⏳</div>
-              <div style={{ fontSize:16, color:C.sub, fontFamily:"'Syne',sans-serif", fontWeight:700 }}>Conectando ao banco de dados…</div>
-              {storeMsg && <div style={{ fontSize:12, color:C.amber }}>{storeMsg}</div>}
-            </div>
-          ) : (
-            <>
-              {tab==='agendas' && <TabAgendas rows={agendas} />}
-              {tab==='espera'  && <TabEspera  rows={espera}  />}
-            </>
-          )}
+        {/* Tabs com underline */}
+        <div style={{ display:'flex', height:'100%', gap:0 }}>
+          {[
+            { key:'espera',  label:'Fila de Espera',   count:storageInfo.espera  },
+            { key:'agendas', label:'Agendas Médicas',  count:storageInfo.agendas },
+          ].map(t => (
+            <button key={t.key} onClick={()=>setTab(t.key)} style={{
+              padding:'0 20px', border:'none', background:'transparent', cursor:'pointer',
+              fontSize:12, fontWeight:700, height:'100%',
+              color: tab===t.key ? C.amber : C.muted,
+              borderBottom: tab===t.key ? `2px solid ${C.amber}` : '2px solid transparent',
+              transition:'all .2s', display:'flex', alignItems:'center', gap:7,
+            }}>
+              {t.label}
+              {t.count>0 && (
+                <span style={{ fontSize:9, padding:'1px 6px', borderRadius:10, background:tab===t.key?`${C.amber}20`:'rgba(255,255,255,0.06)', color:tab===t.key?C.amber:C.muted, fontWeight:700 }}>
+                  {t.count.toLocaleString('pt-BR')}
+                </span>
+              )}
+            </button>
+          ))}
         </div>
+
+        {/* Right */}
+        <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:14 }}>
+          {/* Status banco */}
+          <div style={{ display:'flex', alignItems:'center', gap:5 }}>
+            <div style={{ width:6, height:6, borderRadius:'50%', background:C.emerald, boxShadow:`0 0 6px ${C.emerald}` }} />
+            <span style={{ fontSize:10, color:C.muted }}>Banco conectado</span>
+          </div>
+
+          {/* Timestamp */}
+          {timestamp && <span style={{ fontSize:10, color:C.muted }}>{timestamp}</span>}
+
+          {/* Store msg */}
+          {storeMsg && (
+            <span style={{ fontSize:10, color:storeMsg.startsWith('☁')||storeMsg.startsWith('✓')?C.emerald:C.amber, fontWeight:600, maxWidth:220, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+              {storeMsg}
+            </span>
+          )}
+
+          {/* Clear */}
+          {(storageInfo.agendas>0||storageInfo.espera>0) && !storing && (
+            <button onClick={handleClear} style={{ background:'transparent', border:`0.5px solid rgba(244,63,94,0.3)`, borderRadius:8, color:C.rose, fontSize:11, padding:'5px 10px', cursor:'pointer' }}>
+              🗑
+            </button>
+          )}
+
+          {/* Upload */}
+          <label style={{
+            background: storing ? 'rgba(255,255,255,0.06)' : 'linear-gradient(135deg,#F59E0B,#F97316)',
+            color: storing ? C.muted : '#1a0800',
+            fontWeight:800, fontSize:12, padding:'7px 16px',
+            borderRadius:9, cursor:storing?'default':'pointer', transition:'all .2s',
+            whiteSpace:'nowrap', fontFamily:"'Syne',sans-serif",
+          }}>
+            {storing ? 'Salvando…' : '+ Carregar Planilha'}
+            <input type="file" accept=".xlsx,.xls" style={{display:'none'}} onChange={handleUpload} disabled={storing||loadingDB} />
+          </label>
+        </div>
+      </div>
+
+      {/* CONTENT */}
+      <div style={{ padding:'24px 32px' }}>
+        {loadingDB ? (
+          <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'calc(100vh - 120px)', gap:16 }}>
+            <div style={{ fontSize:36, filter:'drop-shadow(0 0 20px #F59E0B88)' }}>⏳</div>
+            <div style={{ fontSize:16, color:C.sub, fontFamily:"'Syne',sans-serif", fontWeight:700 }}>Conectando ao banco…</div>
+            {storeMsg && <div style={{ fontSize:12, color:C.amber }}>{storeMsg}</div>}
+          </div>
+        ) : (
+          <>
+            {tab==='agendas' && <TabAgendas rows={agendas} />}
+            {tab==='espera'  && <TabEspera  rows={espera}  />}
+          </>
+        )}
       </div>
     </div>
   )
