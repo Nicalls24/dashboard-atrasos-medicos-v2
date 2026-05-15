@@ -179,6 +179,36 @@ function TabAgendas({ rows }) {
       sponPct:   cnt>0?((sponto/cnt)*100).toFixed(1):'0' }
   }, [filtered])
 
+  // Médicos — computed values for donut
+  const medTotalProb = faltasList.length + atrasosList.length
+  const medFPct  = medTotalProb>0 ? Math.round((faltasList.length/medTotalProb)*100)  : 0
+  const medAPct  = medTotalProb>0 ? Math.round((atrasosList.length/medTotalProb)*100) : 0
+  const medRate  = totalReg>0 ? ((medTotalProb/totalReg)*100).toFixed(1) : '0'
+  const medR=44, medCX=54, medCY=54, medCirc=2*Math.PI*medR
+  const medFDash = (medFPct/100)*medCirc
+  const medADash = (medAPct/100)*medCirc
+
+  // Trend — computed values
+  const trendAllData  = trendView==='real' ? byDate : [...byDate, ...projData]
+  const trendMaxCrit  = Math.max(...trendAllData.map(d=>d.crit||0), 1)
+  const trendMaxPac   = Math.max(...trendAllData.map(d=>d.pac||0),  1)
+  const trendTotal    = trendAllData.length
+  const trendRealCnt  = byDate.length
+  const trendLastReal = byDate[byDate.length-1]
+  const trendFirst    = byDate[0]
+  const trendVarCrit  = byDate.length>=2 ? ((trendLastReal?.crit||0)-(trendFirst?.crit||0)) : 0
+  const trendAvgCrit  = byDate.length>0  ? Math.round(byDate.reduce((a,d)=>a+d.crit,0)/byDate.length) : 0
+  const trendMaxDay   = byDate.length>0  ? byDate.reduce((a,d)=>d.crit>a.crit?d:a, byDate[0]) : null
+  const trendSlope    = projData.length>0 ? ((projData[0]?.crit||0)-(trendLastReal?.crit||0)) : 0
+
+  const VW=800, VH=160, PL=48, PR=48, PT=10, PB=32
+  const CW=VW-PL-PR, CH=VH-PT-PB
+  const txPos = (i) => trendTotal<=1 ? PL+CW/2 : PL+(i/(trendTotal-1))*CW
+  const tyPos = (v, mx) => PT+CH-(mx>0?(v/mx)*CH:0)
+  const tMakePath = (data, key, mx, startI=0) =>
+    data.map((d,i)=>`${i+startI===0?'M':'L'}${txPos(i+startI).toFixed(1)},${tyPos(d[key]||0,mx).toFixed(1)}`).join(' ')
+  const tYTicks = [0, Math.round(trendMaxCrit*0.5), trendMaxCrit]
+
   if (!rows.length) return (
     <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'60vh', gap:14 }}>
       <div style={{ fontSize:44 }}>📋</div>
@@ -495,6 +525,36 @@ function TabEspera({ rows }) {
   const metaPct   = espStats.totalEsp>0?Math.min(Math.round((totalJust/espStats.totalEsp)*100),100):0
   const metaColor = metaPct>=80?C.emerald:metaPct>=50?C.amber:C.rose
 
+  // Médicos — computed values for donut
+  const medTotalProb = faltasList.length + atrasosList.length
+  const medFPct  = medTotalProb>0 ? Math.round((faltasList.length/medTotalProb)*100)  : 0
+  const medAPct  = medTotalProb>0 ? Math.round((atrasosList.length/medTotalProb)*100) : 0
+  const medRate  = totalReg>0 ? ((medTotalProb/totalReg)*100).toFixed(1) : '0'
+  const medR=44, medCX=54, medCY=54, medCirc=2*Math.PI*medR
+  const medFDash = (medFPct/100)*medCirc
+  const medADash = (medAPct/100)*medCirc
+
+  // Trend — computed values
+  const trendAllData  = trendView==='real' ? byDate : [...byDate, ...projData]
+  const trendMaxCrit  = Math.max(...trendAllData.map(d=>d.crit||0), 1)
+  const trendMaxPac   = Math.max(...trendAllData.map(d=>d.pac||0),  1)
+  const trendTotal    = trendAllData.length
+  const trendRealCnt  = byDate.length
+  const trendLastReal = byDate[byDate.length-1]
+  const trendFirst    = byDate[0]
+  const trendVarCrit  = byDate.length>=2 ? ((trendLastReal?.crit||0)-(trendFirst?.crit||0)) : 0
+  const trendAvgCrit  = byDate.length>0  ? Math.round(byDate.reduce((a,d)=>a+d.crit,0)/byDate.length) : 0
+  const trendMaxDay   = byDate.length>0  ? byDate.reduce((a,d)=>d.crit>a.crit?d:a, byDate[0]) : null
+  const trendSlope    = projData.length>0 ? ((projData[0]?.crit||0)-(trendLastReal?.crit||0)) : 0
+
+  const VW=800, VH=160, PL=48, PR=48, PT=10, PB=32
+  const CW=VW-PL-PR, CH=VH-PT-PB
+  const txPos = (i) => trendTotal<=1 ? PL+CW/2 : PL+(i/(trendTotal-1))*CW
+  const tyPos = (v, mx) => PT+CH-(mx>0?(v/mx)*CH:0)
+  const tMakePath = (data, key, mx, startI=0) =>
+    data.map((d,i)=>`${i+startI===0?'M':'L'}${txPos(i+startI).toFixed(1)},${tyPos(d[key]||0,mx).toFixed(1)}`).join(' ')
+  const tYTicks = [0, Math.round(trendMaxCrit*0.5), trendMaxCrit]
+
   if (!rows.length) return (
     <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'60vh', gap:14 }}>
       <div style={{ fontSize:44 }}>⏱️</div>
@@ -674,325 +734,212 @@ function TabEspera({ rows }) {
         </div>
 
         {/* Médicos — redesenho moderno */}
-        {(() => {
-          const totalProb  = faltasList.length + atrasosList.length
-          const probRate   = totalReg>0 ? (totalProb/totalReg*100).toFixed(1) : '0'
-          const r=44, cx=54, cy=54, circ=2*Math.PI*r
-          const fPct  = totalProb>0 ? faltasList.length/totalProb : 0
-          const aPct  = totalProb>0 ? atrasosList.length/totalProb : 0
-          const fDash = fPct*circ, aDash = aPct*circ
-          const maxSt = statusAt[0]?.v||1
-          return (
-            <div style={{ background:'rgba(255,255,255,0.025)', border:'1px solid rgba(255,255,255,0.06)', borderRadius:14, padding:'20px 22px' }}>
-              <div style={{ fontSize:13,fontWeight:700,color:C.text,marginBottom:2 }}>Médicos — Falta e Atraso</div>
-              <div style={{ fontSize:10.5,color:C.muted,marginBottom:16 }}>Ocorrências no período · coluna ATRASO</div>
-
-              {/* Anel + métricas */}
-              <div style={{ display:'flex', alignItems:'center', gap:18, marginBottom:18 }}>
-                {/* SVG Donut */}
-                <svg width="108" height="108" viewBox="0 0 108 108" style={{ flexShrink:0 }}>
-                  {/* Track */}
-                  <circle cx={cx} cy={cy} r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="10" />
-                  {/* Faltas arc */}
-                  {faltasList.length>0 && (
-                    <circle cx={cx} cy={cy} r={r} fill="none" stroke="#F43F5E" strokeWidth="10" strokeLinecap="round"
-                      strokeDasharray={`${fDash} ${circ-fDash}`}
-                      transform={`rotate(-90 ${cx} ${cy})`} opacity=".9" />
-                  )}
-                  {/* Atrasos arc */}
-                  {atrasosList.length>0 && (
-                    <circle cx={cx} cy={cy} r={r} fill="none" stroke="#F59E0B" strokeWidth="10" strokeLinecap="round"
-                      strokeDasharray={`${aDash} ${circ-aDash}`}
-                      transform={`rotate(${-90+fPct*360} ${cx} ${cy})`} opacity=".85" />
-                  )}
-                  <text x={cx} y={cy-6} textAnchor="middle" fontSize="18" fontWeight="800" fill={totalProb>0?'#F97316':'#475569'}>{totalProb}</text>
-                  <text x={cx} y={cy+10} textAnchor="middle" fontSize="9" fill="#475569">ocorrências</text>
-                  <text x={cx} y={cy+22} textAnchor="middle" fontSize="8" fill="#334155">{probRate}% do total</text>
-                </svg>
-
-                {/* Legenda */}
-                <div style={{ flex:1, display:'flex', flexDirection:'column', gap:10 }}>
-                  {[
-                    { label:'Faltas',        value:faltasList.length,  color:C.rose,  pct: totalProb>0?Math.round(fPct*100):0 },
-                    { label:'Atrasos >31min',value:atrasosList.length, color:C.amber, pct: totalProb>0?Math.round(aPct*100):0 },
-                  ].map(k=>(
-                    <div key={k.label}>
-                      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:4 }}>
-                        <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-                          <div style={{ width:8,height:8,borderRadius:'50%',background:k.color }} />
-                          <span style={{ fontSize:11,color:C.sub }}>{k.label}</span>
-                        </div>
-                        <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                          <span style={{ fontSize:11,fontWeight:700,color:k.color }}>{k.value}</span>
-                          <span style={{ fontSize:9.5,color:C.muted }}>{k.pct}%</span>
-                        </div>
-                      </div>
-                      <div style={{ background:'rgba(255,255,255,0.05)',borderRadius:3,height:4,overflow:'hidden' }}>
-                        <div style={{ height:'100%',background:k.color,width:`${k.pct}%`,borderRadius:3,transition:'width .6s' }} />
+        <div style={{ background:'rgba(255,255,255,0.025)', border:'1px solid rgba(255,255,255,0.06)', borderRadius:14, padding:'20px 22px' }}>
+          <div style={{ fontSize:13,fontWeight:700,color:C.text,marginBottom:2 }}>Médicos — Falta e Atraso</div>
+          <div style={{ fontSize:10.5,color:C.muted,marginBottom:16 }}>Ocorrências no período · coluna ATRASO</div>
+          <div style={{ display:'flex', alignItems:'center', gap:18, marginBottom:18 }}>
+            <svg width="108" height="108" viewBox="0 0 108 108" style={{ flexShrink:0 }}>
+              <circle cx={medCX} cy={medCY} r={medR} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="10" />
+              {faltasList.length>0 && <circle cx={medCX} cy={medCY} r={medR} fill="none" stroke="#F43F5E" strokeWidth="10" strokeLinecap="round"
+                strokeDasharray={`${medFDash.toFixed(1)} ${(medCirc-medFDash).toFixed(1)}`}
+                transform={`rotate(-90 ${medCX} ${medCY})`} opacity="0.9" />}
+              {atrasosList.length>0 && <circle cx={medCX} cy={medCY} r={medR} fill="none" stroke="#F59E0B" strokeWidth="10" strokeLinecap="round"
+                strokeDasharray={`${medADash.toFixed(1)} ${(medCirc-medADash).toFixed(1)}`}
+                transform={`rotate(${(-90+medFPct*3.6).toFixed(1)} ${medCX} ${medCY})`} opacity="0.85" />}
+              <text x={medCX} y={medCY-6} textAnchor="middle" fontSize="18" fontWeight="800" fill={medTotalProb>0?'#F97316':'#475569'}>{medTotalProb}</text>
+              <text x={medCX} y={medCY+10} textAnchor="middle" fontSize="9" fill="#475569">ocorrências</text>
+              <text x={medCX} y={medCY+22} textAnchor="middle" fontSize="8" fill="#334155">{medRate}% do total</text>
+            </svg>
+            <div style={{ flex:1, display:'flex', flexDirection:'column', gap:10 }}>
+              {[
+                { label:'Faltas',        value:faltasList.length,  color:C.rose,  pct:medFPct },
+                { label:'Atrasos >31min',value:atrasosList.length, color:C.amber, pct:medAPct },
+              ].map(k=>(
+                <div key={k.label}>
+                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:4 }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                      <div style={{ width:8,height:8,borderRadius:'50%',background:k.color }} />
+                      <span style={{ fontSize:11,color:C.sub }}>{k.label}</span>
+                    </div>
+                    <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                      <span style={{ fontSize:11,fontWeight:700,color:k.color }}>{k.value}</span>
+                      <span style={{ fontSize:9.5,color:C.muted }}>{k.pct}%</span>
+                    </div>
+                  </div>
+                  <div style={{ background:'rgba(255,255,255,0.05)',borderRadius:3,height:4,overflow:'hidden' }}>
+                    <div style={{ height:'100%',background:k.color,width:`${k.pct}%`,borderRadius:3,transition:'width .6s' }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+          {statusAt.length>0 && (
+            <div style={{ borderTop:'0.5px solid rgba(255,255,255,0.06)', paddingTop:14 }}>
+              <div style={{ fontSize:9.5,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.09em',marginBottom:12 }}>Classificação do Atraso</div>
+              {statusAt.map(({k,v})=>{
+                const cfg=getStatusCfg(k)
+                const pctAt=statusAt[0]?.v>0?Math.round(v/statusAt[0].v*100):0
+                return (
+                  <div key={k} style={{ marginBottom:10 }}>
+                    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:4 }}>
+                      <span style={{ fontSize:10,color:C.sub }}>{cfg.label}</span>
+                      <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                        <span style={{ fontSize:11,fontWeight:700,color:cfg.color }}>{v}</span>
+                        <span style={{ fontSize:9,color:C.muted }}>{pctAt}%</span>
                       </div>
                     </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Classificação do atraso */}
-              {statusAt.length>0 && (<>
-                <div style={{ borderTop:'0.5px solid rgba(255,255,255,0.06)', paddingTop:14, marginBottom:12 }}>
-                  <div style={{ fontSize:9.5,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.09em',marginBottom:12 }}>Classificação do Atraso</div>
-                  {statusAt.map(({k,v})=>{
-                    const cfg=getStatusCfg(k)
-                    return (
-                      <div key={k} style={{ marginBottom:10 }}>
-                        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:4 }}>
-                          <span style={{ fontSize:10,color:C.sub }}>{cfg.label}</span>
-                          <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                            <span style={{ fontSize:11,fontWeight:700,color:cfg.color }}>{v}</span>
-                            <span style={{ fontSize:9,color:C.muted }}>{maxSt>0?Math.round(v/maxSt*100):0}%</span>
-                          </div>
-                        </div>
-                        <div style={{ background:'rgba(255,255,255,0.05)',borderRadius:3,height:5,overflow:'hidden' }}>
-                          <div style={{ height:'100%',background:`linear-gradient(90deg,${cfg.color},${cfg.color}88)`,width:`${maxSt>0?(v/maxSt*100):0}%`,borderRadius:3,transition:'width .6s' }} />
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              </>)}
-
-              {totalProb===0 && <div style={{ color:C.muted,fontSize:11,textAlign:'center',padding:'8px 0' }}>Nenhuma ocorrência no período.</div>}
+                    <div style={{ background:'rgba(255,255,255,0.05)',borderRadius:3,height:5,overflow:'hidden' }}>
+                      <div style={{ height:'100%',background:cfg.color,width:`${pctAt}%`,borderRadius:3,transition:'width .6s' }} />
+                    </div>
+                  </div>
+                )
+              })}
             </div>
-          )
-        })()}
+          )}
+          {medTotalProb===0 && <div style={{ color:C.muted,fontSize:11,textAlign:'center',padding:'8px 0' }}>Nenhuma ocorrência no período.</div>}
+        </div>
       </div>
 
-      {/* GRÁFICO DE TENDÊNCIA — Real / Projeção */}
-      {(() => {
-        const allData   = trendView==='real' ? byDate : [...byDate, ...projData]
-        const maxCrit   = Math.max(...allData.map(d=>d.crit||0), 1)
-        const maxPac    = Math.max(...allData.map(d=>d.pac||0),  1)
-        const total     = allData.length
-        const realCnt   = byDate.length
-
-        // KPIs
-        const lastReal  = byDate[byDate.length-1]
-        const firstReal = byDate[0]
-        const varCrit   = byDate.length>=2 ? (lastReal.crit-firstReal.crit) : 0
-        const avgCrit   = byDate.length>0  ? Math.round(byDate.reduce((a,d)=>a+d.crit,0)/byDate.length) : 0
-        const maxDay    = byDate.length>0  ? byDate.reduce((a,d)=>d.crit>a.crit?d:a, byDate[0]) : null
-        const slope     = projData.length>0 ? (projData[0].crit - (lastReal?.crit||0)) : 0
-
-        // SVG dimensions
-        const VW=800, VH=180
-        const PL=48, PR=48, PT=12, PB=36
-        const CW=VW-PL-PR, CH=VH-PT-PB
-
-        // Scale functions
-        const xPos = (i) => total<=1 ? PL+CW/2 : PL + (i/(total-1))*CW
-        const yPos = (v, mx) => PT + CH - (mx>0?(v/mx)*CH:0)
-
-        // Build SVG paths
-        const makePath = (data, key, mx, startI=0) => {
-          const pts = data.map((d,i)=>`${i+startI===0?'M':'L'}${xPos(i+startI).toFixed(1)},${yPos(d[key]||0,mx).toFixed(1)}`)
-          return pts.join(' ')
-        }
-
-        // Grid Y values
-        const yTicks = [0, Math.round(maxCrit*0.25), Math.round(maxCrit*0.5), Math.round(maxCrit*0.75), maxCrit]
-
-        return (
-          <div style={{ background:'rgba(255,255,255,0.025)', border:'1px solid rgba(255,255,255,0.06)', borderRadius:14, padding:'20px 24px', marginBottom:14 }}>
-
-            {/* Header */}
-            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:16 }}>
-              <div>
-                <div style={{ fontSize:10, fontWeight:700, color:C.muted, textTransform:'uppercase', letterSpacing:'.13em' }}>
-                  TENDÊNCIA DE ESPERAS · {realCnt} DIA{realCnt!==1?'S':''} · TODOS OS ESTADOS
-                </div>
-                <div style={{ fontSize:10.5, color:C.muted, marginTop:4 }}>
-                  Esperas críticas e pacientes aguardando ao longo do tempo
-                </div>
-              </div>
-              <div style={{ display:'flex', background:'rgba(255,255,255,0.04)', border:'0.5px solid rgba(255,255,255,0.08)', borderRadius:9, padding:3, gap:2 }}>
-                {[{key:'real',label:'Real'},{key:'proj',label:'Projeção'}].map(v=>(
-                  <button key={v.key} onClick={()=>setTrendView(v.key)} style={{
-                    padding:'5px 16px', borderRadius:6, border:'none', cursor:'pointer', fontSize:11, fontWeight:700, transition:'all .15s',
-                    background:trendView===v.key?C.amber:'transparent',
-                    color:trendView===v.key?'#1a0800':C.muted,
-                  }}>{v.label}</button>
-                ))}
-              </div>
+      {/* TENDÊNCIA */}
+      <div style={{ background:'rgba(255,255,255,0.025)', border:'1px solid rgba(255,255,255,0.06)', borderRadius:14, padding:'20px 24px', marginBottom:14 }}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:16 }}>
+          <div>
+            <div style={{ fontSize:10,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.13em' }}>
+              TENDÊNCIA DE ESPERAS · {trendRealCnt} DIA{trendRealCnt!==1?'S':''} · TODOS OS ESTADOS
             </div>
+            <div style={{ fontSize:10.5,color:C.muted,marginTop:4 }}>Esperas críticas ao longo do tempo</div>
+          </div>
+          <div style={{ display:'flex', background:'rgba(255,255,255,0.04)', border:'0.5px solid rgba(255,255,255,0.08)', borderRadius:9, padding:3, gap:2 }}>
+            {[{key:'real',label:'Real'},{key:'proj',label:'Projeção'}].map(v=>(
+              <button key={v.key} onClick={()=>setTrendView(v.key)} style={{
+                padding:'5px 16px', borderRadius:6, border:'none', cursor:'pointer', fontSize:11, fontWeight:700, transition:'all .15s',
+                background:trendView===v.key?C.amber:'transparent',
+                color:trendView===v.key?'#1a0800':C.muted,
+              }}>{v.label}</button>
+            ))}
+          </div>
+        </div>
 
-            {/* KPIs */}
-            <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:10, marginBottom:16 }}>
-              {(trendView==='real' ? [
-                { label:'Esperas Críticas (hoje)',  value:lastReal?.crit??'—',                                            color:C.rose   },
-                { label:'Variação no período',      value:byDate.length>=2?(varCrit>=0?`+${varCrit}`:String(varCrit)):'—', color:varCrit>0?C.rose:varCrit<0?C.emerald:C.muted },
-                { label:'Média diária crítica',     value:avgCrit||'—',                                                   color:C.amber  },
-                { label:'Pior dia registrado',      value:maxDay?`${maxDay.crit} em ${maxDay.date.slice(5).replace('-','/')}`:'—', color:C.orange },
-              ] : [
-                { label:'Projeção amanhã',          value:projData[0]?.crit??'—',              color:C.rose   },
-                { label:'Projeção +5 dias',         value:projData[4]?.crit??'—',              color:C.orange },
-                { label:'Tendência diária',         value:slope>=0?`+${slope}`:String(slope),  color:slope>0?C.rose:slope<0?C.emerald:C.muted },
-                { label:'Média atual (base)',        value:avgCrit||'—',                        color:C.amber  },
-              ]).map((k,i)=>(
-                <div key={k.label} style={{ background:`${k.color}08`, border:`0.5px solid ${k.color}20`, borderRadius:10, padding:'11px 14px' }}>
-                  <div style={{ fontSize:9, fontWeight:700, color:C.muted, textTransform:'uppercase', letterSpacing:'.08em', marginBottom:7 }}>{k.label}</div>
-                  <div style={{ fontSize:22, fontWeight:800, color:k.color, letterSpacing:'-.5px' }}>{k.value}</div>
+        {/* KPIs */}
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:10, marginBottom:16 }}>
+          {(trendView==='real' ? [
+            { label:'Esperas Críticas (hoje)', value:trendLastReal?.crit??'—',                                                    color:C.rose   },
+            { label:'Variação no período',     value:byDate.length>=2?(trendVarCrit>=0?`+${trendVarCrit}`:String(trendVarCrit)):'—', color:trendVarCrit>0?C.rose:trendVarCrit<0?C.emerald:C.muted },
+            { label:'Média diária crítica',    value:trendAvgCrit||'—',                                                          color:C.amber  },
+            { label:'Pior dia registrado',     value:trendMaxDay?`${trendMaxDay.crit} em ${trendMaxDay.date.slice(5).replace('-','/')}`:'—', color:C.orange },
+          ] : [
+            { label:'Projeção amanhã',         value:projData[0]?.crit??'—',                color:C.rose   },
+            { label:'Projeção +5 dias',        value:projData[4]?.crit??'—',                color:C.orange },
+            { label:'Tendência diária',        value:trendSlope>=0?`+${trendSlope}`:String(trendSlope), color:trendSlope>0?C.rose:trendSlope<0?C.emerald:C.muted },
+            { label:'Média atual (base)',       value:trendAvgCrit||'—',                    color:C.amber  },
+          ]).map((k,i)=>(
+            <div key={k.label} style={{ background:`${k.color}08`,border:`0.5px solid ${k.color}20`,borderRadius:10,padding:'11px 14px' }}>
+              <div style={{ fontSize:9,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.08em',marginBottom:7 }}>{k.label}</div>
+              <div style={{ fontSize:22,fontWeight:800,color:k.color,letterSpacing:'-.5px' }}>{k.value}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Chart */}
+        {trendAllData.length===0 ? (
+          <div style={{ textAlign:'center', padding:'40px 0', color:C.muted, fontSize:12 }}>
+            Sem dados suficientes. Carregue uma planilha com múltiplos dias para ver a tendência.
+          </div>
+        ) : (
+          <div>
+            <svg width="100%" viewBox={`0 0 ${VW} ${VH}`} style={{ display:'block', overflow:'visible' }}>
+              <defs>
+                <linearGradient id="gCrit" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#F43F5E" stopOpacity="0.25"/>
+                  <stop offset="100%" stopColor="#F43F5E" stopOpacity="0"/>
+                </linearGradient>
+              </defs>
+
+              {/* Grid */}
+              {tYTicks.map((v,ti)=>(
+                <g key={ti}>
+                  <line x1={PL} y1={tyPos(v,trendMaxCrit)} x2={VW-PR} y2={tyPos(v,trendMaxCrit)} stroke="rgba(255,255,255,0.05)" strokeWidth="0.5" />
+                  <text x={PL-6} y={tyPos(v,trendMaxCrit)+4} textAnchor="end" fontSize="9" fill="#334155">{v}</text>
+                </g>
+              ))}
+
+              {/* Area */}
+              {trendRealCnt>=2 && (
+                <path d={`${tMakePath(byDate,'crit',trendMaxCrit)} L${txPos(trendRealCnt-1).toFixed(1)},${(PT+CH).toFixed(1)} L${txPos(0).toFixed(1)},${(PT+CH).toFixed(1)} Z`}
+                  fill="url(#gCrit)" />
+              )}
+
+              {/* Separator */}
+              {trendView==='proj' && trendRealCnt>0 && trendTotal>trendRealCnt && (
+                <line x1={txPos(trendRealCnt-1)} y1={PT} x2={txPos(trendRealCnt-1)} y2={PT+CH}
+                  stroke="rgba(245,158,11,0.3)" strokeWidth="1" strokeDasharray="4,3" />
+              )}
+
+              {/* Lines — real */}
+              {trendRealCnt>=2 && (
+                <path d={tMakePath(byDate,'grv',trendMaxCrit)} fill="none" stroke="#F97316" strokeWidth="1.5" opacity="0.7" />
+              )}
+              {trendRealCnt>=2 && (
+                <path d={tMakePath(byDate,'crit',trendMaxCrit)} fill="none" stroke="#F43F5E" strokeWidth="2" />
+              )}
+
+              {/* Lines — projection */}
+              {trendView==='proj' && projData.length>=1 && trendRealCnt>=1 && (
+                <path d={`M${txPos(trendRealCnt-1).toFixed(1)},${tyPos(trendLastReal?.crit||0,trendMaxCrit).toFixed(1)} ${tMakePath(projData,'crit',trendMaxCrit,trendRealCnt)}`}
+                  fill="none" stroke="#F43F5E" strokeWidth="1.5" strokeOpacity="0.45" strokeDasharray="6,4" />
+              )}
+
+              {/* Dots — real */}
+              {byDate.map((d,i)=>(
+                <circle key={`dot-${i}`} cx={txPos(i)} cy={tyPos(d.crit,trendMaxCrit)} r="3.5"
+                  fill="#F43F5E" stroke="#06080F" strokeWidth="1.5" />
+              ))}
+
+              {/* Proj label */}
+              {trendView==='proj' && trendRealCnt>0 && trendTotal>trendRealCnt && (
+                <text x={txPos(trendRealCnt)+4} y={PT+12} fontSize="8" fill="rgba(245,158,11,0.6)" fontStyle="italic">Projeção</text>
+              )}
+
+              {/* X labels */}
+              {trendAllData.map((d,i)=>{
+                const show = trendTotal<=10 || i===0 || i===trendTotal-1 || i%Math.ceil(trendTotal/6)===0
+                return show ? (
+                  <text key={`xl-${i}`} x={txPos(i)} y={VH-4} textAnchor="middle" fontSize="9"
+                    fill={d.isProj?'rgba(245,158,11,0.45)':'#334155'} fontStyle={d.isProj?'italic':'normal'}>
+                    {d.date.slice(5).replace('-','/')}
+                  </text>
+                ) : null
+              })}
+
+              <line x1={PL} y1={PT+CH} x2={VW-PR} y2={PT+CH} stroke="rgba(255,255,255,0.08)" strokeWidth="0.5" />
+            </svg>
+
+            {/* Legend */}
+            <div style={{ display:'flex', gap:16, marginTop:8, justifyContent:'center', flexWrap:'wrap' }}>
+              {[
+                { color:'#F43F5E', label:'Espera Crítica (real)',  dashed:false },
+                { color:'#F97316', label:'Espera Grave (real)',    dashed:false },
+              ].concat(trendView==='proj' ? [
+                { color:'#F43F5E', label:'Projeção crítica', dashed:true },
+              ] : []).map(l=>(
+                <div key={l.label} style={{ display:'flex',alignItems:'center',gap:5 }}>
+                  <div style={{ width:16,height:3,borderRadius:2,background:l.dashed?'transparent':l.color,
+                    border:l.dashed?`1.5px dashed ${l.color}`:'none',opacity:l.dashed?.6:1 }} />
+                  <span style={{ fontSize:9.5,color:C.muted }}>{l.label}</span>
                 </div>
               ))}
             </div>
 
-            {/* SVG Line Chart */}
-            {allData.length === 0 ? (
-              <div style={{ textAlign:'center', padding:'40px 0', color:C.muted, fontSize:12 }}>
-                Sem dados suficientes. Carregue uma planilha com múltiplos dias para ver a tendência.
+            {trendView==='proj' && (
+              <div style={{ marginTop:12,padding:'9px 14px',background:'rgba(245,158,11,0.05)',border:'0.5px solid rgba(245,158,11,0.18)',borderRadius:8,fontSize:10.5,color:C.muted }}>
+                <span style={{ color:C.amber,fontWeight:700 }}>Como a projeção é calculada — </span>
+                Média dos últimos {Math.min(byDate.length,3)} dia{byDate.length!==1?'s':''} + tendência linear para os próximos 5 dias.
+                {byDate.length<3 && <span style={{ color:C.amber }}> Precisão aumenta com mais dias na base.</span>}
               </div>
-            ) : (
-              <>
-                <div style={{ width:'100%', position:'relative' }}>
-                  <svg width="100%" viewBox={`0 0 ${VW} ${VH}`} preserveAspectRatio="none" style={{ display:'block', overflow:'visible' }}>
-                    <defs>
-                      <linearGradient id="gradCrit" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#F43F5E" stopOpacity="0.3"/>
-                        <stop offset="100%" stopColor="#F43F5E" stopOpacity="0"/>
-                      </linearGradient>
-                      <linearGradient id="gradPac" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#00C9A7" stopOpacity="0.15"/>
-                        <stop offset="100%" stopColor="#00C9A7" stopOpacity="0"/>
-                      </linearGradient>
-                    </defs>
-
-                    {/* Grid lines Y */}
-                    {yTicks.map(v=>(
-                      <g key={v}>
-                        <line x1={PL} y1={yPos(v,maxCrit)} x2={VW-PR} y2={yPos(v,maxCrit)}
-                          stroke="rgba(255,255,255,0.05)" strokeWidth="0.5" />
-                        <text x={PL-6} y={yPos(v,maxCrit)+4} textAnchor="end" fontSize="9" fill="#334155">{v}</text>
-                        {/* Right axis — pacientes */}
-                        <text x={VW-PR+6} y={yPos(v,maxCrit)+4} textAnchor="start" fontSize="9" fill="#1E3A3A">
-                          {Math.round(v*(maxPac/maxCrit))}
-                        </text>
-                      </g>
-                    ))}
-
-                    {/* Separador real/projeção */}
-                    {trendView==='proj' && realCnt>0 && realCnt<total && (
-                      <line x1={xPos(realCnt-1)} y1={PT} x2={xPos(realCnt-1)} y2={PT+CH}
-                        stroke="rgba(245,158,11,0.3)" strokeWidth="1" strokeDasharray="4,3" />
-                    )}
-
-                    {/* Area fill — Crítica */}
-                    {byDate.length>0 && (
-                      <path d={`${makePath(byDate,'crit',maxCrit)} L${xPos(realCnt-1).toFixed(1)},${(PT+CH).toFixed(1)} L${xPos(0).toFixed(1)},${(PT+CH).toFixed(1)} Z`}
-                        fill="url(#gradCrit)" />
-                    )}
-
-                    {/* Area fill — Pacientes (secondary) */}
-                    {byDate.length>0 && (
-                      <path d={`${makePath(byDate,'pac',maxPac)} L${xPos(realCnt-1).toFixed(1)},${(PT+CH).toFixed(1)} L${xPos(0).toFixed(1)},${(PT+CH).toFixed(1)} Z`}
-                        fill="url(#gradPac)" />
-                    )}
-
-                    {/* Line — Pacientes (teal, real) */}
-                    {byDate.length>=2 && (
-                      <path d={makePath(byDate,'pac',maxPac)} fill="none"
-                        stroke="#00C9A7" strokeWidth="1.5" strokeOpacity="0.5" />
-                    )}
-
-                    {/* Line — Grave (amber, real) */}
-                    {byDate.length>=2 && (
-                      <path d={makePath(byDate,'grv',maxCrit)} fill="none"
-                        stroke="#F97316" strokeWidth="1.5" strokeOpacity="0.7" />
-                    )}
-
-                    {/* Line — Crítica (rose, real) */}
-                    {byDate.length>=2 && (
-                      <path d={makePath(byDate,'crit',maxCrit)} fill="none"
-                        stroke="#F43F5E" strokeWidth="2" />
-                    )}
-
-                    {/* Projeção — linhas tracejadas */}
-                    {trendView==='proj' && projData.length>0 && realCnt>0 && (<>
-                      {/* Conecta real ao proj */}
-                      <path d={`M${xPos(realCnt-1).toFixed(1)},${yPos(lastReal?.crit||0,maxCrit).toFixed(1)} L${xPos(realCnt).toFixed(1)},${yPos(projData[0]?.crit||0,maxCrit).toFixed(1)}`}
-                        fill="none" stroke="#F43F5E" strokeWidth="1.5" strokeOpacity="0.4" strokeDasharray="6,4" />
-                      {/* Proj crit */}
-                      {projData.length>=2 && (
-                        <path d={makePath(projData,'crit',maxCrit,realCnt)} fill="none"
-                          stroke="#F43F5E" strokeWidth="1.5" strokeOpacity="0.4" strokeDasharray="6,4" />
-                      )}
-                      {/* Proj pac */}
-                      {projData.length>=2 && (
-                        <path d={makePath(projData,'pac',maxPac,realCnt)} fill="none"
-                          stroke="#00C9A7" strokeWidth="1" strokeOpacity="0.3" strokeDasharray="4,4" />
-                      )}
-                      {/* Dots projeção */}
-                      {projData.map((d,i)=>(
-                        <circle key={d.date} cx={xPos(i+realCnt)} cy={yPos(d.crit,maxCrit)} r="3"
-                          fill="#F43F5E" fillOpacity="0.4" stroke="#F43F5E" strokeWidth="1" strokeOpacity="0.6" />
-                      ))}
-                      {/* Label "Projeção" */}
-                      {projData.length>0 && (
-                        <text x={xPos(realCnt)+4} y={PT+12} fontSize="8" fill="rgba(245,158,11,0.6)" fontStyle="italic">Projeção</text>
-                      )}
-                    </>)}
-
-                    {/* Dots reais — Crítica */}
-                    {byDate.map((d,i)=>(
-                      <circle key={d.date+'-crit'} cx={xPos(i)} cy={yPos(d.crit,maxCrit)} r="3.5"
-                        fill="#F43F5E" stroke="#06080F" strokeWidth="1.5" />
-                    ))}
-
-                    {/* X axis labels */}
-                    {allData.map((d,i)=>{
-                      const showLabel = total<=10 || i===0 || i===total-1 || i%Math.ceil(total/6)===0
-                      return showLabel ? (
-                        <text key={d.date} x={xPos(i)} y={VH-4} textAnchor="middle" fontSize="9"
-                          fill={d.isProj?'rgba(245,158,11,0.45)':'#334155'} fontStyle={d.isProj?'italic':'normal'}>
-                          {d.date.slice(5).replace('-','/')}
-                        </text>
-                      ) : null
-                    })}
-
-                    {/* Eixo X */}
-                    <line x1={PL} y1={PT+CH} x2={VW-PR} y2={PT+CH} stroke="rgba(255,255,255,0.08)" strokeWidth="0.5" />
-                  </svg>
-                </div>
-
-                {/* Legenda */}
-                <div style={{ display:'flex', gap:18, marginTop:10, justifyContent:'center', flexWrap:'wrap' }}>
-                  {[
-                    {color:'#F43F5E', label:'Espera Crítica',      dashed:false},
-                    {color:'#F97316', label:'Espera Grave',         dashed:false},
-                    {color:'#00C9A7', label:'Pacientes (eixo dir.)',dashed:false,opacity:.6},
-                    ...(trendView==='proj'?[
-                      {color:'#F43F5E', label:'Projeção crítica', dashed:true, opacity:.5},
-                    ]:[]),
-                  ].map(l=>(
-                    <div key={l.label} style={{ display:'flex', alignItems:'center', gap:5 }}>
-                      <div style={{ width:18, height:3, borderRadius:2, background:l.color, opacity:l.opacity||1,
-                        backgroundImage: l.dashed ? `repeating-linear-gradient(90deg,${l.color} 0,${l.color} 4px,transparent 4px,transparent 8px)` : 'none',
-                        border: l.dashed ? 'none' : 'none' }} />
-                      <span style={{ fontSize:9.5, color:C.muted }}>{l.label}</span>
-                    </div>
-                  ))}
-                </div>
-
-                {trendView==='proj' && (
-                  <div style={{ marginTop:12, padding:'9px 14px', background:'rgba(245,158,11,0.05)', border:'0.5px solid rgba(245,158,11,0.18)', borderRadius:8 }}>
-                    <span style={{ fontSize:10.5, color:C.muted }}>
-                      <span style={{ color:C.amber, fontWeight:700 }}>Como a projeção é calculada — </span>
-                      Média dos últimos {Math.min(byDate.length,3)} dia{byDate.length!==1?'s':''} reais + tendência linear aplicada aos próximos 5 dias.
-                      {byDate.length<3 && <span style={{ color:C.amber }}> Precisão aumenta com mais dias na base.</span>}
-                    </span>
-                  </div>
-                )}
-              </>
             )}
           </div>
-        )
-      })()}
+        )}
+      </div>
     </div>
   )
 }
