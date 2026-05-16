@@ -495,6 +495,9 @@ function TabEspera({ rows }) {
   const metaPct   = espStats.totalEsp>0?Math.min(Math.round((totalJust/espStats.totalEsp)*100),100):0
   const metaColor = metaPct>=80?C.emerald:metaPct>=50?C.amber:C.rose
 
+  // Desestrutura espStats antes de usar faltasList nas variáveis computadas
+  const { totalReg, totalPac, modCnt, grvCnt, critCnt, totalEsp, feedList, topU, faltasList, atrasosList, statusAt, byDate, projData } = espStats
+
   // Médicos — computed values for donut
   const medTotalProb = faltasList.length + atrasosList.length
   const medFPct  = medTotalProb>0 ? Math.round((faltasList.length/medTotalProb)*100)  : 0
@@ -533,7 +536,6 @@ function TabEspera({ rows }) {
     </div>
   )
 
-  const { totalReg, totalPac, modCnt, grvCnt, critCnt, totalEsp, feedList, topU, faltasList, atrasosList, statusAt, byDate, projData } = espStats
   const horasDispFim = horaFilt==='TODAS'?[]:horasDisp.filter(h=>h>parseInt(horaFilt))
 
   return (
