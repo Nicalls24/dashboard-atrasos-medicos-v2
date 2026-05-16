@@ -526,6 +526,21 @@ function TabEspera({ rows }) {
   const tyPos = (v, mx) => PT+CH-(mx>0?(v/mx)*CH:0)
   const tMakePath = (data, key, mx, startI=0) =>
     data.map((d,i)=>`${i+startI===0?'M':'L'}${txPos(i+startI).toFixed(1)},${tyPos(d[key]||0,mx).toFixed(1)}`).join(' ')
+
+  // Smooth curve (Catmull-Rom → cubic bezier)
+  const tSmooth = (data, key, mx, startI=0) => {
+    if (!data.length) return ''
+    const pts = data.map((d,i)=>({ x:parseFloat(txPos(i+startI).toFixed(2)), y:parseFloat(tyPos(d[key]||0,mx).toFixed(2)) }))
+    if (pts.length===1) return `M${pts[0].x},${pts[0].y}`
+    let path = `M${pts[0].x},${pts[0].y}`
+    for (let i=1; i<pts.length; i++) {
+      const p0=pts[i-2]||pts[i-1], p1=pts[i-1], p2=pts[i], p3=pts[i+1]||pts[i]
+      const cp1x=(p1.x+(p2.x-p0.x)/6).toFixed(2), cp1y=(p1.y+(p2.y-p0.y)/6).toFixed(2)
+      const cp2x=(p2.x-(p3.x-p1.x)/6).toFixed(2), cp2y=(p2.y-(p3.y-p1.y)/6).toFixed(2)
+      path += ` C${cp1x},${cp1y} ${cp2x},${cp2y} ${p2.x},${p2.y}`
+    }
+    return path
+  }
   const tYTicks = [0, Math.round(trendMaxCrit*0.5), trendMaxCrit]
 
   if (!rows.length) return (
@@ -763,30 +778,16 @@ function TabEspera({ rows }) {
                 return (
                   <div key={k}>
                     <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:3 }}>
-                      <span style={{ fontSize:11,color:C.sub }}>{cfg.label}</span>
-                      <span style={{ fontSize:12,fontWeight:700,color:cfg.color }}>
-                        {v} <span style={{ fontSize:9,color:C.muted,fontWeight:400 }}>{pctAt}%</span>
-                      </span>
-                    </div>
-                    <div style={{ background:'rgba(255,255,255,0.05)',borderRadius:3,height:5,overflow:'hidden' }}>
-                      <div style={{ height:'100%',background:`linear-gradient(90deg,${cfg.color},${cfg.color}88)`,width:`${pctAt}%`,borderRadius:3,transition:'width .6s' }} />
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* TENDÊNCIA */}
+                      <span styl      {/* TENDÊNCIA */}
       <div style={{ background:'rgba(255,255,255,0.025)', border:'1px solid rgba(255,255,255,0.06)', borderRadius:14, padding:'20px 24px', marginBottom:14 }}>
+
+        {/* Header */}
         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:16 }}>
           <div>
-            <div style={{ fontSize:10,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.13em' }}>
+            <div style={{ fontSize:10, fontWeight:700, color:C.muted, textTransform:'uppercase', letterSpacing:'.13em' }}>
               TENDÊNCIA DE ESPERAS · {trendRealCnt} DIA{trendRealCnt!==1?'S':''} · TODOS OS ESTADOS
             </div>
-            <div style={{ fontSize:10.5,color:C.muted,marginTop:4 }}>Esperas críticas ao longo do tempo</div>
+            <div style={{ fontSize:10.5, color:C.muted, marginTop:4 }}>Esperas críticas ao longo do tempo</div>
           </div>
           <div style={{ display:'flex', background:'rgba(255,255,255,0.04)', border:'0.5px solid rgba(255,255,255,0.08)', borderRadius:9, padding:3, gap:2 }}>
             {[{key:'real',label:'Real'},{key:'proj',label:'Projeção'}].map(v=>(
@@ -800,263 +801,171 @@ function TabEspera({ rows }) {
         </div>
 
         {/* KPIs */}
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:10, marginBottom:16 }}>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:10, marginBottom:20 }}>
           {(trendView==='real' ? [
-            { label:'Esperas Críticas (hoje)', value:trendLastReal?.crit??'—',                                                    color:C.rose   },
-            { label:'Variação no período',     value:byDate.length>=2?(trendVarCrit>=0?`+${trendVarCrit}`:String(trendVarCrit)):'—', color:trendVarCrit>0?C.rose:trendVarCrit<0?C.emerald:C.muted },
-            { label:'Média diária crítica',    value:trendAvgCrit||'—',                                                          color:C.amber  },
-            { label:'Pior dia registrado',     value:trendMaxDay?`${trendMaxDay.crit} em ${trendMaxDay.date.slice(5).replace('-','/')}`:'—', color:C.orange },
+            { label: trendRealCnt<=1 ? 'Esperas Críticas' : 'Esperas Críticas (hoje)', value:trendLastReal?.crit??'—', color:C.rose   },
+            { label:'Variação no período',  value:byDate.length>=2?(trendVarCrit>=0?`+${trendVarCrit}`:String(trendVarCrit)):'—', color:trendVarCrit>0?C.rose:trendVarCrit<0?C.emerald:C.muted },
+            { label:'Média diária crítica', value:trendAvgCrit||'—', color:C.amber },
+            { label:'Pior dia registrado',  value:trendMaxDay?`${trendMaxDay.crit} em ${trendMaxDay.date.slice(5).replace('-','/')}`:'—', color:C.orange },
           ] : [
-            { label:'Projeção amanhã',         value:projData[0]?.crit??'—',                color:C.rose   },
-            { label:'Projeção +5 dias',        value:projData[4]?.crit??'—',                color:C.orange },
-            { label:'Tendência diária',        value:trendSlope>=0?`+${trendSlope}`:String(trendSlope), color:trendSlope>0?C.rose:trendSlope<0?C.emerald:C.muted },
-            { label:'Média atual (base)',       value:trendAvgCrit||'—',                    color:C.amber  },
+            { label:'Projeção amanhã',    value:projData[0]?.crit??'—', color:C.rose   },
+            { label:'Projeção +5 dias',   value:projData[4]?.crit??'—', color:C.orange },
+            { label:'Tendência diária',   value:trendSlope>=0?`+${trendSlope}`:String(trendSlope), color:trendSlope>0?C.rose:trendSlope<0?C.emerald:C.muted },
+            { label:'Média atual (base)', value:trendAvgCrit||'—', color:C.amber },
           ]).map((k,i)=>(
-            <div key={k.label} style={{ background:`${k.color}08`,border:`0.5px solid ${k.color}20`,borderRadius:10,padding:'11px 14px' }}>
-              <div style={{ fontSize:9,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.08em',marginBottom:7 }}>{k.label}</div>
-              <div style={{ fontSize:22,fontWeight:800,color:k.color,letterSpacing:'-.5px' }}>{k.value}</div>
+            <div key={k.label} style={{ background:`${k.color}08`, border:`0.5px solid ${k.color}20`, borderRadius:10, padding:'11px 14px' }}>
+              <div style={{ fontSize:9, fontWeight:700, color:C.muted, textTransform:'uppercase', letterSpacing:'.08em', marginBottom:7 }}>{k.label}</div>
+              <div style={{ fontSize:22, fontWeight:800, color:k.color, letterSpacing:'-.5px' }}>{k.value}</div>
             </div>
           ))}
+        </div>
+
+        {/* Legenda */}
+        <div style={{ display:'flex', gap:18, marginBottom:12, flexWrap:'wrap' }}>
+          {[
+            { color:C.rose,   label:'Espera Crítica (real)', dashed:false },
+            { color:C.orange, label:'Espera Grave (real)',   dashed:false },
+            ...(trendView==='proj' ? [
+              { color:C.rose, label:'Projeção crítica', dashed:true },
+            ] : []),
+          ].map(l=>(
+            <div key={l.label} style={{ display:'flex', alignItems:'center', gap:6 }}>
+              {l.dashed
+                ? <div style={{ width:20, height:2, borderTop:`2px dashed ${l.color}`, opacity:.7 }} />
+                : <div style={{ width:20, height:2, background:l.color, borderRadius:1 }} />
+              }
+              <span style={{ fontSize:10, color:C.muted }}>{l.label}</span>
+            </div>
+          ))}
+          {trendMaxPac>0 && <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+            <div style={{ width:20, height:2, borderTop:`2px dotted ${C.teal}`, opacity:.6 }} />
+            <span style={{ fontSize:10, color:C.muted }}>Pacientes (eixo dir.)</span>
+          </div>}
         </div>
 
         {/* Chart */}
         {trendAllData.length===0 ? (
           <div style={{ textAlign:'center', padding:'40px 0', color:C.muted, fontSize:12 }}>
-            Sem dados suficientes. Carregue uma planilha com múltiplos dias para ver a tendência.
+            Sem dados suficientes. Carregue uma planilha com múltiplos dias.
           </div>
         ) : (
-          <div>
+          <div style={{ position:'relative' }}>
             <svg width="100%" viewBox={`0 0 ${VW} ${VH}`} style={{ display:'block', overflow:'visible' }}>
 
-
-              {/* Grid */}
+              {/* Grid lines Y */}
               {tYTicks.map((v,ti)=>(
                 <g key={ti}>
-                  <line x1={PL} y1={tyPos(v,trendMaxCrit)} x2={VW-PR} y2={tyPos(v,trendMaxCrit)} stroke="rgba(255,255,255,0.05)" strokeWidth="0.5" />
-                  <text x={PL-6} y={tyPos(v,trendMaxCrit)+4} textAnchor="end" fontSize="9" fill="#334155">{v}</text>
+                  <line x1={PL} y1={tyPos(v,trendMaxCrit)} x2={VW-PR} y2={tyPos(v,trendMaxCrit)}
+                    stroke="rgba(255,255,255,0.05)" strokeWidth="0.5" />
+                  <text x={PL-8} y={tyPos(v,trendMaxCrit)+4} textAnchor="end" fontSize="9" fill="#334155">{v}</text>
+                  {/* Right axis — pacientes */}
+                  <text x={VW-PR+8} y={tyPos(v,trendMaxCrit)+4} textAnchor="start" fontSize="9" fill="#1a3a3a">
+                    {Math.round(v*(trendMaxPac/Math.max(trendMaxCrit,1)))}
+                  </text>
                 </g>
               ))}
 
-              {/* Area */}
-              {trendRealCnt>=2 && (
-                <path d={`${tMakePath(byDate,'crit',trendMaxCrit)} L${txPos(trendRealCnt-1).toFixed(1)},${(PT+CH).toFixed(1)} L${txPos(0).toFixed(1)},${(PT+CH).toFixed(1)} Z`}
-                  fill="rgba(244,63,94,0.15)" />
-              )}
-
-              {/* Separator */}
+              {/* Separador real/proj */}
               {trendView==='proj' && trendRealCnt>0 && trendTotal>trendRealCnt && (
                 <line x1={txPos(trendRealCnt-1)} y1={PT} x2={txPos(trendRealCnt-1)} y2={PT+CH}
-                  stroke="rgba(245,158,11,0.3)" strokeWidth="1" strokeDasharray="4,3" />
+                  stroke="rgba(245,158,11,0.25)" strokeWidth="1" strokeDasharray="4,3" />
               )}
 
-              {/* Lines — real */}
+              {/* Area fill — Crítica (smooth) */}
               {trendRealCnt>=2 && (
-                <path d={tMakePath(byDate,'grv',trendMaxCrit)} fill="none" stroke="#F97316" strokeWidth="1.5" opacity={0.7} />
-              )}
-              {trendRealCnt>=2 && (
-                <path d={tMakePath(byDate,'crit',trendMaxCrit)} fill="none" stroke="#F43F5E" strokeWidth="2" />
+                <path
+                  d={`${tSmooth(byDate,'crit',trendMaxCrit)} L${txPos(trendRealCnt-1).toFixed(1)},${(PT+CH).toFixed(1)} L${txPos(0).toFixed(1)},${(PT+CH).toFixed(1)} Z`}
+                  fill="rgba(244,63,94,0.12)" />
               )}
 
-              {/* Lines — projection */}
+              {/* Area fill — Grave (smooth) */}
+              {trendRealCnt>=2 && (
+                <path
+                  d={`${tSmooth(byDate,'grv',trendMaxCrit)} L${txPos(trendRealCnt-1).toFixed(1)},${(PT+CH).toFixed(1)} L${txPos(0).toFixed(1)},${(PT+CH).toFixed(1)} Z`}
+                  fill="rgba(249,115,22,0.07)" />
+              )}
+
+              {/* Pacientes line (teal, right axis, dotted) */}
+              {trendRealCnt>=2 && trendMaxPac>0 && (
+                <path d={tSmooth(byDate,'pac',trendMaxPac)} fill="none"
+                  stroke="#00C9A7" strokeWidth="1.5" strokeOpacity="0.5" strokeDasharray="3,3" />
+              )}
+
+              {/* Line — Grave (smooth) */}
+              {trendRealCnt>=2 && (
+                <path d={tSmooth(byDate,'grv',trendMaxCrit)} fill="none"
+                  stroke="#F97316" strokeWidth="1.5" strokeOpacity="0.75" />
+              )}
+
+              {/* Line — Crítica (smooth, main) */}
+              {trendRealCnt>=2 && (
+                <path d={tSmooth(byDate,'crit',trendMaxCrit)} fill="none"
+                  stroke="#F43F5E" strokeWidth="2.5" />
+              )}
+
+              {/* Proj area fill */}
+              {trendView==='proj' && projData.length>=2 && trendRealCnt>=1 && (
+                <path
+                  d={`M${txPos(trendRealCnt-1).toFixed(1)},${tyPos(trendLastReal?.crit||0,trendMaxCrit).toFixed(1)} ${tSmooth(projData,'crit',trendMaxCrit,trendRealCnt).slice(1)} L${txPos(trendRealCnt+projData.length-1).toFixed(1)},${(PT+CH).toFixed(1)} L${txPos(trendRealCnt-1).toFixed(1)},${(PT+CH).toFixed(1)} Z`}
+                  fill="rgba(244,63,94,0.06)" />
+              )}
+
+              {/* Proj line — dashed smooth */}
               {trendView==='proj' && projData.length>=1 && trendRealCnt>=1 && (
-                <path d={`M${txPos(trendRealCnt-1).toFixed(1)},${tyPos(trendLastReal?.crit||0,trendMaxCrit).toFixed(1)} ${tMakePath(projData,'crit',trendMaxCrit,trendRealCnt)}`}
-                  fill="none" stroke="#F43F5E" strokeWidth="1.5" strokeOpacity="0.45" strokeDasharray="6,4" />
+                <path
+                  d={`M${txPos(trendRealCnt-1).toFixed(1)},${tyPos(trendLastReal?.crit||0,trendMaxCrit).toFixed(1)} ${tSmooth(projData,'crit',trendMaxCrit,trendRealCnt).slice(1)}`}
+                  fill="none" stroke="#F43F5E" strokeWidth="1.5" strokeOpacity="0.5" strokeDasharray="6,4" />
               )}
 
               {/* Dots — real */}
               {byDate.map((d,i)=>(
-                <circle key={`dot-${i}`} cx={txPos(i)} cy={tyPos(d.crit,trendMaxCrit)} r="3.5"
+                <circle key={`dot-${i}`} cx={txPos(i)} cy={tyPos(d.crit,trendMaxCrit)} r="4"
                   fill="#F43F5E" stroke="#06080F" strokeWidth="1.5" />
               ))}
 
+              {/* Triangles — proj markers */}
+              {trendView==='proj' && projData.map((d,i)=>{
+                const cx=txPos(i+trendRealCnt), cy=tyPos(d.crit,trendMaxCrit)
+                return (
+                  <polygon key={`tri-${i}`}
+                    points={`${cx},${(cy-7).toFixed(1)} ${(cx-5).toFixed(1)},${(cy+4).toFixed(1)} ${(cx+5).toFixed(1)},${(cy+4).toFixed(1)}`}
+                    fill="#F43F5E" fillOpacity="0.5" stroke="#F43F5E" strokeWidth="0.5" />
+                )
+              })}
+
               {/* Proj label */}
               {trendView==='proj' && trendRealCnt>0 && trendTotal>trendRealCnt && (
-                <text x={txPos(trendRealCnt)+4} y={PT+12} fontSize="8" fill="rgba(245,158,11,0.6)">Projeção</text>
+                <text x={txPos(trendRealCnt)+6} y={PT+14} fontSize="8" fill="rgba(245,158,11,0.55)">Projeção</text>
               )}
 
               {/* X labels */}
               {trendAllData.map((d,i)=>{
-                const show = trendTotal<=10 || i===0 || i===trendTotal-1 || i%Math.ceil(trendTotal/6)===0
+                const show = trendTotal<=10 || i===0 || i===trendTotal-1 || i%Math.ceil(trendTotal/8)===0
                 return show ? (
                   <text key={`xl-${i}`} x={txPos(i)} y={VH-4} textAnchor="middle" fontSize="9"
-                    fill={d.isProj?'rgba(245,158,11,0.45)':'#334155'}>
+                    fill={d.isProj?'rgba(245,158,11,0.4)':'#334155'}>
                     {d.date.slice(5).replace('-','/')}
                   </text>
                 ) : null
               })}
 
-              <line x1={PL} y1={PT+CH} x2={VW-PR} y2={PT+CH} stroke="rgba(255,255,255,0.08)" strokeWidth="0.5" />
+              {/* Axis bottom */}
+              <line x1={PL} y1={PT+CH} x2={VW-PR} y2={PT+CH} stroke="rgba(255,255,255,0.07)" strokeWidth="0.5" />
             </svg>
+          </div>
+        )}
 
-            {/* Legend */}
-            <div style={{ display:'flex', gap:16, marginTop:8, justifyContent:'center', flexWrap:'wrap' }}>
-              {[
-                { color:'#F43F5E', label:'Espera Crítica (real)',  dashed:false },
-                { color:'#F97316', label:'Espera Grave (real)',    dashed:false },
-              ].concat(trendView==='proj' ? [
-                { color:'#F43F5E', label:'Projeção crítica', dashed:true },
-              ] : []).map(l=>(
-                <div key={l.label} style={{ display:'flex',alignItems:'center',gap:5 }}>
-                  <div style={{ width:16,height:3,borderRadius:2,background:l.dashed?'transparent':l.color,
-                    border:l.dashed?`1.5px dashed ${l.color}`:'none',opacity:l.dashed?.6:1 }} />
-                  <span style={{ fontSize:9.5,color:C.muted }}>{l.label}</span>
-                </div>
-              ))}
-            </div>
-
-            {trendView==='proj' && (
-              <div style={{ marginTop:12,padding:'9px 14px',background:'rgba(245,158,11,0.05)',border:'0.5px solid rgba(245,158,11,0.18)',borderRadius:8,fontSize:10.5,color:C.muted }}>
-                <span style={{ color:C.amber,fontWeight:700 }}>Como a projeção é calculada — </span>
-                Média dos últimos {Math.min(byDate.length,3)} dia{byDate.length!==1?'s':''} + tendência linear para os próximos 5 dias.
-                {byDate.length<3 && <span style={{ color:C.amber }}> Precisão aumenta com mais dias na base.</span>}
-              </div>
-            )}
+        {/* Nota projeção */}
+        {trendView==='proj' && (
+          <div style={{ marginTop:12, padding:'9px 14px', background:'rgba(245,158,11,0.05)', border:'0.5px solid rgba(245,158,11,0.18)', borderRadius:8, fontSize:10.5, color:C.muted }}>
+            <span style={{ color:C.amber, fontWeight:700 }}>Como a projeção é calculada — </span>
+            Média dos últimos {Math.min(byDate.length,3)} dia{byDate.length!==1?'s':''} + tendência linear para os próximos 5 dias.
+            {byDate.length<3 && <span style={{ color:C.amber }}> Precisão aumenta com mais dias na base.</span>}
           </div>
         )}
       </div>
-    </div>
-  )
-}
 
-// ── ROOT ──────────────────────────────────────────────────────────────────────
-export default function Home() {
-  const [tab,         setTab]         = useState('espera')
-  const [agendas,     setAgendas]     = useState([])
-  const [espera,      setEspera]      = useState([])
-  const [loadingDB,   setLoadingDB]   = useState(true)
-  const [storing,     setStoring]     = useState(false)
-  const [storeMsg,    setStoreMsg]    = useState('')
-  const [timestamp,   setTimestamp]   = useState('')
-  const [storageInfo, setStorageInfo] = useState({ agendas:0, espera:0 })
-
-  const loadTable = useCallback(async table => {
-    const PAGE=1000; let all=[], offset=0, maxTries=50
-    while(maxTries-->0) {
-      const from=offset, to=offset+PAGE-1
-      const res=await fetch(`${SB_URL}/rest/v1/${table}?select=*&order=id.asc`, {
-        headers: { ...SBH, 'Range':`${from}-${to}`, 'Range-Unit':'items', 'Prefer':'count=none' }
-      })
-      if (res.status===416||!res.ok) break
-      const batch=await res.json()
-      if(!Array.isArray(batch)||!batch.length) break
-      all=all.concat(batch)
-      if (res.status===200) break
-      offset+=PAGE
-    }
-    return all
-  }, [])
-
-  useEffect(() => {
-    const load = async () => {
-      try {
-        setStoreMsg('Conectando…')
-        const [ag,esp]=await Promise.all([loadTable('agendas'),loadTable('espera')])
-        if(ag.length||esp.length) {
-          setAgendas(ag); setEspera(esp)
-          setStorageInfo({agendas:ag.length,espera:esp.length})
-          const ts=ag[0]?.verif_ts||esp[0]?.verif_ts||''; if(ts) setTimestamp(ts)
-          setStoreMsg(`☁ ${ag.length.toLocaleString('pt-BR')} agendas · ${esp.length.toLocaleString('pt-BR')} esperas`)
-          setTimeout(()=>setStoreMsg(''),4000)
-        } else setStoreMsg('')
-      } catch(e){ setStoreMsg(`Erro: ${e.message}`) }
-      setLoadingDB(false)
-    }
-    load()
-  }, [loadTable])
-
-  const handleUpload = useCallback(async e => {
-    const file=e.target.files[0]; if(!file) return; e.target.value=''
-    setStoring(true)
-    const now=new Date(), pad=n=>String(n).padStart(2,'0')
-    const ts=`${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`
-    setTimestamp(ts)
-    try {
-      setStoreMsg('Lendo planilha…')
-      const buf=await file.arrayBuffer()
-      const wb=XLSX.read(buf,{type:'buffer'})
-      const ws=wb.Sheets['PONTOS']||wb.Sheets[wb.SheetNames[0]]
-      const json=XLSX.utils.sheet_to_json(ws,{range:3,defval:''})
-      setStoreMsg(`${json.length.toLocaleString('pt-BR')} linhas — limpando banco…`)
-      const delRes=await fetch('/api/save',{method:'DELETE'})
-      if(!delRes.ok){setStoreMsg('⚠ Erro ao limpar banco');setStoring(false);return}
-      const CHUNK=500
-      for(let i=0;i<json.length;i+=CHUNK){
-        setStoreMsg(`Agendas… ${Math.min(i+CHUNK,json.length).toLocaleString('pt-BR')}/${json.length.toLocaleString('pt-BR')}`)
-        await fetch('/api/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows:json.slice(i,i+CHUNK),ts,table:'agendas'})})
-      }
-      for(let i=0;i<json.length;i+=CHUNK){
-        setStoreMsg(`Espera… ${Math.min(i+CHUNK,json.length).toLocaleString('pt-BR')}/${json.length.toLocaleString('pt-BR')}`)
-        await fetch('/api/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows:json.slice(i,i+CHUNK),ts,table:'espera'})})
-      }
-      setStoreMsg('Recarregando…')
-      const [ag,esp]=await Promise.all([loadTable('agendas'),loadTable('espera')])
-      setAgendas(ag); setEspera(esp); setStorageInfo({agendas:ag.length,espera:esp.length})
-      setStoreMsg(`✓ ${ag.length.toLocaleString('pt-BR')} agendas · ${esp.length.toLocaleString('pt-BR')} esperas`)
-      setTimeout(()=>setStoreMsg(''),4000)
-    } catch(e){setStoreMsg(`⚠ Erro: ${e.message}`)}
-    setStoring(false)
-  }, [loadTable])
-
-  const handleClear = async () => {
-    if(!confirm('Apagar TODOS os dados do banco?')) return
-    setStoring(true); setStoreMsg('Apagando…')
-    await fetch('/api/save',{method:'DELETE'})
-    setAgendas([]); setEspera([]); setStorageInfo({agendas:0,espera:0}); setTimestamp(''); setStoreMsg(''); setStoring(false)
-  }
-
-  return (
-    <div style={{ minHeight:'100vh', background:C.bg, fontFamily:"'DM Sans','Segoe UI',sans-serif", color:C.text }}>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800;900&family=DM+Sans:wght@300;400;500;600;700;800&display=swap');
-        *{box-sizing:border-box;margin:0;padding:0}
-        ::-webkit-scrollbar{width:4px;background:transparent}
-        ::-webkit-scrollbar-thumb{background:rgba(245,158,11,0.2);border-radius:4px}
-        select option{background:#0A0D16;color:#F1F5F9}
-        input::placeholder{color:#475569}
-        select{appearance:auto}
-      `}</style>
-      <div style={{ background:'#070910', borderBottom:'1px solid rgba(245,158,11,0.1)', display:'flex', alignItems:'center', padding:'0 32px', height:52, position:'sticky', top:0, zIndex:100, backdropFilter:'blur(12px)' }}>
-        <div style={{ position:'absolute', top:-40, left:'50%', transform:'translateX(-50%)', width:500, height:80, background:'radial-gradient(ellipse,rgba(245,158,11,0.07),transparent 70%)', pointerEvents:'none' }} />
-        <div style={{ display:'flex', alignItems:'center', gap:10, marginRight:32 }}>
-          <div style={{ width:28, height:28, borderRadius:8, background:'linear-gradient(135deg,#F59E0B,#F97316)', display:'flex', alignItems:'center', justifyContent:'center' }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
-          </div>
-          <div>
-            <span style={{ fontSize:14, fontWeight:900, color:C.text, fontFamily:"'Syne',sans-serif", letterSpacing:'-.3px' }}>Monitor </span>
-            <span style={{ fontSize:14, fontWeight:900, color:C.amber, fontFamily:"'Syne',sans-serif", letterSpacing:'-.3px' }}>Clínicas</span>
-          </div>
-        </div>
-        <div style={{ display:'flex', height:'100%', gap:0 }}>
-          {[
-            { key:'espera',  label:'Fila de Espera',  count:storageInfo.espera  },
-            { key:'agendas', label:'Agendas Médicas', count:storageInfo.agendas },
-          ].map(t=>(
-            <button key={t.key} onClick={()=>setTab(t.key)} style={{
-              padding:'0 20px', border:'none', background:'transparent', cursor:'pointer',
-              fontSize:12, fontWeight:700, height:'100%',
-              color:tab===t.key?C.amber:C.muted,
-              borderBottom:tab===t.key?`2px solid ${C.amber}`:'2px solid transparent',
-              transition:'all .2s', display:'flex', alignItems:'center', gap:7,
-            }}>
-              {t.label}
-              {t.count>0 && <span style={{ fontSize:9, padding:'1px 6px', borderRadius:10, background:tab===t.key?`${C.amber}20`:'rgba(255,255,255,0.06)', color:tab===t.key?C.amber:C.muted, fontWeight:700 }}>{t.count.toLocaleString('pt-BR')}</span>}
-            </button>
-          ))}
-        </div>
-        <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:14 }}>
-          <div style={{ display:'flex', alignItems:'center', gap:5 }}>
-            <div style={{ width:6, height:6, borderRadius:'50%', background:C.emerald, boxShadow:`0 0 6px ${C.emerald}` }} />
-            <span style={{ fontSize:10, color:C.muted }}>Banco conectado</span>
-          </div>
-          {timestamp && <span style={{ fontSize:10, color:C.muted }}>{timestamp}</span>}
-          {storeMsg && <span style={{ fontSize:10, color:storeMsg.startsWith('☁')||storeMsg.startsWith('✓')?C.emerald:C.amber, fontWeight:600, maxWidth:220, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{storeMsg}</span>}
-          {(storageInfo.agendas>0||storageInfo.espera>0)&&!storing && (
-            <button onClick={handleClear} style={{ background:'transparent', border:'0.5px solid rgba(244,63,94,0.3)', borderRadius:8, color:C.rose, fontSize:11, padding:'5px 10px', cursor:'pointer' }}>🗑</button>
-          )}
-          <label style={{ background:storing?'rgba(255,255,255,0.06)':'linear-gradient(135deg,#F59E0B,#F97316)', color:storing?C.muted:'#1a0800', fontWeight:800, fontSize:12, padding:'7px 16px', borderRadius:9, cursor:storing?'default':'pointer', transition:'all .2s', whiteSpace:'nowrap', fontFamily:"'Syne',sans-serif" }}>
-            {storing?'Salvando…':'+ Carregar Planilha'}
-            <input type="file" accept=".xlsx,.xls" style={{display:'none'}} onChange={handleUpload} disabled={storing||loadingDB} />
-          </label>
+el>
         </div>
       </div>
       <div style={{ padding:'24px 32px' }}>
