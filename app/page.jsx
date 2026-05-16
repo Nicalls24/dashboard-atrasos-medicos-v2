@@ -595,42 +595,55 @@ function TabEspera({ rows }) {
       <SearchBar search={search} onSearch={setSearch} uf={ufFilt} onUf={setUfFilt} ufs={ufs}
         showClear={ufFilt!=='TODOS'||!!search} onClear={()=>{setUfFilt('TODOS');setSearch('')}} />
 
-      {/* BARRA DE META */}
-      <div style={{ background:'rgba(255,255,255,0.025)', border:'1px solid rgba(255,255,255,0.06)', borderRadius:14, padding:'16px 20px', marginBottom:14 }}>
-        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10 }}>
-          <div style={{ fontSize:11, fontWeight:700, color:C.muted, textTransform:'uppercase', letterSpacing:'.1em' }}>Progresso vs Meta 80% — Justificativas de Retorno</div>
-          <button onClick={()=>setJustModal(true)} style={{ background:'rgba(245,158,11,0.1)', border:'0.5px solid rgba(245,158,11,0.3)', borderRadius:8, color:C.amber, fontSize:11, fontWeight:700, padding:'5px 12px', cursor:'pointer' }}>+ Registrar</button>
-        </div>
-        <div style={{ position:'relative', marginBottom:22 }}>
-          <div style={{ background:'rgba(255,255,255,0.06)', borderRadius:6, height:12, overflow:'hidden', position:'relative' }}>
-            <div style={{ height:'100%', borderRadius:6, width:`${metaPct}%`, transition:'width .6s ease',
-              background:metaPct>=80?'linear-gradient(90deg,#10B981,#059669)':metaPct>=50?'linear-gradient(90deg,#F59E0B,#D97706)':'linear-gradient(90deg,#F43F5E,#DC2626)' }} />
-            <div style={{ position:'absolute', top:0, bottom:0, left:'80%', width:2, background:'rgba(255,255,255,0.4)' }} />
+      {/* BARRA DE META — linha única compacta */}
+      <div style={{ background:'rgba(255,255,255,0.025)', border:'1px solid rgba(255,255,255,0.06)', borderRadius:12, padding:'12px 18px', marginBottom:14 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:16 }}>
+
+          {/* Label */}
+          <span style={{ fontSize:9, fontWeight:700, color:C.muted, textTransform:'uppercase', letterSpacing:'.1em', whiteSpace:'nowrap' }}>Meta 80%</span>
+
+          {/* Barra + sub */}
+          <div style={{ flex:1, display:'flex', flexDirection:'column', gap:4 }}>
+            <div style={{ background:'rgba(255,255,255,0.06)', borderRadius:4, height:8, overflow:'hidden', position:'relative' }}>
+              <div style={{ height:'100%', borderRadius:4, width:`${metaPct}%`, transition:'width .6s ease',
+                background:metaPct>=80?'#10B981':metaPct>=50?C.amber:C.rose }} />
+              <div style={{ position:'absolute', top:0, bottom:0, left:'80%', width:2, background:'rgba(255,255,255,0.35)' }} />
+            </div>
+            <div style={{ display:'flex', justifyContent:'space-between' }}>
+              <span style={{ fontSize:9, color:C.muted }}>{totalJust} just. de {totalEsp} esperas ≥ 15min</span>
+              <span style={{ fontSize:9, color:C.muted }}>← 80%</span>
+            </div>
           </div>
-          <div style={{ position:'absolute', top:14, left:'80%', transform:'translateX(-50%)', fontSize:9, color:C.muted, whiteSpace:'nowrap' }}>← Meta 80%</div>
-        </div>
-        {/* 3 cards classificação */}
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:10 }}>
+
+          {/* % */}
+          <span style={{ fontSize:15, fontWeight:800, color:metaColor, whiteSpace:'nowrap', minWidth:36, textAlign:'right' }}>{metaPct}%</span>
+
+          {/* Divisor */}
+          <div style={{ width:1, height:36, background:'rgba(255,255,255,0.07)', flexShrink:0 }} />
+
+          {/* 3 métricas inline */}
           {[
-            { label:'Espera Moderada', value:modCnt,  sub:'15 – 30 min',   color:'#F59E0B' },
-            { label:'Espera Grave',    value:grvCnt,  sub:'31 min – 1h29', color:'#F97316' },
-            { label:'Espera Crítica',  value:critCnt, sub:'acima de 1h30', color:'#F43F5E' },
-          ].map(k=>(
-            <div key={k.label} style={{ background:`${k.color}08`, border:`1px solid ${k.color}22`, borderRadius:11, padding:'12px 16px', position:'relative', overflow:'hidden' }}>
-              <div style={{ position:'absolute', top:0, left:0, right:0, height:2, background:k.color }} />
-              <div style={{ fontSize:9.5, fontWeight:700, color:k.color, textTransform:'uppercase', letterSpacing:'.09em', marginBottom:8 }}>{k.label}</div>
-              <div style={{ fontSize:26, fontWeight:800, color:k.color, letterSpacing:'-1px', lineHeight:1 }}>{k.value.toLocaleString('pt-BR')}</div>
-              <div style={{ fontSize:10, color:C.muted, marginTop:6 }}>{k.sub}</div>
+            { label:'Moderada',  value:modCnt,  sub:'15–30min',  color:'#F59E0B' },
+            { label:'Grave',     value:grvCnt,  sub:'31–1h29',   color:'#F97316' },
+            { label:'Crítica',   value:critCnt, sub:'+1h30',     color:'#F43F5E' },
+          ].map((k,i)=>(
+            <div key={k.label} style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:2, minWidth:58,
+              paddingLeft: i>0?14:0, borderLeft: i>0?'0.5px solid rgba(255,255,255,0.06)':'none' }}>
+              <span style={{ fontSize:9, fontWeight:700, color:k.color, textTransform:'uppercase', letterSpacing:'.07em' }}>{k.label}</span>
+              <span style={{ fontSize:20, fontWeight:800, color:k.color, lineHeight:1, letterSpacing:'-.5px' }}>{k.value.toLocaleString('pt-BR')}</span>
+              <span style={{ fontSize:8, color:C.muted }}>{k.sub}</span>
             </div>
           ))}
-        </div>
-        <div style={{ display:'flex', alignItems:'center', gap:16, marginTop:12, paddingTop:12, borderTop:'0.5px solid rgba(255,255,255,0.05)' }}>
-          <span style={{ fontSize:11, color:C.muted }}>
-            <span style={{ color:metaColor, fontWeight:700 }}>{totalJust}</span> justificativas de{' '}
-            <span style={{ color:C.sub, fontWeight:600 }}>{totalEsp}</span> esperas ≥ 15min
-          </span>
-          <span style={{ fontSize:14, fontWeight:800, color:metaColor, marginLeft:'auto' }}>{metaPct}%</span>
-          <span style={{ fontSize:10, color:C.muted }}>meta: 80%</span>
+
+          {/* Divisor */}
+          <div style={{ width:1, height:36, background:'rgba(255,255,255,0.07)', flexShrink:0 }} />
+
+          {/* Botão */}
+          <button onClick={()=>setJustModal(true)} style={{
+            background:'rgba(245,158,11,0.1)', border:'0.5px solid rgba(245,158,11,0.3)',
+            borderRadius:8, color:C.amber, fontSize:11, fontWeight:700,
+            padding:'6px 12px', cursor:'pointer', whiteSpace:'nowrap',
+          }}>+ Registrar</button>
         </div>
       </div>
 
