@@ -718,70 +718,64 @@ function TabEspera({ rows }) {
           )}
         </div>
 
-        {/* Médicos — redesenho moderno */}
-        <div style={{ background:'rgba(255,255,255,0.025)', border:'1px solid rgba(255,255,255,0.06)', borderRadius:14, padding:'20px 22px' }}>
-          <div style={{ fontSize:13,fontWeight:700,color:C.text,marginBottom:2 }}>Médicos — Falta e Atraso</div>
-          <div style={{ fontSize:10.5,color:C.muted,marginBottom:16 }}>Ocorrências no período · coluna ATRASO</div>
-          <div style={{ display:'flex', alignItems:'center', gap:18, marginBottom:18 }}>
-            <svg width="108" height="108" viewBox="0 0 108 108" style={{ flexShrink:0 }}>
-              <circle cx={medCX} cy={medCY} r={medR} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="10" />
-              {faltasList.length>0 && <circle cx={medCX} cy={medCY} r={medR} fill="none" stroke="#F43F5E" strokeWidth="10" strokeLinecap="round"
-                strokeDasharray={`${medFDash.toFixed(1)} ${(medCirc-medFDash).toFixed(1)}`}
-                transform={`rotate(-90 ${medCX} ${medCY})`} opacity={0.9} />}
-              {atrasosList.length>0 && <circle cx={medCX} cy={medCY} r={medR} fill="none" stroke="#F59E0B" strokeWidth="10" strokeLinecap="round"
-                strokeDasharray={`${medADash.toFixed(1)} ${(medCirc-medADash).toFixed(1)}`}
-                transform={`rotate(${(-90+medFPct*3.6).toFixed(1)} ${medCX} ${medCY})`} opacity={0.85} />}
-              <text x={medCX} y={medCY-6} textAnchor="middle" fontSize="18" fontWeight="800" fill={medTotalProb>0?'#F97316':'#475569'}>{medTotalProb}</text>
-              <text x={medCX} y={medCY+10} textAnchor="middle" fontSize="9" fill="#475569">ocorrências</text>
-              <text x={medCX} y={medCY+22} textAnchor="middle" fontSize="8" fill="#334155">{medRate}% do total</text>
-            </svg>
-            <div style={{ flex:1, display:'flex', flexDirection:'column', gap:10 }}>
+        {/* Médicos — Horizontal split B */}
+        <div style={{ background:'rgba(255,255,255,0.025)', border:'1px solid rgba(255,255,255,0.06)', borderRadius:14, padding:'18px 20px' }}>
+          <div style={{ fontSize:13, fontWeight:700, color:C.text, marginBottom:14 }}>Médicos — Falta e Atraso</div>
+
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1px 1fr', gap:0, alignItems:'stretch' }}>
+            {/* Esquerda — Faltas e Atrasos com barras */}
+            <div style={{ paddingRight:16, display:'flex', flexDirection:'column', gap:10 }}>
               {[
-                { label:'Faltas',        value:faltasList.length,  color:C.rose,  pct:medFPct },
-                { label:'Atrasos >31min',value:atrasosList.length, color:C.amber, pct:medAPct },
+                { label:'Faltas',         value:faltasList.length,  color:C.rose,  pct: medTotalProb>0?Math.round(faltasList.length/medTotalProb*100):0 },
+                { label:'Atrasos >31min', value:atrasosList.length, color:C.amber, pct: medTotalProb>0?Math.round(atrasosList.length/medTotalProb*100):0 },
               ].map(k=>(
                 <div key={k.label}>
-                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:4 }}>
-                    <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-                      <div style={{ width:8,height:8,borderRadius:'50%',background:k.color }} />
+                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:5 }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:5 }}>
+                      <div style={{ width:6,height:6,borderRadius:'50%',background:k.color }} />
                       <span style={{ fontSize:11,color:C.sub }}>{k.label}</span>
                     </div>
-                    <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                      <span style={{ fontSize:11,fontWeight:700,color:k.color }}>{k.value}</span>
-                      <span style={{ fontSize:9.5,color:C.muted }}>{k.pct}%</span>
-                    </div>
+                    <span style={{ fontSize:13,fontWeight:700,color:k.color }}>
+                      {k.value} <span style={{ fontSize:9,color:C.muted,fontWeight:400 }}>{k.pct}%</span>
+                    </span>
                   </div>
                   <div style={{ background:'rgba(255,255,255,0.05)',borderRadius:3,height:4,overflow:'hidden' }}>
                     <div style={{ height:'100%',background:k.color,width:`${k.pct}%`,borderRadius:3,transition:'width .6s' }} />
                   </div>
                 </div>
               ))}
+              <div style={{ display:'flex', alignItems:'center', gap:6, paddingTop:8, borderTop:'0.5px solid rgba(255,255,255,0.06)', marginTop:2 }}>
+                <span style={{ fontSize:22,fontWeight:800,color:C.orange,lineHeight:1 }}>{medTotalProb}</span>
+                <span style={{ fontSize:10,color:C.muted }}>total de ocorrências</span>
+              </div>
             </div>
-          </div>
-          {statusAt.length>0 && (
-            <div style={{ borderTop:'0.5px solid rgba(255,255,255,0.06)', paddingTop:14 }}>
-              <div style={{ fontSize:9.5,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.09em',marginBottom:12 }}>Classificação do Atraso</div>
+
+            {/* Divisor */}
+            <div style={{ background:'rgba(255,255,255,0.07)', margin:'0 16px' }} />
+
+            {/* Direita — Classificação do atraso */}
+            <div style={{ paddingLeft:16, display:'flex', flexDirection:'column', gap:8 }}>
+              <span style={{ fontSize:9,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.09em' }}>Classificação do Atraso</span>
+              {statusAt.length===0 && <div style={{ color:C.muted,fontSize:11 }}>Nenhuma ocorrência.</div>}
               {statusAt.map(({k,v})=>{
                 const cfg=getStatusCfg(k)
                 const pctAt=statusAt[0]?.v>0?Math.round(v/statusAt[0].v*100):0
                 return (
-                  <div key={k} style={{ marginBottom:10 }}>
-                    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:4 }}>
-                      <span style={{ fontSize:10,color:C.sub }}>{cfg.label}</span>
-                      <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                        <span style={{ fontSize:11,fontWeight:700,color:cfg.color }}>{v}</span>
-                        <span style={{ fontSize:9,color:C.muted }}>{pctAt}%</span>
-                      </div>
+                  <div key={k}>
+                    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:3 }}>
+                      <span style={{ fontSize:11,color:C.sub }}>{cfg.label}</span>
+                      <span style={{ fontSize:12,fontWeight:700,color:cfg.color }}>
+                        {v} <span style={{ fontSize:9,color:C.muted,fontWeight:400 }}>{pctAt}%</span>
+                      </span>
                     </div>
                     <div style={{ background:'rgba(255,255,255,0.05)',borderRadius:3,height:5,overflow:'hidden' }}>
-                      <div style={{ height:'100%',background:cfg.color,width:`${pctAt}%`,borderRadius:3,transition:'width .6s' }} />
+                      <div style={{ height:'100%',background:`linear-gradient(90deg,${cfg.color},${cfg.color}88)`,width:`${pctAt}%`,borderRadius:3,transition:'width .6s' }} />
                     </div>
                   </div>
                 )
               })}
             </div>
-          )}
-          {medTotalProb===0 && <div style={{ color:C.muted,fontSize:11,textAlign:'center',padding:'8px 0' }}>Nenhuma ocorrência no período.</div>}
+          </div>
         </div>
       </div>
 
