@@ -271,13 +271,20 @@ function TabEspera({rows}){
       if(m>=90)dMap[dt].crit++;else if(m>=31)dMap[dt].grv++;else if(m>=15)dMap[dt].mod++
       dMap[dt].pac+=g.pac
     })
-    const byDate=Object.values(dMap).sort((a,b)=>a.date.localeCompare(b.date))
+    const byDate=Object.values(dMap).map(d=>({...d,total:d.mod+d.grv+d.crit})).sort((a,b)=>a.date.localeCompare(b.date))
     const addDay=(ds,n)=>{const d=new Date(ds+'T00:00:00Z');d.setUTCDate(d.getUTCDate()+n);return d.toISOString().slice(0,10)}
     const pts=byDate.slice(-3)
-    const slopeCrit=pts.length>=2?(pts[pts.length-1].crit-pts[0].crit)/(pts.length-1):0
-    const lastDate=byDate[byDate.length-1]?.date||''
-    const lastCrit=byDate[byDate.length-1]?.crit||0
-    const projData=lastDate?Array.from({length:5},(_,i)=>({date:addDay(lastDate,i+1),crit:Math.max(0,Math.round(lastCrit+slopeCrit*(i+1))),grv:0,isProj:true})):[]
+    const slopeTotal=pts.length>=2?(pts[pts.length-1].total-pts[0].total)/(pts.length-1):0
+    const slopePac  =pts.length>=2?(pts[pts.length-1].pac  -pts[0].pac  )/(pts.length-1):0
+    const lastDate =byDate[byDate.length-1]?.date||''
+    const lastTotal=byDate[byDate.length-1]?.total||0
+    const lastPac  =byDate[byDate.length-1]?.pac  ||0
+    const projData=lastDate?Array.from({length:5},(_,i)=>({
+      date:addDay(lastDate,i+1),
+      total:Math.max(0,Math.round(lastTotal+slopeTotal*(i+1))),
+      pac:  Math.max(0,Math.round(lastPac  +slopePac  *(i+1))),
+      crit:0,grv:0,mod:0,isProj:true,
+    })):[]
     return{totalReg,totalPac,modCnt,grvCnt,critCnt,totalEsp,feedList,topU,faltasList,atrasosList,statusAt,byDate,projData}
   },[filtered])
 
@@ -288,24 +295,26 @@ function TabEspera({rows}){
   const medTotalProb=faltasList.length+atrasosList.length
   const medFPct=medTotalProb>0?Math.round(faltasList.length/medTotalProb*100):0
   const medAPct=medTotalProb>0?Math.round(atrasosList.length/medTotalProb*100):0
-  const trendAllData=trendView==='real'?byDate:[...byDate,...projData]
-  const trendMaxCrit=Math.max(...trendAllData.map(d=>d.crit||0),1)
-  const trendRealCnt=byDate.length
+  const trendAllData =trendView==='real'?byDate:[...byDate,...projData]
+  const trendMaxTotal=Math.max(...trendAllData.map(d=>d.total||0),1)
+  const trendMaxPac  =Math.max(...trendAllData.map(d=>d.pac  ||0),1)
+  const trendRealCnt =byDate.length
   const trendLastReal=byDate[byDate.length-1]
-  const trendVarCrit=byDate.length>=2?((trendLastReal?.crit||0)-(byDate[0]?.crit||0)):0
-  const trendAvgCrit=byDate.length>0?Math.round(byDate.reduce((a,d)=>a+d.crit,0)/byDate.length):0
-  const trendMaxDay=byDate.length>0?byDate.reduce((a,d)=>d.crit>a.crit?d:a,byDate[0]):null
-  const trendSlope=projData.length>0?((projData[0]?.crit||0)-(trendLastReal?.crit||0)):0
+  const trendVarTotal=byDate.length>=2?((trendLastReal?.total||0)-(byDate[0]?.total||0)):0
+  const trendAvgTotal=byDate.length>0?Math.round(byDate.reduce((a,d)=>a+(d.total||0),0)/byDate.length):0
+  const trendMaxDay  =byDate.length>0?byDate.reduce((a,d)=>(d.total||0)>(a.total||0)?d:a,byDate[0]):null
+  const trendSlope   =projData.length>0?((projData[0]?.total||0)-(trendLastReal?.total||0)):0
 
   // SVG line chart vars
-  const VW=800,VH=160,PL=50,PR=50,PT=10,PB=34
+  const VW=800,VH=160,PL=50,PR=52,PT=10,PB=34
   const CW=VW-PL-PR,CH=VH-PT-PB
   const nTotal=trendAllData.length
   const txP=i=>nTotal<=1?PL+CW/2:PL+i/(nTotal-1)*CW
-  const tyP=(v,mx)=>PT+CH-(mx>0?(v||0)/mx*CH:0)
-  const tSmooth=(data,key,mx,off)=>{
+  const tyL=(v)=>PT+CH-(trendMaxTotal>0?(v||0)/trendMaxTotal*CH:0)
+  const tyR=(v)=>PT+CH-(trendMaxPac  >0?(v||0)/trendMaxPac  *CH:0)
+  const tSmooth=(data,key,scFn,off)=>{
     if(!data.length)return ''
-    const pts=data.map((d,i)=>({x:parseFloat(txP(i+(off||0)).toFixed(2)),y:parseFloat(tyP(d[key]||0,mx).toFixed(2))}))
+    const pts=data.map((d,i)=>({x:parseFloat(txP(i+(off||0)).toFixed(2)),y:parseFloat(scFn(d[key]||0).toFixed(2))}))
     if(pts.length===1)return 'M'+pts[0].x+','+pts[0].y
     let p='M'+pts[0].x+','+pts[0].y
     for(let i=1;i<pts.length;i++){
@@ -507,15 +516,15 @@ function TabEspera({rows}){
 
         <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:10,marginBottom:20}}>
           {(trendView==='real'?[
-            {label:'Esperas Críticas',value:String(trendLastReal?trendLastReal.crit:'—'),color:C.rose},
-            {label:'Variação no período',value:byDate.length>=2?(trendVarCrit>=0?'+'+trendVarCrit:String(trendVarCrit)):'—',color:trendVarCrit>0?C.rose:trendVarCrit<0?C.emerald:C.muted},
-            {label:'Média diária crítica',value:String(trendAvgCrit||'—'),color:C.amber},
-            {label:'Pior dia registrado',value:trendMaxDay?(trendMaxDay.crit+' em '+trendMaxDay.date.slice(5).replace('-','/')):'—',color:C.orange},
+            {label:'Total esperas hoje',value:String(trendLastReal?trendLastReal.total:'—'),color:C.rose},
+            {label:'Variação no período',value:byDate.length>=2?(trendVarTotal>=0?'+'+trendVarTotal:String(trendVarTotal)):'—',color:trendVarTotal>0?C.rose:trendVarTotal<0?C.emerald:C.muted},
+            {label:'Média diária esperas',value:String(trendAvgTotal||'—'),color:C.amber},
+            {label:'Pior dia registrado',value:trendMaxDay?(trendMaxDay.total+' em '+trendMaxDay.date.slice(5).replace('-','/')):'—',color:C.orange},
           ]:[
-            {label:'Projeção amanhã',value:String(projData[0]?projData[0].crit:'—'),color:C.rose},
-            {label:'Projeção +5 dias',value:String(projData[4]?projData[4].crit:'—'),color:C.orange},
+            {label:'Projeção amanhã (esperas)',value:String(projData[0]?projData[0].total:'—'),color:C.rose},
+            {label:'Projeção +5 dias',value:String(projData[4]?projData[4].total:'—'),color:C.orange},
             {label:'Tendência diária',value:trendSlope>=0?'+'+trendSlope:String(trendSlope),color:trendSlope>0?C.rose:trendSlope<0?C.emerald:C.muted},
-            {label:'Média atual (base)',value:String(trendAvgCrit||'—'),color:C.amber},
+            {label:'Média atual (base)',value:String(trendAvgTotal||'—'),color:C.amber},
           ]).map((k,i)=>(
             <div key={k.label} style={{background:k.color+'14',border:'0.5px solid '+k.color+'22',borderRadius:10,padding:'11px 14px'}}>
               <div style={{fontSize:9,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.08em',marginBottom:7}}>{k.label}</div>
@@ -542,29 +551,29 @@ function TabEspera({rows}){
                 background:'#0A0D16',border:'1px solid rgba(244,63,94,0.35)',borderRadius:10,
                 padding:'10px 14px',boxShadow:'0 8px 32px rgba(0,0,0,0.6)',minWidth:140}}>
                 <div style={{fontSize:10,fontWeight:700,color:C.muted,marginBottom:6,textTransform:'uppercase',letterSpacing:'.08em'}}>
-                  {tTip.date?tTip.date.slice(5).replace('-','/'):'—'} {tTip.isProj?'(Projeção)':''}
+                  {tTip.date?tTip.date.slice(5).replace('-','/'):'—'} {tTip.isProj?'· Projeção':''}
                 </div>
-                <div style={{display:'flex',flexDirection:'column',gap:4}}>
-                  <div style={{display:'flex',justifyContent:'space-between',gap:16}}>
-                    <span style={{fontSize:11,color:C.muted}}>Espera Crítica</span>
-                    <span style={{fontSize:13,fontWeight:800,color:C.rose}}>{tTip.crit||0}</span>
+                <div style={{display:'flex',flexDirection:'column',gap:5}}>
+                  <div style={{display:'flex',justifyContent:'space-between',gap:16,paddingBottom:5,borderBottom:'0.5px solid rgba(255,255,255,0.07)'}}>
+                    <span style={{fontSize:11,color:C.muted}}>Total esperas</span>
+                    <span style={{fontSize:14,fontWeight:800,color:C.rose}}>{(tTip.total)||(((tTip.crit||0)+(tTip.grv||0)+(tTip.mod||0)))||0}</span>
                   </div>
                   <div style={{display:'flex',justifyContent:'space-between',gap:16}}>
-                    <span style={{fontSize:11,color:C.muted}}>Espera Grave</span>
-                    <span style={{fontSize:13,fontWeight:800,color:C.orange}}>{tTip.grv||0}</span>
+                    <span style={{fontSize:10,color:'#F43F5E'}}>● Crítica</span>
+                    <span style={{fontSize:11,fontWeight:700,color:'#F43F5E'}}>{tTip.crit||0}</span>
                   </div>
-                  {(tTip.pac||0)>0&&(
-                    <div style={{display:'flex',justifyContent:'space-between',gap:16}}>
-                      <span style={{fontSize:11,color:C.muted}}>Pacientes</span>
-                      <span style={{fontSize:13,fontWeight:800,color:'#0EA5E9'}}>{tTip.pac}</span>
-                    </div>
-                  )}
-                  {(tTip.mod||0)>0&&(
-                    <div style={{display:'flex',justifyContent:'space-between',gap:16}}>
-                      <span style={{fontSize:11,color:C.muted}}>Espera Moderada</span>
-                      <span style={{fontSize:12,fontWeight:700,color:'#F59E0B'}}>{tTip.mod}</span>
-                    </div>
-                  )}
+                  <div style={{display:'flex',justifyContent:'space-between',gap:16}}>
+                    <span style={{fontSize:10,color:'#F97316'}}>● Grave</span>
+                    <span style={{fontSize:11,fontWeight:700,color:'#F97316'}}>{tTip.grv||0}</span>
+                  </div>
+                  <div style={{display:'flex',justifyContent:'space-between',gap:16}}>
+                    <span style={{fontSize:10,color:'#F59E0B'}}>● Moderada</span>
+                    <span style={{fontSize:11,fontWeight:700,color:'#F59E0B'}}>{tTip.mod||0}</span>
+                  </div>
+                  <div style={{display:'flex',justifyContent:'space-between',gap:16,paddingTop:5,borderTop:'0.5px solid rgba(255,255,255,0.07)'}}>
+                    <span style={{fontSize:11,color:'#00C9A7'}}>Pacientes aguardando</span>
+                    <span style={{fontSize:13,fontWeight:800,color:'#00C9A7'}}>{tTip.pac||0}</span>
+                  </div>
                 </div>
                 {tTip.isProj&&<div style={{marginTop:6,fontSize:9,color:C.amber,borderTop:'0.5px solid rgba(245,158,11,0.2)',paddingTop:5}}>📊 Valor projetado</div>}
               </div>
@@ -591,11 +600,12 @@ function TabEspera({rows}){
                   </clipPath>
                 </defs>
 
-                {/* Y grid + labels */}
-                {tYTicks.map((v,ti)=>(
+                {/* Y ticks — left: esperas, right: pacientes */}
+                {[0,Math.round(trendMaxTotal*0.5),trendMaxTotal].map((v,ti)=>(
                   <g key={ti}>
-                    <line x1={PL} y1={tyP(v,trendMaxCrit)} x2={VW-PR} y2={tyP(v,trendMaxCrit)} stroke="rgba(255,255,255,0.05)" strokeWidth="0.5"/>
-                    <text x={PL-8} y={tyP(v,trendMaxCrit)+4} textAnchor="end" fontSize="9" fill="#334155">{v}</text>
+                    <line x1={PL} y1={tyL(v)} x2={VW-PR} y2={tyL(v)} stroke="rgba(255,255,255,0.05)" strokeWidth="0.5"/>
+                    <text x={PL-7} y={tyL(v)+4} textAnchor="end" fontSize="9" fill="#475569">{v}</text>
+                    <text x={VW-PR+7} y={tyL(v)+4} textAnchor="start" fontSize="9" fill="rgba(0,201,167,0.4)">{Math.round(v*(trendMaxPac/Math.max(trendMaxTotal,1)))}</text>
                   </g>
                 ))}
 
@@ -605,42 +615,45 @@ function TabEspera({rows}){
                 )}
 
                 <g clipPath="url(#tClip)">
-                {/* Area fill — Crítica */}
+                {/* Area fill — total esperas */}
                 {trendRealCnt>=2&&(
-                  <path d={tSmooth(byDate,'crit',trendMaxCrit,0)+' L'+txP(trendRealCnt-1).toFixed(1)+','+(PT+CH).toFixed(1)+' L'+txP(0).toFixed(1)+','+(PT+CH).toFixed(1)+' Z'} fill="rgba(244,63,94,0.12)"/>
+                  <path d={tSmooth(byDate,'total',tyL,0)+' L'+txP(trendRealCnt-1).toFixed(1)+','+(PT+CH).toFixed(1)+' L'+txP(0).toFixed(1)+','+(PT+CH).toFixed(1)+' Z'} fill="rgba(244,63,94,0.10)"/>
                 )}
-
-                {/* Line — Grave (real) */}
+                {/* Linha pacientes — eixo direito (teal) */}
                 {trendRealCnt>=2&&(
-                  <path d={tSmooth(byDate,'grv',trendMaxCrit,0)} fill="none" stroke="#F97316" strokeWidth="1.5" strokeOpacity={0.7}/>
+                  <path d={tSmooth(byDate,'pac',tyR,0)} fill="none" stroke="#00C9A7" strokeWidth="2" strokeOpacity={0.75}/>
                 )}
-
-                {/* Line — Crítica (real) */}
+                {/* Linha total esperas — eixo esquerdo (rose) */}
                 {trendRealCnt>=2&&(
-                  <path d={tSmooth(byDate,'crit',trendMaxCrit,0)} fill="none" stroke="#F43F5E" strokeWidth="2.5"/>
+                  <path d={tSmooth(byDate,'total',tyL,0)} fill="none" stroke="#F43F5E" strokeWidth="2.5"/>
                 )}
-
                 {/* Proj area */}
                 {trendView==='proj'&&projData.length>=2&&trendRealCnt>=1&&(
-                  <path d={'M'+txP(trendRealCnt-1).toFixed(1)+','+tyP(trendLastReal?.crit||0,trendMaxCrit).toFixed(1)+tSmooth(projData,'crit',trendMaxCrit,trendRealCnt).slice(1)+' L'+txP(trendRealCnt+projData.length-1).toFixed(1)+','+(PT+CH).toFixed(1)+' L'+txP(trendRealCnt-1).toFixed(1)+','+(PT+CH).toFixed(1)+' Z'} fill="rgba(244,63,94,0.06)"/>
+                  <path d={'M'+txP(trendRealCnt-1).toFixed(1)+','+tyL(trendLastReal?.total||0).toFixed(1)+tSmooth(projData,'total',tyL,trendRealCnt).slice(1)+' L'+txP(trendRealCnt+projData.length-1).toFixed(1)+','+(PT+CH).toFixed(1)+' L'+txP(trendRealCnt-1).toFixed(1)+','+(PT+CH).toFixed(1)+' Z'} fill="rgba(244,63,94,0.05)"/>
                 )}
-
-                {/* Proj line dashed */}
+                {/* Proj total dashed */}
                 {trendView==='proj'&&projData.length>=1&&trendRealCnt>=1&&(
-                  <path d={'M'+txP(trendRealCnt-1).toFixed(1)+','+tyP(trendLastReal?.crit||0,trendMaxCrit).toFixed(1)+tSmooth(projData,'crit',trendMaxCrit,trendRealCnt).slice(1)} fill="none" stroke="#F43F5E" strokeWidth="1.5" strokeOpacity={0.5} strokeDasharray="6,4"/>
+                  <path d={'M'+txP(trendRealCnt-1).toFixed(1)+','+tyL(trendLastReal?.total||0).toFixed(1)+tSmooth(projData,'total',tyL,trendRealCnt).slice(1)} fill="none" stroke="#F43F5E" strokeWidth="1.5" strokeOpacity={0.45} strokeDasharray="6,4"/>
                 )}
-
+                {/* Proj pac dashed */}
+                {trendView==='proj'&&projData.length>=1&&trendRealCnt>=1&&(
+                  <path d={'M'+txP(trendRealCnt-1).toFixed(1)+','+tyR(trendLastReal?.pac||0).toFixed(1)+tSmooth(projData,'pac',tyR,trendRealCnt).slice(1)} fill="none" stroke="#00C9A7" strokeWidth="1.5" strokeOpacity={0.35} strokeDasharray="4,4"/>
+                )}
                 </g>
-                {/* Dots reais */}
+               {/* Dots reais — total esperas */}
                 {byDate.map((d,i)=>(
-                  <circle key={'d'+i} cx={txP(i)} cy={tyP(d.crit,trendMaxCrit)} r="4" fill="#F43F5E" stroke="#06080F" strokeWidth="1.5"/>
+                  <circle key={'d'+i} cx={txP(i)} cy={tyL(d.total||0)} r="4" fill="#F43F5E" stroke="#06080F" strokeWidth="1.5"/>
+                ))}
+                {/* Dots pacientes */}
+                {byDate.map((d,i)=>(
+                  <circle key={'p'+i} cx={txP(i)} cy={tyR(d.pac||0)} r="3" fill="#00C9A7" stroke="#06080F" strokeWidth="1.5"/>
                 ))}
 
                 {/* Highlight dot on hover */}
                 {tTip&&tTip.idx!=null&&(
                   <circle
                     cx={nTotal<=1?PL+CW/2:PL+(tTip.idx)/(nTotal-1)*CW}
-                    cy={tyP(tTip.crit,trendMaxCrit)}
+                    cy={tyL(tTip.total||0)}
                     r="7" fill="none" stroke="#F43F5E" strokeWidth="2" strokeOpacity={0.8}/>
                 )}
                 {/* Triângulos projeção */}
