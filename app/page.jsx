@@ -793,8 +793,6 @@ function TabEspera({rows}){
   const trendMaxAll  =Math.max(...trendAllData.map(d=>Math.max(d.mod||0,d.grv||0,d.crit||0)),1)
   const trendRealCnt =byDate.length
   const trendLastReal=byDate[byDate.length-1]
-  const trendVarCrit =byDate.length>=2?((trendLastReal?.crit||0)-(byDate[0]?.crit||0)):0
-  const trendAvgCrit =byDate.length>0?Math.round(byDate.reduce((a,d)=>a+(d.crit||0),0)/byDate.length):0
   const trendMaxDay  =byDate.length>0?byDate.reduce((a,d)=>(d.crit||0)>(a.crit||0)?d:a,byDate[0]):null
   const trendSlope   =projData.length>0?((projData[0]?.crit||0)-(trendLastReal?.crit||0)):0
 
@@ -923,7 +921,6 @@ function TabEspera({rows}){
           )}
         </div>
 
-        {/* MÉDICOS — BUG FIXED: grid closes with </div> not )} */}
         <div style={{background:'rgba(255,255,255,0.025)',border:'1px solid rgba(255,255,255,0.06)',borderRadius:14,padding:'18px 20px'}}>
           <div style={{fontSize:13,fontWeight:700,color:C.text,marginBottom:14}}>Médicos — Falta e Atraso</div>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1px 1fr',gap:0,alignItems:'stretch'}}>
@@ -1059,11 +1056,10 @@ function TabEspera({rows}){
                   </div>
                   <div style={{display:'flex',justifyContent:'space-between',gap:16,paddingTop:5,borderTop:'0.5px solid rgba(255,255,255,0.07)'}}>
                     <span style={{fontSize:10,color:C.muted}}>Total incidentes</span>
-                    <span style={{fontSize:11,fontWeight:700,color:C.muted}}>{(tTip.total)||((tTip.crit||0)+(tTip.grv||0)+(tTip.mod||0))}</span>
+                    <span style={{fontSize:11,fontWeight:700,color:C.muted}}>{((tTip.crit||0)+(tTip.grv||0)+(tTip.mod||0))}</span>
                   </div>
                   {tTip.isProj&&<div style={{fontSize:9,color:C.amber,paddingTop:4,borderTop:'0.5px solid rgba(255,255,255,0.06)'}}>📊 Valor projetado</div>}
                 </div>
-                {tTip.isProj&&<div style={{marginTop:6,fontSize:9,color:C.amber,borderTop:'0.5px solid rgba(245,158,11,0.2)',paddingTop:5}}>📊 Valor projetado</div>}
               </div>
             )}
             <div style={{width:'100%',position:'relative'}}>
