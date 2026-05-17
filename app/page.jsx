@@ -180,6 +180,7 @@ function TabEspera({rows}){
   const[justificativas,setJustificativas]=useState({})
   const[justLoading,setJustLoading]=useState(false)
   const[trendView,setTrendView]=useState('real')
+  const[tTip,setTTip]=useState(null)
 
   const allDates=useMemo(()=>[...new Set(rows.map(r=>r.data_agenda).filter(Boolean))].sort(),[rows])
   const periodoFn=useMemo(()=>buildFilter(allDates,periodo,dateFrom,dateTo),[allDates,periodo,dateFrom,dateTo])
@@ -286,8 +287,8 @@ function TabEspera({rows}){
     let p='M'+pts[0].x+','+pts[0].y
     for(let i=1;i<pts.length;i++){
       const p0=pts[i-2]||pts[i-1],p1=pts[i-1],p2=pts[i],p3=pts[i+1]||pts[i]
-      const c1x=(p1.x+(p2.x-p0.x)/6).toFixed(2),c1y=(p1.y+(p2.y-p0.y)/6).toFixed(2)
-      const c2x=(p2.x-(p3.x-p1.x)/6).toFixed(2),c2y=(p2.y-(p3.y-p1.y)/6).toFixed(2)
+      const c1x=(p1.x+(p2.x-p0.x)/4).toFixed(2),c1y=(p1.y+(p2.y-p0.y)/4).toFixed(2)
+      const c2x=(p2.x-(p3.x-p1.x)/4).toFixed(2),c2y=(p2.y-(p3.y-p1.y)/4).toFixed(2)
       p+=' C'+c1x+','+c1y+' '+c2x+','+c2y+' '+p2.x+','+p2.y
     }
     return p
@@ -512,8 +513,60 @@ function TabEspera({rows}){
                 </div>
               ))}
             </div>
+            {/* Tooltip */}
+            {tTip&&(
+              <div style={{position:'fixed',left:tTip.x+14,top:tTip.y-60,zIndex:999,pointerEvents:'none',
+                background:'#0A0D16',border:'1px solid rgba(244,63,94,0.35)',borderRadius:10,
+                padding:'10px 14px',boxShadow:'0 8px 32px rgba(0,0,0,0.6)',minWidth:140}}>
+                <div style={{fontSize:10,fontWeight:700,color:C.muted,marginBottom:6,textTransform:'uppercase',letterSpacing:'.08em'}}>
+                  {tTip.date?tTip.date.slice(5).replace('-','/'):'—'} {tTip.isProj?'(Projeção)':''}
+                </div>
+                <div style={{display:'flex',flexDirection:'column',gap:4}}>
+                  <div style={{display:'flex',justifyContent:'space-between',gap:16}}>
+                    <span style={{fontSize:11,color:C.muted}}>Espera Crítica</span>
+                    <span style={{fontSize:13,fontWeight:800,color:C.rose}}>{tTip.crit||0}</span>
+                  </div>
+                  <div style={{display:'flex',justifyContent:'space-between',gap:16}}>
+                    <span style={{fontSize:11,color:C.muted}}>Espera Grave</span>
+                    <span style={{fontSize:13,fontWeight:800,color:C.orange}}>{tTip.grv||0}</span>
+                  </div>
+                  {(tTip.pac||0)>0&&(
+                    <div style={{display:'flex',justifyContent:'space-between',gap:16}}>
+                      <span style={{fontSize:11,color:C.muted}}>Pacientes</span>
+                      <span style={{fontSize:13,fontWeight:800,color:'#0EA5E9'}}>{tTip.pac}</span>
+                    </div>
+                  )}
+                  {(tTip.mod||0)>0&&(
+                    <div style={{display:'flex',justifyContent:'space-between',gap:16}}>
+                      <span style={{fontSize:11,color:C.muted}}>Espera Moderada</span>
+                      <span style={{fontSize:12,fontWeight:700,color:'#F59E0B'}}>{tTip.mod}</span>
+                    </div>
+                  )}
+                </div>
+                {tTip.isProj&&<div style={{marginTop:6,fontSize:9,color:C.amber,borderTop:'0.5px solid rgba(245,158,11,0.2)',paddingTop:5}}>📊 Valor projetado</div>}
+              </div>
+            )}
             <div style={{width:'100%',position:'relative'}}>
-              <svg width="100%" viewBox={'0 0 '+VW+' '+VH} style={{display:'block',overflow:'visible'}}>
+              <svg width="100%" viewBox={'0 0 '+VW+' '+VH} style={{display:'block',overflow:'visible',cursor:'crosshair'}}
+                onMouseMove={e=>{
+                  if(!trendAllData.length)return
+                  const rc=e.currentTarget.getBoundingClientRect()
+                  const mx=(e.clientX-rc.left)/rc.width*VW
+                  let near=null,minD=Infinity
+                  trendAllData.forEach((d,i)=>{
+                    const xv=nTotal<=1?PL+CW/2:PL+i/(nTotal-1)*CW
+                    const dist=Math.abs(mx-xv)
+                    if(dist<minD){minD=dist;near={...d,idx:i}}
+                  })
+                  if(near&&minD<(CW/Math.max(nTotal-1,1))*0.8)setTTip({x:e.clientX,y:e.clientY,...near})
+                  else setTTip(null)
+                }}
+                onMouseLeave={()=>setTTip(null)}>
+                <defs>
+                  <clipPath id="tClip">
+                    <rect x={PL} y={PT-2} width={CW} height={CH+4}/>
+                  </clipPath>
+                </defs>
 
                 {/* Y grid + labels */}
                 {tYTicks.map((v,ti)=>(
@@ -528,6 +581,7 @@ function TabEspera({rows}){
                   <line x1={txP(trendRealCnt-1)} y1={PT} x2={txP(trendRealCnt-1)} y2={PT+CH} stroke="rgba(245,158,11,0.25)" strokeWidth="1" strokeDasharray="4,3"/>
                 )}
 
+                <g clipPath="url(#tClip)">
                 {/* Area fill — Crítica */}
                 {trendRealCnt>=2&&(
                   <path d={tSmooth(byDate,'crit',trendMaxCrit,0)+' L'+txP(trendRealCnt-1).toFixed(1)+','+(PT+CH).toFixed(1)+' L'+txP(0).toFixed(1)+','+(PT+CH).toFixed(1)+' Z'} fill="rgba(244,63,94,0.12)"/>
@@ -553,11 +607,19 @@ function TabEspera({rows}){
                   <path d={'M'+txP(trendRealCnt-1).toFixed(1)+','+tyP(trendLastReal?.crit||0,trendMaxCrit).toFixed(1)+tSmooth(projData,'crit',trendMaxCrit,trendRealCnt).slice(1)} fill="none" stroke="#F43F5E" strokeWidth="1.5" strokeOpacity={0.5} strokeDasharray="6,4"/>
                 )}
 
+                </g>
                 {/* Dots reais */}
                 {byDate.map((d,i)=>(
                   <circle key={'d'+i} cx={txP(i)} cy={tyP(d.crit,trendMaxCrit)} r="4" fill="#F43F5E" stroke="#06080F" strokeWidth="1.5"/>
                 ))}
 
+                {/* Highlight dot on hover */}
+                {tTip&&tTip.idx!=null&&(
+                  <circle
+                    cx={nTotal<=1?PL+CW/2:PL+(tTip.idx)/(nTotal-1)*CW}
+                    cy={tyP(tTip.crit,trendMaxCrit)}
+                    r="7" fill="none" stroke="#F43F5E" strokeWidth="2" strokeOpacity={0.8}/>
+                )}
                 {/* Triângulos projeção */}
                 {trendView==='proj'&&projData.map((d,i)=>{
                   const cx=txP(i+trendRealCnt),cy=tyP(d.crit,trendMaxCrit)
