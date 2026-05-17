@@ -325,7 +325,6 @@ function TabEspera({rows}){
     }
     return p
   }
-  const tYTicks=[0,Math.round(trendMaxCrit*0.5),trendMaxCrit]
 
   // Lista de médicos filtrados pela unidade selecionada
   const docsFalta  = unidFilt ? Object.entries(faltasList.reduce((a,d)=>{const nm=d.nm_medico||'—';a[nm]=(a[nm]||0)+1;return a},{})).map(([nm,cnt])=>({nm,cnt})).sort((a,b)=>b.cnt-a.cnt) : []
@@ -658,7 +657,7 @@ function TabEspera({rows}){
                 )}
                 {/* Triângulos projeção */}
                 {trendView==='proj'&&projData.map((d,i)=>{
-                  const cx=txP(i+trendRealCnt),cy=tyP(d.crit,trendMaxCrit)
+                  const cx=txP(i+trendRealCnt),cy=tyL(d.total||d.crit||0)
                   return(<polygon key={'t'+i} points={cx.toFixed(1)+','+(cy-7).toFixed(1)+' '+(cx-5).toFixed(1)+','+(cy+4).toFixed(1)+' '+(cx+5).toFixed(1)+','+(cy+4).toFixed(1)} fill="#F43F5E" fillOpacity={0.5}/>)
                 })}
 
