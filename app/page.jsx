@@ -290,22 +290,58 @@ function TabAgendas({rows}){
         </div>
       )}
 
-      {/* KPIs */}
-      <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:10,marginBottom:14}}>
-        {[
-          {icon:'📅',label:'Total Agendas',  value:totalAg.toLocaleString('pt-BR'),  color:C.amber,  sub:'consultas + encaixe'},
-          {icon:'🩺',label:'Consultas',       value:totalCons.toLocaleString('pt-BR'), color:C.teal,   sub:totalAg>0?((totalCons/totalAg*100).toFixed(1)+'% do total'):''},
-          {icon:'➕',label:'Encaixe',         value:totalEnc.toLocaleString('pt-BR'),  color:C.violet, sub:totalAg>0?((totalEnc/totalAg*100).toFixed(1)+'% do total'):''},
-          {icon:'⚠️',label:'Agendas afetadas',value:(faltaAg+atrAg+critAg+grvAg).toLocaleString('pt-BR'),color:C.rose,sub:(faltaDocs.length+atrDocs.length+critDocs.length+grvDocs.length)+' médicos c/ problema'},
-          {icon:'📊',label:'Dias na base',   value:byDate.length,                     color:C.cyan,   sub:byDate.length>0?fmtDate(byDate[0].date)+' → '+fmtDate(byDate[byDate.length-1].date):''},
-        ].map(k=>(
-          <div key={k.label} style={{background:k.color+'0C',border:'0.5px solid '+k.color+'22',borderRadius:12,padding:'14px 16px',position:'relative',overflow:'hidden'}}>
-            <div style={{position:'absolute',top:0,left:0,right:0,height:2,background:'linear-gradient(90deg,'+k.color+',transparent)'}}/>
-            <div style={{fontSize:9,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.09em',marginBottom:8}}>{k.icon} {k.label}</div>
-            <div style={{fontSize:26,fontWeight:800,color:k.color,letterSpacing:'-1px',lineHeight:1}}>{k.value}</div>
-            {k.sub&&<div style={{fontSize:9,color:C.muted,marginTop:6}}>{k.sub}</div>}
+      {/* KPIs — Barra horizontal Opção A */}
+      <div style={{display:'flex',background:'rgba(255,255,255,0.025)',border:'0.5px solid rgba(255,255,255,0.07)',borderRadius:12,overflow:'hidden',marginBottom:14}}>
+
+        {/* Bloco 1 — Total + consultas/encaixe */}
+        <div style={{flex:'1.4',padding:'16px 20px',borderRight:'0.5px solid rgba(255,255,255,0.07)'}}>
+          <div style={{fontSize:9,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.1em',marginBottom:5}}>Total Agendas</div>
+          <div style={{fontSize:30,fontWeight:800,color:C.amber,letterSpacing:'-1px',lineHeight:1}}>{totalAg.toLocaleString('pt-BR')}</div>
+          <div style={{display:'flex',gap:14,marginTop:8}}>
+            <div style={{display:'flex',alignItems:'center',gap:5}}>
+              <div style={{width:18,height:3,background:C.teal,borderRadius:2}}/>
+              <span style={{fontSize:9,color:C.muted}}>{totalCons.toLocaleString('pt-BR')} consultas</span>
+            </div>
+            <div style={{display:'flex',alignItems:'center',gap:5}}>
+              <div style={{width:18,height:3,background:C.violet,borderRadius:2}}/>
+              <span style={{fontSize:9,color:C.muted}}>{totalEnc.toLocaleString('pt-BR')} encaixe</span>
+            </div>
           </div>
-        ))}
+          <div style={{marginTop:8,height:4,background:'rgba(255,255,255,0.04)',borderRadius:2,overflow:'hidden',display:'flex',gap:1}}>
+            <div style={{flex:totalCons,background:C.teal,opacity:.7}}/>
+            <div style={{flex:totalEnc,background:C.violet,opacity:.7}}/>
+          </div>
+        </div>
+
+        {/* Bloco 2 — Afetadas */}
+        <div style={{flex:'1',padding:'16px 20px',borderRight:'0.5px solid rgba(255,255,255,0.07)'}}>
+          <div style={{fontSize:9,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.1em',marginBottom:5}}>Afetadas por problema</div>
+          <div style={{fontSize:30,fontWeight:800,color:C.rose,letterSpacing:'-1px',lineHeight:1}}>{(faltaAg+atrAg+critAg+grvAg).toLocaleString('pt-BR')}</div>
+          <div style={{fontSize:9,color:C.muted,marginTop:6}}>
+            {totalAg>0?((faltaAg+atrAg+critAg+grvAg)/totalAg*100).toFixed(1):'0'}% das agendas totais
+          </div>
+          <div style={{marginTop:8,height:4,background:'rgba(255,255,255,0.04)',borderRadius:2,overflow:'hidden'}}>
+            <div style={{width:(totalAg>0?((faltaAg+atrAg+critAg+grvAg)/totalAg*100).toFixed(1):0)+'%',height:'100%',background:C.rose,opacity:.7,borderRadius:2}}/>
+          </div>
+        </div>
+
+        {/* Bloco 3 — 4 mini cards por tipo */}
+        <div style={{flex:'2.4',padding:'16px 20px'}}>
+          <div style={{fontSize:9,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.1em',marginBottom:10}}>{(faltaDocs.length+atrDocs.length+critDocs.length+grvDocs.length).toLocaleString('pt-BR')} médicos com ocorrências</div>
+          <div style={{display:'flex',gap:8}}>
+            {[
+              {label:'Falta',docs:faltaDocs.length,color:'#3B82F6'},
+              {label:'Atraso',docs:atrDocs.length,color:C.amber},
+              {label:'Grave',docs:grvDocs.length,color:C.orange},
+              {label:'Crítico',docs:critDocs.length,color:C.rose},
+            ].map(k=>(
+              <div key={k.label} style={{flex:1,background:k.color+'10',border:'0.5px solid '+k.color+'28',borderRadius:8,padding:'8px 10px'}}>
+                <div style={{fontSize:8,color:k.color,opacity:.8,marginBottom:4,fontWeight:700}}>{k.label}</div>
+                <div style={{fontSize:20,fontWeight:800,color:k.color}}>{k.docs}</div>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
 
       {/* FEED DE UNIDADES + PAINEL MÉDICOS */}
