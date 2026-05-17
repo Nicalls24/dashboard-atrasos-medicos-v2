@@ -183,20 +183,23 @@ function TabAgendas({rows}){
       const prob=String(d.atraso||'').toUpperCase()==='FALTA'||String(d.atraso||'').toUpperCase()==='SIM'
       if(prob)dMap[dt].impactadas+=(d.qt_consulta||0)+(d.qt_encaixe||0)
     })
-    const byDate=Object.values(dMap).sort((a,b)=>a.date.localeCompare(b.date))
+    const byDate=Object.values(dMap).map(d=>({...d,delivered:Math.max(0,d.agendas-d.impactadas)})).sort((a,b)=>a.date.localeCompare(b.date))
 
     // Projeção
     const addDay=(ds,n)=>{const d=new Date(ds+'T00:00:00Z');d.setUTCDate(d.getUTCDate()+n);return d.toISOString().slice(0,10)}
     const pts=byDate.slice(-3)
     const slopeAg =pts.length>=2?(pts[pts.length-1].agendas   -pts[0].agendas   )/(pts.length-1):0
     const slopeImp=pts.length>=2?(pts[pts.length-1].impactadas-pts[0].impactadas)/(pts.length-1):0
+    const slopeDel=pts.length>=2?(pts[pts.length-1].delivered -pts[0].delivered )/(pts.length-1):0
     const lastDate=byDate[byDate.length-1]?.date||''
     const lastAg  =byDate[byDate.length-1]?.agendas   ||0
     const lastImp =byDate[byDate.length-1]?.impactadas||0
+    const lastDel =byDate[byDate.length-1]?.delivered ||0
     const projData=lastDate?Array.from({length:5},(_,i)=>({
       date:addDay(lastDate,i+1),
       agendas:   Math.max(0,Math.round(lastAg  +slopeAg *(i+1))),
       impactadas:Math.max(0,Math.round(lastImp +slopeImp*(i+1))),
+      delivered: Math.max(0,Math.round(lastDel +slopeDel*(i+1))),
       consultas:0,encaixe:0,isProj:true,
     })):[]
 
@@ -219,8 +222,9 @@ function TabAgendas({rows}){
 
   // Trend vars
   const trendAllData=trendView==='real'?byDate:[...byDate,...projData]
-  const tMaxAg =Math.max(...trendAllData.map(d=>d.agendas   ||0),1)
-  const tMaxImp=Math.max(...trendAllData.map(d=>d.impactadas||0),1)
+  const tMaxAg =Math.max(...trendAllData.map(d=>d.agendas||0),1)
+  const tLastDel=tLastReal?.delivered||0
+  const tTotalGap=byDate.reduce((a,d)=>a+(d.impactadas||0),0)
   const tRealCnt=byDate.length
   const tLastReal=byDate[byDate.length-1]
   const tVarAg=byDate.length>=2?((tLastReal?.agendas||0)-(byDate[0]?.agendas||0)):0
@@ -228,12 +232,11 @@ function TabAgendas({rows}){
   const tSlope=projData.length>0?((projData[0]?.agendas||0)-(tLastReal?.agendas||0)):0
 
   // SVG chart vars
-  const AVW=800,AVH=150,APL=54,APR=54,APT=10,APB=32
+  const AVW=800,AVH=150,APL=52,APR=20,APT=10,APB=32
   const ACW=AVW-APL-APR,ACH=AVH-APT-APB
   const aNT=trendAllData.length
   const atxP=i=>aNT<=1?APL+ACW/2:APL+i/(aNT-1)*ACW
-  const atyL=(v)=>APT+ACH-(tMaxAg >0?(v||0)/tMaxAg *ACH:0)
-  const atyR=(v)=>APT+ACH-(tMaxImp>0?(v||0)/tMaxImp*ACH:0)
+  const atyS=(v)=>APT+ACH-(tMaxAg>0?(v||0)/tMaxAg*ACH:0)
   const atSmooth=(data,key,scFn,off)=>{
     if(!data.length)return''
     const pts=data.map((d,i)=>({x:parseFloat(atxP(i+(off||0)).toFixed(2)),y:parseFloat(scFn(d[key]||0).toFixed(2))}))
@@ -457,7 +460,7 @@ function TabAgendas({rows}){
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:14}}>
           <div>
             <div style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.12em'}}>{'TENDÊNCIA DE AGENDAS · '+tRealCnt+' DIA'+(tRealCnt!==1?'S':'')}</div>
-            <div style={{fontSize:10,color:C.muted,marginTop:3}}>Volume por dia (esq.) · Agendas afetadas por problemas (dir.)</div>
+            <div style={{fontSize:10,color:C.muted,marginTop:3}}>Agendadas (amber) vs Entregues (verde) · área rosa = perdas por falta/atraso</div>
           </div>
           <div style={{display:'flex',background:'rgba(255,255,255,0.04)',border:'0.5px solid rgba(255,255,255,0.08)',borderRadius:9,padding:3,gap:2}}>
             {[{key:'real',label:'Real'},{key:'proj',label:'Projeção'}].map(v=>(
@@ -468,15 +471,15 @@ function TabAgendas({rows}){
 
         <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:10,marginBottom:16}}>
           {(trendView==='real'?[
-            {label:'Agendas hoje',value:String(tLastReal?tLastReal.agendas.toLocaleString('pt-BR'):'—'),color:C.amber},
-            {label:'Variação',value:byDate.length>=2?(tVarAg>=0?'+'+tVarAg:String(tVarAg)):'—',color:tVarAg>0?C.rose:tVarAg<0?C.emerald:C.muted},
-            {label:'Média diária',value:tAvgAg.toLocaleString('pt-BR'),color:C.teal},
-            {label:'Afetadas hoje',value:String(tLastReal?tLastReal.impactadas.toLocaleString('pt-BR'):'—'),color:C.rose},
+            {label:'Agendadas hoje',   value:tLastReal?tLastReal.agendas.toLocaleString('pt-BR'):'—',   color:C.amber},
+            {label:'Entregues hoje',   value:tLastReal?tLastDel.toLocaleString('pt-BR'):'—',            color:C.emerald},
+            {label:'Gap acumulado',    value:tTotalGap.toLocaleString('pt-BR'),                         color:C.rose,   },
+            {label:'Média diária',     value:tAvgAg.toLocaleString('pt-BR'),                            color:C.teal},
           ]:[
-            {label:'Proj. amanhã',value:String(projData[0]?projData[0].agendas.toLocaleString('pt-BR'):'—'),color:C.amber},
-            {label:'Proj. +5 dias',value:String(projData[4]?projData[4].agendas.toLocaleString('pt-BR'):'—'),color:C.orange},
-            {label:'Tendência diária',value:tSlope>=0?'+'+tSlope:String(tSlope),color:tSlope>0?C.rose:tSlope<0?C.emerald:C.muted},
-            {label:'Média (base)',value:tAvgAg.toLocaleString('pt-BR'),color:C.teal},
+            {label:'Proj. agendadas amanhã', value:projData[0]?projData[0].agendas.toLocaleString('pt-BR'):'—',   color:C.amber},
+            {label:'Proj. entregues amanhã', value:projData[0]?projData[0].delivered.toLocaleString('pt-BR'):'—', color:C.emerald},
+            {label:'Tendência diária',       value:tSlope>=0?'+'+tSlope:String(tSlope),                          color:tSlope>0?C.rose:tSlope<0?C.emerald:C.muted},
+            {label:'Gap proj. +5 dias',      value:projData[4]?projData[4].impactadas.toLocaleString('pt-BR'):'—',color:C.rose},
           ]).map((k,i)=>(
             <div key={k.label} style={{background:k.color+'12',border:'0.5px solid '+k.color+'20',borderRadius:9,padding:'10px 14px'}}>
               <div style={{fontSize:9,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.07em',marginBottom:5}}>{k.label}</div>
@@ -517,9 +520,9 @@ function TabAgendas({rows}){
         ):(
           <div style={{width:'100%',position:'relative'}}>
             <div style={{display:'flex',gap:14,marginBottom:10,flexWrap:'wrap'}}>
-              {[{color:C.amber,label:'Volume agendas (eixo esq.)'},{color:C.rose,label:'Agendas afetadas (eixo dir.)'}].concat(trendView==='proj'?[{color:C.amber,label:'Projeção agendas',dashed:true}]:[]).map(l=>(
+              {[{color:'#F59E0B',label:'Agendadas'},{color:'#10B981',label:'Entregues (agendadas − problemas)'},{color:'rgba(244,63,94,0.4)',label:'Gap — perdas por falta/atraso',box:true}].concat(trendView==='proj'?[{color:'#F59E0B',label:'Projeção agendadas',dashed:true},{color:'#10B981',label:'Projeção entregues',dashed:true}]:[]).map(l=>(
                 <div key={l.label} style={{display:'flex',alignItems:'center',gap:5}}>
-                  <div style={{width:14,height:3,borderRadius:2,background:l.dashed?'transparent':l.color,border:l.dashed?'1.5px dashed '+l.color:'none',opacity:l.dashed?0.7:1}}/>
+                  <div style={{width:14,height:l.box?7:3,borderRadius:l.box?2:2,background:l.dashed?'transparent':l.color,border:l.dashed?'1.5px dashed '+l.color:'none',opacity:l.dashed?0.7:1}}/>
                   <span style={{fontSize:10,color:C.muted}}>{l.label}</span>
                 </div>
               ))}
@@ -538,37 +541,62 @@ function TabAgendas({rows}){
 
               <defs><clipPath id="aClip"><rect x={APL} y={APT-2} width={ACW} height={ACH+4}/></clipPath></defs>
 
-              {[0,Math.round(tMaxAg*0.5),tMaxAg].map((v,ti)=>(
+              {/* Y grid */}
+              {[0,Math.round(tMaxAg*0.33),Math.round(tMaxAg*0.66),tMaxAg].map((v,ti)=>(
                 <g key={ti}>
-                  <line x1={APL} y1={atyL(v)} x2={AVW-APR} y2={atyL(v)} stroke="rgba(255,255,255,0.05)" strokeWidth="0.5"/>
-                  <text x={APL-7} y={atyL(v)+4} textAnchor="end" fontSize="9" fill="#475569">{v.toLocaleString('pt-BR')}</text>
-                  <text x={AVW-APR+7} y={atyL(v)+4} textAnchor="start" fontSize="9" fill="rgba(244,63,94,0.4)">{Math.round(v*(tMaxImp/Math.max(tMaxAg,1))).toLocaleString('pt-BR')}</text>
+                  <line x1={APL} y1={atyS(v)} x2={AVW-APR} y2={atyS(v)} stroke="rgba(255,255,255,0.05)" strokeWidth="0.5"/>
+                  <text x={APL-7} y={atyS(v)+4} textAnchor="end" fontSize="9" fill="#475569">{v>=1000?(v/1000).toFixed(0)+'k':v}</text>
                 </g>
               ))}
 
+              {/* Separator real/proj */}
               {trendView==='proj'&&tRealCnt>0&&aNT>tRealCnt&&(
-                <line x1={atxP(tRealCnt-1)} y1={APT} x2={atxP(tRealCnt-1)} y2={APT+ACH} stroke="rgba(245,158,11,0.2)" strokeWidth="1" strokeDasharray="4,3"/>
+                <line x1={atxP(tRealCnt-1)} y1={APT} x2={atxP(tRealCnt-1)} y2={APT+ACH} stroke="rgba(245,158,11,0.22)" strokeWidth="1" strokeDasharray="4,3"/>
               )}
 
               <g clipPath="url(#aClip)">
+                {/* Gap fill between agendadas and entregues */}
                 {tRealCnt>=2&&(
-                  <path d={atSmooth(byDate,'agendas',atyL,0)+' L'+atxP(tRealCnt-1).toFixed(1)+','+(APT+ACH).toFixed(1)+' L'+atxP(0).toFixed(1)+','+(APT+ACH).toFixed(1)+' Z'} fill="rgba(245,158,11,0.10)"/>
+                  <path d={atSmooth(byDate,'agendas',atyS,0)+' '+[...byDate].reverse().map((d,i)=>'L'+atxP(tRealCnt-1-i).toFixed(1)+','+atyS(d.delivered||0).toFixed(1)).join(' ')+' Z'} fill="rgba(244,63,94,0.13)"/>
                 )}
-                {tRealCnt>=2&&<path d={atSmooth(byDate,'impactadas',atyR,0)} fill="none" stroke={C.rose} strokeWidth="2" strokeOpacity={0.7}/>}
-                {tRealCnt>=2&&<path d={atSmooth(byDate,'agendas',atyL,0)} fill="none" stroke={C.amber} strokeWidth="2.5"/>}
+
+                {/* Linha entregues — emerald */}
+                {tRealCnt>=2&&(
+                  <path d={atSmooth(byDate,'delivered',atyS,0)} fill="none" stroke="#10B981" strokeWidth="2.5"/>
+                )}
+                {/* Linha agendadas — amber */}
+                {tRealCnt>=2&&(
+                  <path d={atSmooth(byDate,'agendas',atyS,0)} fill="none" stroke="#F59E0B" strokeWidth="2.5"/>
+                )}
+
+                {/* Proj gap fill */}
                 {trendView==='proj'&&projData.length>=2&&tRealCnt>=1&&(
-                  <path d={'M'+atxP(tRealCnt-1).toFixed(1)+','+atyL(tLastReal?.agendas||0).toFixed(1)+atSmooth(projData,'agendas',atyL,tRealCnt).slice(1)+' L'+atxP(tRealCnt+projData.length-1).toFixed(1)+','+(APT+ACH).toFixed(1)+' L'+atxP(tRealCnt-1).toFixed(1)+','+(APT+ACH).toFixed(1)+' Z'} fill="rgba(245,158,11,0.04)"/>
+                  <path d={'M'+atxP(tRealCnt-1).toFixed(1)+','+atyS(tLastReal?.agendas||0).toFixed(1)+atSmooth(projData,'agendas',atyS,tRealCnt).slice(1)+' '+[...projData].reverse().map((d,i)=>'L'+atxP(tRealCnt+projData.length-1-i).toFixed(1)+','+atyS(d.delivered||0).toFixed(1)).join(' ')+' Z'} fill="rgba(244,63,94,0.07)"/>
                 )}
+                {/* Proj agendadas dashed */}
                 {trendView==='proj'&&projData.length>=1&&tRealCnt>=1&&(
-                  <path d={'M'+atxP(tRealCnt-1).toFixed(1)+','+atyL(tLastReal?.agendas||0).toFixed(1)+atSmooth(projData,'agendas',atyL,tRealCnt).slice(1)} fill="none" stroke={C.amber} strokeWidth="1.5" strokeOpacity={0.45} strokeDasharray="6,4"/>
+                  <path d={'M'+atxP(tRealCnt-1).toFixed(1)+','+atyS(tLastReal?.agendas||0).toFixed(1)+atSmooth(projData,'agendas',atyS,tRealCnt).slice(1)} fill="none" stroke="#F59E0B" strokeWidth="1.5" strokeOpacity={0.45} strokeDasharray="6,4"/>
+                )}
+                {/* Proj entregues dashed */}
+                {trendView==='proj'&&projData.length>=1&&tRealCnt>=1&&(
+                  <path d={'M'+atxP(tRealCnt-1).toFixed(1)+','+atyS(tLastReal?.delivered||0).toFixed(1)+atSmooth(projData,'delivered',atyS,tRealCnt).slice(1)} fill="none" stroke="#10B981" strokeWidth="1.5" strokeOpacity={0.4} strokeDasharray="5,4"/>
                 )}
               </g>
 
-              {byDate.map((d,i)=>(<circle key={'d'+i} cx={atxP(i)} cy={atyL(d.agendas||0)} r="4" fill={C.amber} stroke="#06080F" strokeWidth="1.5"/>))}
-              {byDate.map((d,i)=>(<circle key={'p'+i} cx={atxP(i)} cy={atyR(d.impactadas||0)} r="3" fill={C.rose} stroke="#06080F" strokeWidth="1.5"/>))}
-              {trendView==='proj'&&projData.map((d,i)=>{const cx=atxP(i+tRealCnt),cy=atyL(d.agendas||0);return(<polygon key={'t'+i} points={cx.toFixed(1)+','+(cy-7).toFixed(1)+' '+(cx-5).toFixed(1)+','+(cy+4).toFixed(1)+' '+(cx+5).toFixed(1)+','+(cy+4).toFixed(1)} fill={C.amber} fillOpacity={0.5}/>)})}
-              {aTip&&aTip.idx!=null&&(<circle cx={aNT<=1?APL+ACW/2:APL+(aTip.idx)/(aNT-1)*ACW} cy={atyL(aTip.agendas||0)} r="7" fill="none" stroke={C.amber} strokeWidth="2" strokeOpacity={0.8}/>)}
-
+              {/* Dots agendadas */}
+              {byDate.map((d,i)=>(<circle key={'a'+i} cx={atxP(i)} cy={atyS(d.agendas||0)} r="4" fill="#F59E0B" stroke="#06080F" strokeWidth="1.5"/>))}
+              {/* Dots entregues */}
+              {byDate.map((d,i)=>(<circle key={'e'+i} cx={atxP(i)} cy={atyS(d.delivered||0)} r="4" fill="#10B981" stroke="#06080F" strokeWidth="1.5"/>))}
+              {/* Proj triangles */}
+              {trendView==='proj'&&projData.map((d,i)=>{
+                const cx=atxP(i+tRealCnt),cy=atyS(d.agendas||0)
+                return(<polygon key={'t'+i} points={cx.toFixed(1)+','+(cy-7).toFixed(1)+' '+(cx-5).toFixed(1)+','+(cy+4).toFixed(1)+' '+(cx+5).toFixed(1)+','+(cy+4).toFixed(1)} fill="#F59E0B" fillOpacity={0.5}/>)
+              })}
+              {/* Hover highlight */}
+              {aTip&&aTip.idx!=null&&(
+                <circle cx={aNT<=1?APL+ACW/2:APL+(aTip.idx)/(aNT-1)*ACW} cy={atyS(aTip.agendas||0)} r="7" fill="none" stroke="#F59E0B" strokeWidth="2" strokeOpacity={0.8}/>
+              )}
+              {/* X labels */}
               {trendAllData.map((d,i)=>{const show=aNT<=10||i===0||i===aNT-1||i%Math.ceil(aNT/8)===0;return show?(<text key={'x'+i} x={atxP(i)} y={AVH-3} textAnchor="middle" fontSize="9" fill={d.isProj?'rgba(245,158,11,0.4)':'#334155'}>{d.date.slice(5).replace('-','/')}</text>):null})}
               <line x1={APL} y1={APT+ACH} x2={AVW-APR} y2={APT+ACH} stroke="rgba(255,255,255,0.07)" strokeWidth="0.5"/>
             </svg>
@@ -736,16 +764,20 @@ function TabEspera({rows}){
     const byDate=Object.values(dMap).map(d=>({...d,total:d.mod+d.grv+d.crit})).sort((a,b)=>a.date.localeCompare(b.date))
     const addDay=(ds,n)=>{const d=new Date(ds+'T00:00:00Z');d.setUTCDate(d.getUTCDate()+n);return d.toISOString().slice(0,10)}
     const pts=byDate.slice(-3)
-    const slopeTotal=pts.length>=2?(pts[pts.length-1].total-pts[0].total)/(pts.length-1):0
-    const slopePac  =pts.length>=2?(pts[pts.length-1].pac  -pts[0].pac  )/(pts.length-1):0
-    const lastDate =byDate[byDate.length-1]?.date||''
-    const lastTotal=byDate[byDate.length-1]?.total||0
-    const lastPac  =byDate[byDate.length-1]?.pac  ||0
+    const slopeMod=pts.length>=2?(pts[pts.length-1].mod-pts[0].mod)/(pts.length-1):0
+    const slopeGrv=pts.length>=2?(pts[pts.length-1].grv-pts[0].grv)/(pts.length-1):0
+    const slopeCrt=pts.length>=2?(pts[pts.length-1].crit-pts[0].crit)/(pts.length-1):0
+    const lastDate=byDate[byDate.length-1]?.date||''
+    const lastMod =byDate[byDate.length-1]?.mod||0
+    const lastGrv =byDate[byDate.length-1]?.grv||0
+    const lastCrt =byDate[byDate.length-1]?.crit||0
     const projData=lastDate?Array.from({length:5},(_,i)=>({
       date:addDay(lastDate,i+1),
-      total:Math.max(0,Math.round(lastTotal+slopeTotal*(i+1))),
-      pac:  Math.max(0,Math.round(lastPac  +slopePac  *(i+1))),
-      crit:0,grv:0,mod:0,isProj:true,
+      mod: Math.max(0,Math.round(lastMod+slopeMod*(i+1))),
+      grv: Math.max(0,Math.round(lastGrv+slopeGrv*(i+1))),
+      crit:Math.max(0,Math.round(lastCrt+slopeCrt*(i+1))),
+      total:Math.max(0,Math.round((lastMod+slopeMod*(i+1))+(lastGrv+slopeGrv*(i+1))+(lastCrt+slopeCrt*(i+1)))),
+      pac:0,isProj:true,
     })):[]
     return{totalReg,totalPac,modCnt,grvCnt,critCnt,totalEsp,feedList,topU,faltasList,atrasosList,statusAt,byDate,projData}
   },[filtered])
@@ -758,22 +790,20 @@ function TabEspera({rows}){
   const medFPct=medTotalProb>0?Math.round(faltasList.length/medTotalProb*100):0
   const medAPct=medTotalProb>0?Math.round(atrasosList.length/medTotalProb*100):0
   const trendAllData =trendView==='real'?byDate:[...byDate,...projData]
-  const trendMaxTotal=Math.max(...trendAllData.map(d=>d.total||0),1)
-  const trendMaxPac  =Math.max(...trendAllData.map(d=>d.pac  ||0),1)
+  const trendMaxAll  =Math.max(...trendAllData.map(d=>Math.max(d.mod||0,d.grv||0,d.crit||0)),1)
   const trendRealCnt =byDate.length
   const trendLastReal=byDate[byDate.length-1]
-  const trendVarTotal=byDate.length>=2?((trendLastReal?.total||0)-(byDate[0]?.total||0)):0
-  const trendAvgTotal=byDate.length>0?Math.round(byDate.reduce((a,d)=>a+(d.total||0),0)/byDate.length):0
-  const trendMaxDay  =byDate.length>0?byDate.reduce((a,d)=>(d.total||0)>(a.total||0)?d:a,byDate[0]):null
-  const trendSlope   =projData.length>0?((projData[0]?.total||0)-(trendLastReal?.total||0)):0
+  const trendVarCrit =byDate.length>=2?((trendLastReal?.crit||0)-(byDate[0]?.crit||0)):0
+  const trendAvgCrit =byDate.length>0?Math.round(byDate.reduce((a,d)=>a+(d.crit||0),0)/byDate.length):0
+  const trendMaxDay  =byDate.length>0?byDate.reduce((a,d)=>(d.crit||0)>(a.crit||0)?d:a,byDate[0]):null
+  const trendSlope   =projData.length>0?((projData[0]?.crit||0)-(trendLastReal?.crit||0)):0
 
   // SVG line chart vars
-  const VW=800,VH=160,PL=50,PR=52,PT=10,PB=34
+  const VW=800,VH=160,PL=50,PR=20,PT=10,PB=34
   const CW=VW-PL-PR,CH=VH-PT-PB
   const nTotal=trendAllData.length
   const txP=i=>nTotal<=1?PL+CW/2:PL+i/(nTotal-1)*CW
-  const tyL=(v)=>PT+CH-(trendMaxTotal>0?(v||0)/trendMaxTotal*CH:0)
-  const tyR=(v)=>PT+CH-(trendMaxPac  >0?(v||0)/trendMaxPac  *CH:0)
+  const tyA=(v)=>PT+CH-(trendMaxAll>0?(v||0)/trendMaxAll*CH:0)
   const tSmooth=(data,key,scFn,off)=>{
     if(!data.length)return ''
     const pts=data.map((d,i)=>({x:parseFloat(txP(i+(off||0)).toFixed(2)),y:parseFloat(scFn(d[key]||0).toFixed(2))}))
@@ -977,15 +1007,15 @@ function TabEspera({rows}){
 
         <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:10,marginBottom:20}}>
           {(trendView==='real'?[
-            {label:'Total esperas hoje',value:String(trendLastReal?trendLastReal.total:'—'),color:C.rose},
-            {label:'Variação no período',value:byDate.length>=2?(trendVarTotal>=0?'+'+trendVarTotal:String(trendVarTotal)):'—',color:trendVarTotal>0?C.rose:trendVarTotal<0?C.emerald:C.muted},
-            {label:'Média diária esperas',value:String(trendAvgTotal||'—'),color:C.amber},
-            {label:'Pior dia registrado',value:trendMaxDay?(trendMaxDay.total+' em '+trendMaxDay.date.slice(5).replace('-','/')):'—',color:C.orange},
+            {label:'Crítica hoje ≥90min',  value:String(trendLastReal?.crit||'—'),  color:C.rose},
+            {label:'Grave hoje 31–89min',  value:String(trendLastReal?.grv||'—'),   color:C.orange},
+            {label:'Moderada hoje 15–30min',value:String(trendLastReal?.mod||'—'),  color:C.amber},
+            {label:'Pior dia (crítica)',   value:trendMaxDay?(trendMaxDay.crit+' em '+trendMaxDay.date.slice(5).replace('-','/')):'—',color:C.rose},
           ]:[
-            {label:'Projeção amanhã (esperas)',value:String(projData[0]?projData[0].total:'—'),color:C.rose},
-            {label:'Projeção +5 dias',value:String(projData[4]?projData[4].total:'—'),color:C.orange},
-            {label:'Tendência diária',value:trendSlope>=0?'+'+trendSlope:String(trendSlope),color:trendSlope>0?C.rose:trendSlope<0?C.emerald:C.muted},
-            {label:'Média atual (base)',value:String(trendAvgTotal||'—'),color:C.amber},
+            {label:'Proj. crítica amanhã', value:String(projData[0]?.crit||'—'),    color:C.rose},
+            {label:'Proj. grave amanhã',   value:String(projData[0]?.grv||'—'),     color:C.orange},
+            {label:'Proj. moderada amanhã',value:String(projData[0]?.mod||'—'),     color:C.amber},
+            {label:'Tendência crítica',    value:trendSlope>=0?'+'+trendSlope:String(trendSlope),color:trendSlope>0?C.rose:trendSlope<0?C.emerald:C.muted},
           ]).map((k,i)=>(
             <div key={k.label} style={{background:k.color+'14',border:'0.5px solid '+k.color+'22',borderRadius:10,padding:'11px 14px'}}>
               <div style={{fontSize:9,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.08em',marginBottom:7}}>{k.label}</div>
@@ -1015,26 +1045,23 @@ function TabEspera({rows}){
                   {tTip.date?tTip.date.slice(5).replace('-','/'):'—'} {tTip.isProj?'· Projeção':''}
                 </div>
                 <div style={{display:'flex',flexDirection:'column',gap:5}}>
-                  <div style={{display:'flex',justifyContent:'space-between',gap:16,paddingBottom:5,borderBottom:'0.5px solid rgba(255,255,255,0.07)'}}>
-                    <span style={{fontSize:11,color:C.muted}}>Total esperas</span>
-                    <span style={{fontSize:14,fontWeight:800,color:C.rose}}>{(tTip.total)||(((tTip.crit||0)+(tTip.grv||0)+(tTip.mod||0)))||0}</span>
+                  <div style={{display:'flex',justifyContent:'space-between',gap:16}}>
+                    <span style={{fontSize:11,color:'#F43F5E'}}>● Crítica ≥90min</span>
+                    <span style={{fontSize:13,fontWeight:800,color:'#F43F5E'}}>{tTip.crit||0}</span>
                   </div>
                   <div style={{display:'flex',justifyContent:'space-between',gap:16}}>
-                    <span style={{fontSize:10,color:'#F43F5E'}}>● Crítica</span>
-                    <span style={{fontSize:11,fontWeight:700,color:'#F43F5E'}}>{tTip.crit||0}</span>
+                    <span style={{fontSize:11,color:'#F97316'}}>● Grave 31–89min</span>
+                    <span style={{fontSize:12,fontWeight:700,color:'#F97316'}}>{tTip.grv||0}</span>
                   </div>
                   <div style={{display:'flex',justifyContent:'space-between',gap:16}}>
-                    <span style={{fontSize:10,color:'#F97316'}}>● Grave</span>
-                    <span style={{fontSize:11,fontWeight:700,color:'#F97316'}}>{tTip.grv||0}</span>
-                  </div>
-                  <div style={{display:'flex',justifyContent:'space-between',gap:16}}>
-                    <span style={{fontSize:10,color:'#F59E0B'}}>● Moderada</span>
-                    <span style={{fontSize:11,fontWeight:700,color:'#F59E0B'}}>{tTip.mod||0}</span>
+                    <span style={{fontSize:11,color:'#F59E0B'}}>● Moderada 15–30min</span>
+                    <span style={{fontSize:12,fontWeight:700,color:'#F59E0B'}}>{tTip.mod||0}</span>
                   </div>
                   <div style={{display:'flex',justifyContent:'space-between',gap:16,paddingTop:5,borderTop:'0.5px solid rgba(255,255,255,0.07)'}}>
-                    <span style={{fontSize:11,color:'#00C9A7'}}>Pacientes aguardando</span>
-                    <span style={{fontSize:13,fontWeight:800,color:'#00C9A7'}}>{tTip.pac||0}</span>
+                    <span style={{fontSize:10,color:C.muted}}>Total incidentes</span>
+                    <span style={{fontSize:11,fontWeight:700,color:C.muted}}>{(tTip.total)||((tTip.crit||0)+(tTip.grv||0)+(tTip.mod||0))}</span>
                   </div>
+                  {tTip.isProj&&<div style={{fontSize:9,color:C.amber,paddingTop:4,borderTop:'0.5px solid rgba(255,255,255,0.06)'}}>📊 Valor projetado</div>}
                 </div>
                 {tTip.isProj&&<div style={{marginTop:6,fontSize:9,color:C.amber,borderTop:'0.5px solid rgba(245,158,11,0.2)',paddingTop:5}}>📊 Valor projetado</div>}
               </div>
@@ -1061,12 +1088,11 @@ function TabEspera({rows}){
                   </clipPath>
                 </defs>
 
-                {/* Y ticks — left: esperas, right: pacientes */}
-                {[0,Math.round(trendMaxTotal*0.5),trendMaxTotal].map((v,ti)=>(
+                {/* Y grid — single axis */}
+                {[0,Math.round(trendMaxAll*0.33),Math.round(trendMaxAll*0.66),trendMaxAll].map((v,ti)=>(
                   <g key={ti}>
-                    <line x1={PL} y1={tyL(v)} x2={VW-PR} y2={tyL(v)} stroke="rgba(255,255,255,0.05)" strokeWidth="0.5"/>
-                    <text x={PL-7} y={tyL(v)+4} textAnchor="end" fontSize="9" fill="#475569">{v}</text>
-                    <text x={VW-PR+7} y={tyL(v)+4} textAnchor="start" fontSize="9" fill="rgba(0,201,167,0.4)">{Math.round(v*(trendMaxPac/Math.max(trendMaxTotal,1)))}</text>
+                    <line x1={PL} y1={tyA(v)} x2={VW-PR} y2={tyA(v)} stroke="rgba(255,255,255,0.05)" strokeWidth="0.5"/>
+                    <text x={PL-7} y={tyA(v)+4} textAnchor="end" fontSize="9" fill="#475569">{v}</text>
                   </g>
                 ))}
 
@@ -1076,61 +1102,58 @@ function TabEspera({rows}){
                 )}
 
                 <g clipPath="url(#tClip)">
-                {/* Area fill — total esperas */}
-                {trendRealCnt>=2&&(
-                  <path d={tSmooth(byDate,'total',tyL,0)+' L'+txP(trendRealCnt-1).toFixed(1)+','+(PT+CH).toFixed(1)+' L'+txP(0).toFixed(1)+','+(PT+CH).toFixed(1)+' Z'} fill="rgba(244,63,94,0.10)"/>
-                )}
-                {/* Linha pacientes — eixo direito (teal) */}
-                {trendRealCnt>=2&&(
-                  <path d={tSmooth(byDate,'pac',tyR,0)} fill="none" stroke="#00C9A7" strokeWidth="2" strokeOpacity={0.75}/>
-                )}
-                {/* Linha total esperas — eixo esquerdo (rose) */}
-                {trendRealCnt>=2&&(
-                  <path d={tSmooth(byDate,'total',tyL,0)} fill="none" stroke="#F43F5E" strokeWidth="2.5"/>
-                )}
-                {/* Proj area */}
-                {trendView==='proj'&&projData.length>=2&&trendRealCnt>=1&&(
-                  <path d={'M'+txP(trendRealCnt-1).toFixed(1)+','+tyL(trendLastReal?.total||0).toFixed(1)+tSmooth(projData,'total',tyL,trendRealCnt).slice(1)+' L'+txP(trendRealCnt+projData.length-1).toFixed(1)+','+(PT+CH).toFixed(1)+' L'+txP(trendRealCnt-1).toFixed(1)+','+(PT+CH).toFixed(1)+' Z'} fill="rgba(244,63,94,0.05)"/>
-                )}
-                {/* Proj total dashed */}
-                {trendView==='proj'&&projData.length>=1&&trendRealCnt>=1&&(
-                  <path d={'M'+txP(trendRealCnt-1).toFixed(1)+','+tyL(trendLastReal?.total||0).toFixed(1)+tSmooth(projData,'total',tyL,trendRealCnt).slice(1)} fill="none" stroke="#F43F5E" strokeWidth="1.5" strokeOpacity={0.45} strokeDasharray="6,4"/>
-                )}
-                {/* Proj pac dashed */}
-                {trendView==='proj'&&projData.length>=1&&trendRealCnt>=1&&(
-                  <path d={'M'+txP(trendRealCnt-1).toFixed(1)+','+tyR(trendLastReal?.pac||0).toFixed(1)+tSmooth(projData,'pac',tyR,trendRealCnt).slice(1)} fill="none" stroke="#00C9A7" strokeWidth="1.5" strokeOpacity={0.35} strokeDasharray="4,4"/>
-                )}
+                  {/* Area fill crítica */}
+                  {trendRealCnt>=2&&(
+                    <path d={tSmooth(byDate,'crit',tyA,0)+' L'+txP(trendRealCnt-1).toFixed(1)+','+(PT+CH).toFixed(1)+' L'+txP(0).toFixed(1)+','+(PT+CH).toFixed(1)+' Z'} fill="rgba(244,63,94,0.10)"/>
+                  )}
+                  {/* Linha moderada — amber */}
+                  {trendRealCnt>=2&&(
+                    <path d={tSmooth(byDate,'mod',tyA,0)} fill="none" stroke="#F59E0B" strokeWidth="2" strokeOpacity={0.8}/>
+                  )}
+                  {/* Linha grave — orange */}
+                  {trendRealCnt>=2&&(
+                    <path d={tSmooth(byDate,'grv',tyA,0)} fill="none" stroke="#F97316" strokeWidth="2.5" strokeOpacity={0.9}/>
+                  )}
+                  {/* Linha crítica — rose, destaque */}
+                  {trendRealCnt>=2&&(
+                    <path d={tSmooth(byDate,'crit',tyA,0)} fill="none" stroke="#F43F5E" strokeWidth="3"/>
+                  )}
+                  {/* Proj moderada dashed */}
+                  {trendView==='proj'&&projData.length>=1&&trendRealCnt>=1&&(
+                    <path d={'M'+txP(trendRealCnt-1).toFixed(1)+','+tyA(trendLastReal?.mod||0).toFixed(1)+tSmooth(projData,'mod',tyA,trendRealCnt).slice(1)} fill="none" stroke="#F59E0B" strokeWidth="1.5" strokeOpacity={0.4} strokeDasharray="5,4"/>
+                  )}
+                  {/* Proj grave dashed */}
+                  {trendView==='proj'&&projData.length>=1&&trendRealCnt>=1&&(
+                    <path d={'M'+txP(trendRealCnt-1).toFixed(1)+','+tyA(trendLastReal?.grv||0).toFixed(1)+tSmooth(projData,'grv',tyA,trendRealCnt).slice(1)} fill="none" stroke="#F97316" strokeWidth="1.5" strokeOpacity={0.4} strokeDasharray="5,4"/>
+                  )}
+                  {/* Proj crítica dashed */}
+                  {trendView==='proj'&&projData.length>=1&&trendRealCnt>=1&&(
+                    <path d={'M'+txP(trendRealCnt-1).toFixed(1)+','+tyA(trendLastReal?.crit||0).toFixed(1)+tSmooth(projData,'crit',tyA,trendRealCnt).slice(1)} fill="none" stroke="#F43F5E" strokeWidth="2" strokeOpacity={0.45} strokeDasharray="6,4"/>
+                  )}
                 </g>
-               {/* Dots reais — total esperas */}
-                {byDate.map((d,i)=>(
-                  <circle key={'d'+i} cx={txP(i)} cy={tyL(d.total||0)} r="4" fill="#F43F5E" stroke="#06080F" strokeWidth="1.5"/>
-                ))}
-                {/* Dots pacientes */}
-                {byDate.map((d,i)=>(
-                  <circle key={'p'+i} cx={txP(i)} cy={tyR(d.pac||0)} r="3" fill="#00C9A7" stroke="#06080F" strokeWidth="1.5"/>
-                ))}
 
-                {/* Highlight dot on hover */}
-                {tTip&&tTip.idx!=null&&(
-                  <circle
-                    cx={nTotal<=1?PL+CW/2:PL+(tTip.idx)/(nTotal-1)*CW}
-                    cy={tyL(tTip.total||0)}
-                    r="7" fill="none" stroke="#F43F5E" strokeWidth="2" strokeOpacity={0.8}/>
-                )}
-                {/* Triângulos projeção */}
+                {/* Dots moderada */}
+                {byDate.map((d,i)=>(<circle key={'m'+i} cx={txP(i)} cy={tyA(d.mod||0)} r="3" fill="#F59E0B" stroke="#06080F" strokeWidth="1.5"/>))}
+                {/* Dots grave */}
+                {byDate.map((d,i)=>(<circle key={'g'+i} cx={txP(i)} cy={tyA(d.grv||0)} r="3.5" fill="#F97316" stroke="#06080F" strokeWidth="1.5"/>))}
+                {/* Dots crítica — maiores */}
+                {byDate.map((d,i)=>(<circle key={'c'+i} cx={txP(i)} cy={tyA(d.crit||0)} r="4" fill="#F43F5E" stroke="#06080F" strokeWidth="1.5"/>))}
+                {/* Proj triangles crítica */}
                 {trendView==='proj'&&projData.map((d,i)=>{
-                  const cx=txP(i+trendRealCnt),cy=tyL(d.total||d.crit||0)
+                  const cx=txP(i+trendRealCnt),cy=tyA(d.crit||0)
                   return(<polygon key={'t'+i} points={cx.toFixed(1)+','+(cy-7).toFixed(1)+' '+(cx-5).toFixed(1)+','+(cy+4).toFixed(1)+' '+(cx+5).toFixed(1)+','+(cy+4).toFixed(1)} fill="#F43F5E" fillOpacity={0.5}/>)
                 })}
-
+                {/* Hover highlight */}
+                {tTip&&tTip.idx!=null&&(
+                  <circle cx={nTotal<=1?PL+CW/2:PL+(tTip.idx)/(nTotal-1)*CW} cy={tyA(tTip.crit||0)} r="7" fill="none" stroke="#F43F5E" strokeWidth="2" strokeOpacity={0.8}/>
+                )}
                 {/* X labels */}
                 {trendAllData.map((d,i)=>{
                   const show=nTotal<=10||i===0||i===nTotal-1||i%Math.ceil(nTotal/8)===0
-                  return show?(<text key={'x'+i} x={txP(i)} y={VH-4} textAnchor="middle" fontSize="9" fill={d.isProj?'rgba(245,158,11,0.45)':'#334155'}>{d.date.slice(5).replace('-','/')}</text>):null
+                  return show?(<text key={'x'+i} x={txP(i)} y={VH-3} textAnchor="middle" fontSize="9" fill={d.isProj?'rgba(245,158,11,0.4)':'#334155'}>{d.date.slice(5).replace('-','/')}</text>):null
                 })}
-
                 <line x1={PL} y1={PT+CH} x2={VW-PR} y2={PT+CH} stroke="rgba(255,255,255,0.07)" strokeWidth="0.5"/>
-              </svg>
+            </svg>
             </div>
             {trendView==='proj'&&(
               <div style={{marginTop:12,padding:'9px 14px',background:'rgba(245,158,11,0.05)',border:'0.5px solid rgba(245,158,11,0.18)',borderRadius:8,fontSize:10.5,color:C.muted}}>
