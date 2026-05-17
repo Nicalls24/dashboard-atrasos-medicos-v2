@@ -520,28 +520,7 @@ function TabEspera({ rows }) {
   const trendMaxDay   = byDate.length>0  ? byDate.reduce((a,d)=>d.crit>a.crit?d:a, byDate[0]) : null
   const trendSlope    = projData.length>0 ? ((projData[0]?.crit||0)-(trendLastReal?.crit||0)) : 0
 
-  const VW=800, VH=160, PL=48, PR=48, PT=10, PB=32
-  const CW=VW-PL-PR, CH=VH-PT-PB
-  const txPos = (i) => trendTotal<=1 ? PL+CW/2 : PL+(i/(trendTotal-1))*CW
-  const tyPos = (v, mx) => PT+CH-(mx>0?(v/mx)*CH:0)
-  const tMakePath = (data, key, mx, startI=0) =>
-    data.map((d,i)=>`${i+startI===0?'M':'L'}${txPos(i+startI).toFixed(1)},${tyPos(d[key]||0,mx).toFixed(1)}`).join(' ')
 
-  // Smooth curve (Catmull-Rom → cubic bezier)
-  const tSmooth = (data, key, mx, startI=0) => {
-    if (!data.length) return ''
-    const pts = data.map((d,i)=>({ x:parseFloat(txPos(i+startI).toFixed(2)), y:parseFloat(tyPos(d[key]||0,mx).toFixed(2)) }))
-    if (pts.length===1) return `M${pts[0].x},${pts[0].y}`
-    let path = `M${pts[0].x},${pts[0].y}`
-    for (let i=1; i<pts.length; i++) {
-      const p0=pts[i-2]||pts[i-1], p1=pts[i-1], p2=pts[i], p3=pts[i+1]||pts[i]
-      const cp1x=(p1.x+(p2.x-p0.x)/6).toFixed(2), cp1y=(p1.y+(p2.y-p0.y)/6).toFixed(2)
-      const cp2x=(p2.x-(p3.x-p1.x)/6).toFixed(2), cp2y=(p2.y-(p3.y-p1.y)/6).toFixed(2)
-      path += ` C${cp1x},${cp1y} ${cp2x},${cp2y} ${p2.x},${p2.y}`
-    }
-    return path
-  }
-  const tYTicks = [0, Math.round(trendMaxCrit*0.5), trendMaxCrit]
 
   if (!rows.length) return (
     <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'60vh', gap:14 }}>
@@ -803,7 +782,7 @@ function TabEspera({ rows }) {
         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:16 }}>
           <div>
             <div style={{ fontSize:10, fontWeight:700, color:C.muted, textTransform:'uppercase', letterSpacing:'.13em' }}>
-              TENDÊNCIA DE ESPERAS · {trendRealCnt} DIA{trendRealCnt!==1?'S':''} · TODOS OS ESTADOS
+              {'TENDÊNCIA DE ESPERAS · ' + trendRealCnt + ' DIA' + (trendRealCnt!==1?'S':'') + ' · TODOS OS ESTADOS'}
             </div>
             <div style={{ fontSize:10.5, color:C.muted, marginTop:4 }}>Esperas críticas ao longo do tempo</div>
           </div>
@@ -821,170 +800,99 @@ function TabEspera({ rows }) {
         {/* KPIs */}
         <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:10, marginBottom:20 }}>
           {(trendView==='real' ? [
-            { label: trendRealCnt<=1 ? 'Esperas Críticas' : 'Esperas Críticas (hoje)', value:trendLastReal?.crit??'—', color:C.rose   },
-            { label:'Variação no período',  value:byDate.length>=2?(trendVarCrit>=0?`+${trendVarCrit}`:String(trendVarCrit)):'—', color:trendVarCrit>0?C.rose:trendVarCrit<0?C.emerald:C.muted },
-            { label:'Média diária crítica', value:trendAvgCrit||'—', color:C.amber },
-            { label:'Pior dia registrado',  value:trendMaxDay?`${trendMaxDay.crit} em ${trendMaxDay.date.slice(5).replace('-','/')}`:'—', color:C.orange },
+            { label:'Esperas Críticas', value: String(trendLastReal ? trendLastReal.crit : '—'), color:C.rose },
+            { label:'Variação no período', value: byDate.length>=2 ? (trendVarCrit>=0 ? '+'+trendVarCrit : String(trendVarCrit)) : '—', color: trendVarCrit>0?C.rose:trendVarCrit<0?C.emerald:C.muted },
+            { label:'Média diária crítica', value: String(trendAvgCrit||'—'), color:C.amber },
+            { label:'Pior dia registrado', value: trendMaxDay ? (trendMaxDay.crit + ' em ' + trendMaxDay.date.slice(5).replace('-','/')) : '—', color:C.orange },
           ] : [
-            { label:'Projeção amanhã',    value:projData[0]?.crit??'—', color:C.rose   },
-            { label:'Projeção +5 dias',   value:projData[4]?.crit??'—', color:C.orange },
-            { label:'Tendência diária',   value:trendSlope>=0?`+${trendSlope}`:String(trendSlope), color:trendSlope>0?C.rose:trendSlope<0?C.emerald:C.muted },
-            { label:'Média atual (base)', value:trendAvgCrit||'—', color:C.amber },
+            { label:'Projeção amanhã', value: String(projData[0] ? projData[0].crit : '—'), color:C.rose },
+            { label:'Projeção +5 dias', value: String(projData[4] ? projData[4].crit : '—'), color:C.orange },
+            { label:'Tendência diária', value: trendSlope>=0 ? '+'+trendSlope : String(trendSlope), color: trendSlope>0?C.rose:trendSlope<0?C.emerald:C.muted },
+            { label:'Média atual (base)', value: String(trendAvgCrit||'—'), color:C.amber },
           ]).map((k,i)=>(
-            <div key={k.label} style={{ background:`${k.color}08`, border:`0.5px solid ${k.color}20`, borderRadius:10, padding:'11px 14px' }}>
+            <div key={k.label} style={{ background:k.color+'14', border:'0.5px solid '+k.color+'22', borderRadius:10, padding:'11px 14px' }}>
               <div style={{ fontSize:9, fontWeight:700, color:C.muted, textTransform:'uppercase', letterSpacing:'.08em', marginBottom:7 }}>{k.label}</div>
               <div style={{ fontSize:22, fontWeight:800, color:k.color, letterSpacing:'-.5px' }}>{k.value}</div>
             </div>
           ))}
         </div>
 
-        {/* Legenda */}
-        <div style={{ display:'flex', gap:18, marginBottom:12, flexWrap:'wrap' }}>
-          {[
-            { color:C.rose,   label:'Espera Crítica (real)', dashed:false },
-            { color:C.orange, label:'Espera Grave (real)',   dashed:false },
-            ...(trendView==='proj' ? [
-              { color:C.rose, label:'Projeção crítica', dashed:true },
-            ] : []),
-          ].map(l=>(
-            <div key={l.label} style={{ display:'flex', alignItems:'center', gap:6 }}>
-              {l.dashed
-                ? <div style={{ width:20, height:2, borderTop:`2px dashed ${l.color}`, opacity:.7 }} />
-                : <div style={{ width:20, height:2, background:l.color, borderRadius:1 }} />
-              }
-              <span style={{ fontSize:10, color:C.muted }}>{l.label}</span>
-            </div>
-          ))}
-          {trendMaxPac>0 && <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-            <div style={{ width:20, height:2, borderTop:`2px dotted ${C.teal}`, opacity:.6 }} />
-            <span style={{ fontSize:10, color:C.muted }}>Pacientes (eixo dir.)</span>
-          </div>}
-        </div>
-
-        {/* Chart */}
+        {/* Chart — barras verticais simples */}
         {trendAllData.length===0 ? (
           <div style={{ textAlign:'center', padding:'40px 0', color:C.muted, fontSize:12 }}>
             Sem dados suficientes. Carregue uma planilha com múltiplos dias.
           </div>
         ) : (
-          <div style={{ position:'relative' }}>
-            <svg width="100%" viewBox={`0 0 ${VW} ${VH}`} style={{ display:'block', overflow:'visible' }}>
-
-              {/* Grid lines Y */}
-              {tYTicks.map((v,ti)=>(
-                <g key={ti}>
-                  <line x1={PL} y1={tyPos(v,trendMaxCrit)} x2={VW-PR} y2={tyPos(v,trendMaxCrit)}
-                    stroke="rgba(255,255,255,0.05)" strokeWidth="0.5" />
-                  <text x={PL-8} y={tyPos(v,trendMaxCrit)+4} textAnchor="end" fontSize="9" fill="#334155">{v}</text>
-                  {/* Right axis — pacientes */}
-                  <text x={VW-PR+8} y={tyPos(v,trendMaxCrit)+4} textAnchor="start" fontSize="9" fill="#1a3a3a">
-                    {Math.round(v*(trendMaxPac/Math.max(trendMaxCrit,1)))}
-                  </text>
-                </g>
+          <div>
+            {/* Legenda */}
+            <div style={{ display:'flex', gap:16, marginBottom:12, flexWrap:'wrap' }}>
+              {[
+                { color:C.rose,   label:'Espera Crítica (real)' },
+                { color:C.orange, label:'Espera Grave (real)' },
+              ].concat(trendView==='proj' ? [{ color:C.rose, label:'Projeção crítica', dashed:true }] : []).map(l=>(
+                <div key={l.label} style={{ display:'flex', alignItems:'center', gap:5 }}>
+                  <div style={{ width:16, height:3, borderRadius:2,
+                    background: l.dashed ? 'transparent' : l.color,
+                    border: l.dashed ? ('1.5px dashed ' + l.color) : 'none',
+                    opacity: l.dashed ? 0.7 : 1 }} />
+                  <span style={{ fontSize:10, color:C.muted }}>{l.label}</span>
+                </div>
               ))}
+            </div>
 
-              {/* Separador real/proj */}
-              {trendView==='proj' && trendRealCnt>0 && trendTotal>trendRealCnt && (
-                <line x1={txPos(trendRealCnt-1)} y1={PT} x2={txPos(trendRealCnt-1)} y2={PT+CH}
-                  stroke="rgba(245,158,11,0.25)" strokeWidth="1" strokeDasharray="4,3" />
-              )}
-
-              {/* Area fill — Crítica (smooth) */}
-              {trendRealCnt>=2 && (
-                <path
-                  d={`${tSmooth(byDate,'crit',trendMaxCrit)} L${txPos(trendRealCnt-1).toFixed(1)},${(PT+CH).toFixed(1)} L${txPos(0).toFixed(1)},${(PT+CH).toFixed(1)} Z`}
-                  fill="rgba(244,63,94,0.12)" />
-              )}
-
-              {/* Area fill — Grave (smooth) */}
-              {trendRealCnt>=2 && (
-                <path
-                  d={`${tSmooth(byDate,'grv',trendMaxCrit)} L${txPos(trendRealCnt-1).toFixed(1)},${(PT+CH).toFixed(1)} L${txPos(0).toFixed(1)},${(PT+CH).toFixed(1)} Z`}
-                  fill="rgba(249,115,22,0.07)" />
-              )}
-
-              {/* Pacientes line (teal, right axis, dotted) */}
-              {trendRealCnt>=2 && trendMaxPac>0 && (
-                <path d={tSmooth(byDate,'pac',trendMaxPac)} fill="none"
-                  stroke="#00C9A7" strokeWidth="1.5" strokeOpacity={0.5} strokeDasharray="3,3" />
-              )}
-
-              {/* Line — Grave (smooth) */}
-              {trendRealCnt>=2 && (
-                <path d={tSmooth(byDate,'grv',trendMaxCrit)} fill="none"
-                  stroke="#F97316" strokeWidth="1.5" strokeOpacity={0.75} />
-              )}
-
-              {/* Line — Crítica (smooth, main) */}
-              {trendRealCnt>=2 && (
-                <path d={tSmooth(byDate,'crit',trendMaxCrit)} fill="none"
-                  stroke="#F43F5E" strokeWidth="2.5" />
-              )}
-
-              {/* Proj area fill */}
-              {trendView==='proj' && projData.length>=2 && trendRealCnt>=1 && (
-                <path
-                  d={`M${txPos(trendRealCnt-1).toFixed(1)},${tyPos(trendLastReal?.crit||0,trendMaxCrit).toFixed(1)} ${tSmooth(projData,'crit',trendMaxCrit,trendRealCnt).slice(1)} L${txPos(trendRealCnt+projData.length-1).toFixed(1)},${(PT+CH).toFixed(1)} L${txPos(trendRealCnt-1).toFixed(1)},${(PT+CH).toFixed(1)} Z`}
-                  fill="rgba(244,63,94,0.06)" />
-              )}
-
-              {/* Proj line — dashed smooth */}
-              {trendView==='proj' && projData.length>=1 && trendRealCnt>=1 && (
-                <path
-                  d={`M${txPos(trendRealCnt-1).toFixed(1)},${tyPos(trendLastReal?.crit||0,trendMaxCrit).toFixed(1)} ${tSmooth(projData,'crit',trendMaxCrit,trendRealCnt).slice(1)}`}
-                  fill="none" stroke="#F43F5E" strokeWidth="1.5" strokeOpacity={0.5} strokeDasharray="6,4" />
-              )}
-
-              {/* Dots — real */}
-              {byDate.map((d,i)=>(
-                <circle key={`dot-${i}`} cx={txPos(i)} cy={tyPos(d.crit,trendMaxCrit)} r="4"
-                  fill="#F43F5E" stroke="#06080F" strokeWidth="1.5" />
-              ))}
-
-              {/* Triangles — proj markers */}
-              {trendView==='proj' && projData.map((d,i)=>{
-                const cx=txPos(i+trendRealCnt), cy=tyPos(d.crit,trendMaxCrit)
+            {/* Barra chart */}
+            <div style={{ display:'flex', alignItems:'flex-end', gap:4, height:120 }}>
+              {trendAllData.map((d,i)=>{
+                const isProj = d.isProj
+                const maxV   = Math.max(trendMaxCrit, 1)
+                const hCrit  = Math.max((d.crit||0)/maxV*100, d.crit>0?3:0)
+                const hGrv   = Math.max((d.grv||0)/maxV*100, d.grv>0?2:0)
                 return (
-                  <polygon key={`tri-${i}`}
-                    points={`${cx},${(cy-7).toFixed(1)} ${(cx-5).toFixed(1)},${(cy+4).toFixed(1)} ${(cx+5).toFixed(1)},${(cy+4).toFixed(1)}`}
-                    fill="#F43F5E" fillOpacity={0.5} stroke="#F43F5E" strokeWidth="0.5" />
+                  <div key={d.date} title={d.date + ' · Crítica:' + (d.crit||0) + ' Grave:' + (d.grv||0)}
+                    style={{ flex:1, height:'100%', display:'flex', flexDirection:'column', justifyContent:'flex-end', gap:1, opacity: isProj ? 0.55 : 1 }}>
+                    {(d.grv||0)>0 && (
+                      <div style={{ width:'100%', height: hGrv+'%', minHeight: d.grv>0?3:0,
+                        background: isProj ? 'rgba(249,115,22,0.3)' : C.orange,
+                        borderRadius:'2px 2px 0 0',
+                        border: isProj ? '1px dashed rgba(249,115,22,0.5)' : 'none' }} />
+                    )}
+                    <div style={{ width:'100%', height: hCrit+'%', minHeight: d.crit>0?3:0,
+                      background: isProj ? 'rgba(244,63,94,0.25)' : ('linear-gradient(0deg,'+C.rose+',#F97316)'),
+                      borderRadius: (d.grv||0)>0 ? 0 : '3px 3px 0 0',
+                      border: isProj ? '1px dashed rgba(244,63,94,0.5)' : 'none' }} />
+                  </div>
                 )
               })}
+            </div>
 
-              {/* Proj label */}
-              {trendView==='proj' && trendRealCnt>0 && trendTotal>trendRealCnt && (
-                <text x={txPos(trendRealCnt)+6} y={PT+14} fontSize="8" fill="rgba(245,158,11,0.55)">Projeção</text>
-              )}
-
-              {/* X labels */}
+            {/* X labels */}
+            <div style={{ display:'flex', gap:4, marginTop:6 }}>
               {trendAllData.map((d,i)=>{
-                const show = trendTotal<=10 || i===0 || i===trendTotal-1 || i%Math.ceil(trendTotal/8)===0
-                return show ? (
-                  <text key={`xl-${i}`} x={txPos(i)} y={VH-4} textAnchor="middle" fontSize="9"
-                    fill={d.isProj?'rgba(245,158,11,0.4)':'#334155'}>
+                const show = trendAllData.length<=10 || i===0 || i===trendAllData.length-1 || i%Math.ceil(trendAllData.length/6)===0
+                return (
+                  <div key={d.date} style={{ flex:1, textAlign:'center', fontSize:8,
+                    color: d.isProj ? 'rgba(245,158,11,0.5)' : '#334155',
+                    opacity: show ? 1 : 0 }}>
                     {d.date.slice(5).replace('-','/')}
-                  </text>
-                ) : null
+                  </div>
+                )
               })}
+            </div>
 
-              {/* Axis bottom */}
-              <line x1={PL} y1={PT+CH} x2={VW-PR} y2={PT+CH} stroke="rgba(255,255,255,0.07)" strokeWidth="0.5" />
-            </svg>
-          </div>
-        )}
-
-        {/* Nota projeção */}
-        {trendView==='proj' && (
-          <div style={{ marginTop:12, padding:'9px 14px', background:'rgba(245,158,11,0.05)', border:'0.5px solid rgba(245,158,11,0.18)', borderRadius:8, fontSize:10.5, color:C.muted }}>
-            <span style={{ color:C.amber, fontWeight:700 }}>Como a projeção é calculada — </span>
-            Média dos últimos {Math.min(byDate.length,3)} dia{byDate.length!==1?'s':''} + tendência linear para os próximos 5 dias.
-            {byDate.length<3 && <span style={{ color:C.amber }}> Precisão aumenta com mais dias na base.</span>}
+            {trendView==='proj' && (
+              <div style={{ marginTop:12, padding:'9px 14px', background:'rgba(245,158,11,0.05)', border:'0.5px solid rgba(245,158,11,0.18)', borderRadius:8, fontSize:10.5, color:C.muted }}>
+                <span style={{ color:C.amber, fontWeight:700 }}>Como a projeção é calculada — </span>
+                {'Média dos últimos ' + Math.min(byDate.length,3) + ' dia' + (byDate.length!==1?'s':'') + ' + tendência linear para os próximos 5 dias.'}
+                {byDate.length<3 && <span style={{ color:C.amber }}> Precisão aumenta com mais dias na base.</span>}
+              </div>
+            )}
           </div>
         )}
       </div>
     </div>
   )
 }
+
 
 // ── ROOT ──────────────────────────────────────────────────────────────────────
 export default function Home() {
