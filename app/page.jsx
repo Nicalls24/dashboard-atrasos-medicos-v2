@@ -271,6 +271,27 @@ function TabEspera({rows}){
   const trendMaxDay=byDate.length>0?byDate.reduce((a,d)=>d.crit>a.crit?d:a,byDate[0]):null
   const trendSlope=projData.length>0?((projData[0]?.crit||0)-(trendLastReal?.crit||0)):0
 
+  // SVG line chart vars
+  const VW=800,VH=160,PL=50,PR=50,PT=10,PB=34
+  const CW=VW-PL-PR,CH=VH-PT-PB
+  const nTotal=trendAllData.length
+  const txP=i=>nTotal<=1?PL+CW/2:PL+i/(nTotal-1)*CW
+  const tyP=(v,mx)=>PT+CH-(mx>0?(v||0)/mx*CH:0)
+  const tSmooth=(data,key,mx,off)=>{
+    if(!data.length)return ''
+    const pts=data.map((d,i)=>({x:parseFloat(txP(i+(off||0)).toFixed(2)),y:parseFloat(tyP(d[key]||0,mx).toFixed(2))}))
+    if(pts.length===1)return 'M'+pts[0].x+','+pts[0].y
+    let p='M'+pts[0].x+','+pts[0].y
+    for(let i=1;i<pts.length;i++){
+      const p0=pts[i-2]||pts[i-1],p1=pts[i-1],p2=pts[i],p3=pts[i+1]||pts[i]
+      const c1x=(p1.x+(p2.x-p0.x)/6).toFixed(2),c1y=(p1.y+(p2.y-p0.y)/6).toFixed(2)
+      const c2x=(p2.x-(p3.x-p1.x)/6).toFixed(2),c2y=(p2.y-(p3.y-p1.y)/6).toFixed(2)
+      p+=' C'+c1x+','+c1y+' '+c2x+','+c2y+' '+p2.x+','+p2.y
+    }
+    return p
+  }
+  const tYTicks=[0,Math.round(trendMaxCrit*0.5),trendMaxCrit]
+
   if(!rows.length)return(<div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',height:'60vh',gap:14}}><div style={{fontSize:44}}>⏱️</div><div style={{fontSize:18,fontWeight:700,color:C.text}}>Nenhum dado de espera</div><div style={{fontSize:13,color:C.muted}}>Use o botão para carregar uma planilha</div></div>)
 
   const horasDispFim=horaFilt==='TODAS'?[]:horasDisp.filter(h=>h>parseInt(horaFilt))
@@ -458,24 +479,66 @@ function TabEspera({rows}){
                 </div>
               ))}
             </div>
-            <div style={{display:'flex',alignItems:'flex-end',gap:4,height:120}}>
-              {trendAllData.map((d,i)=>{
-                const isProj=d.isProj,maxV=Math.max(trendMaxCrit,1)
-                const hCrit=Math.max((d.crit||0)/maxV*100,d.crit>0?3:0)
-                const hGrv=Math.max((d.grv||0)/maxV*100,d.grv>0?2:0)
-                return(
-                  <div key={d.date} title={d.date+' · Crítica:'+(d.crit||0)+' Grave:'+(d.grv||0)} style={{flex:1,height:'100%',display:'flex',flexDirection:'column',justifyContent:'flex-end',gap:1,opacity:isProj?0.55:1}}>
-                    {(d.grv||0)>0&&<div style={{width:'100%',height:hGrv+'%',minHeight:d.grv>0?3:0,background:isProj?'rgba(249,115,22,0.3)':C.orange,borderRadius:'2px 2px 0 0',border:isProj?'1px dashed rgba(249,115,22,0.5)':'none'}}/>}
-                    <div style={{width:'100%',height:hCrit+'%',minHeight:d.crit>0?3:0,background:isProj?'rgba(244,63,94,0.25)':('linear-gradient(0deg,'+C.rose+',#F97316)'),borderRadius:(d.grv||0)>0?0:'3px 3px 0 0',border:isProj?'1px dashed rgba(244,63,94,0.5)':'none'}}/>
-                  </div>
-                )
-              })}
-            </div>
-            <div style={{display:'flex',gap:4,marginTop:6}}>
-              {trendAllData.map((d,i)=>{
-                const show=trendAllData.length<=10||i===0||i===trendAllData.length-1||i%Math.ceil(trendAllData.length/6)===0
-                return(<div key={d.date} style={{flex:1,textAlign:'center',fontSize:8,color:d.isProj?'rgba(245,158,11,0.5)':'#334155',opacity:show?1:0}}>{d.date.slice(5).replace('-','/')}</div>)
-              })}
+            <div style={{width:'100%',position:'relative'}}>
+              <svg width="100%" viewBox={'0 0 '+VW+' '+VH} style={{display:'block',overflow:'visible'}}>
+
+                {/* Y grid + labels */}
+                {tYTicks.map((v,ti)=>(
+                  <g key={ti}>
+                    <line x1={PL} y1={tyP(v,trendMaxCrit)} x2={VW-PR} y2={tyP(v,trendMaxCrit)} stroke="rgba(255,255,255,0.05)" strokeWidth="0.5"/>
+                    <text x={PL-8} y={tyP(v,trendMaxCrit)+4} textAnchor="end" fontSize="9" fill="#334155">{v}</text>
+                  </g>
+                ))}
+
+                {/* Separator real/proj */}
+                {trendView==='proj'&&trendRealCnt>0&&nTotal>trendRealCnt&&(
+                  <line x1={txP(trendRealCnt-1)} y1={PT} x2={txP(trendRealCnt-1)} y2={PT+CH} stroke="rgba(245,158,11,0.25)" strokeWidth="1" strokeDasharray="4,3"/>
+                )}
+
+                {/* Area fill — Crítica */}
+                {trendRealCnt>=2&&(
+                  <path d={tSmooth(byDate,'crit',trendMaxCrit,0)+' L'+txP(trendRealCnt-1).toFixed(1)+','+(PT+CH).toFixed(1)+' L'+txP(0).toFixed(1)+','+(PT+CH).toFixed(1)+' Z'} fill="rgba(244,63,94,0.12)"/>
+                )}
+
+                {/* Line — Grave (real) */}
+                {trendRealCnt>=2&&(
+                  <path d={tSmooth(byDate,'grv',trendMaxCrit,0)} fill="none" stroke="#F97316" strokeWidth="1.5" strokeOpacity={0.7}/>
+                )}
+
+                {/* Line — Crítica (real) */}
+                {trendRealCnt>=2&&(
+                  <path d={tSmooth(byDate,'crit',trendMaxCrit,0)} fill="none" stroke="#F43F5E" strokeWidth="2.5"/>
+                )}
+
+                {/* Proj area */}
+                {trendView==='proj'&&projData.length>=2&&trendRealCnt>=1&&(
+                  <path d={'M'+txP(trendRealCnt-1).toFixed(1)+','+tyP(trendLastReal?.crit||0,trendMaxCrit).toFixed(1)+tSmooth(projData,'crit',trendMaxCrit,trendRealCnt).slice(1)+' L'+txP(trendRealCnt+projData.length-1).toFixed(1)+','+(PT+CH).toFixed(1)+' L'+txP(trendRealCnt-1).toFixed(1)+','+(PT+CH).toFixed(1)+' Z'} fill="rgba(244,63,94,0.06)"/>
+                )}
+
+                {/* Proj line dashed */}
+                {trendView==='proj'&&projData.length>=1&&trendRealCnt>=1&&(
+                  <path d={'M'+txP(trendRealCnt-1).toFixed(1)+','+tyP(trendLastReal?.crit||0,trendMaxCrit).toFixed(1)+tSmooth(projData,'crit',trendMaxCrit,trendRealCnt).slice(1)} fill="none" stroke="#F43F5E" strokeWidth="1.5" strokeOpacity={0.5} strokeDasharray="6,4"/>
+                )}
+
+                {/* Dots reais */}
+                {byDate.map((d,i)=>(
+                  <circle key={'d'+i} cx={txP(i)} cy={tyP(d.crit,trendMaxCrit)} r="4" fill="#F43F5E" stroke="#06080F" strokeWidth="1.5"/>
+                ))}
+
+                {/* Triângulos projeção */}
+                {trendView==='proj'&&projData.map((d,i)=>{
+                  const cx=txP(i+trendRealCnt),cy=tyP(d.crit,trendMaxCrit)
+                  return(<polygon key={'t'+i} points={cx.toFixed(1)+','+(cy-7).toFixed(1)+' '+(cx-5).toFixed(1)+','+(cy+4).toFixed(1)+' '+(cx+5).toFixed(1)+','+(cy+4).toFixed(1)} fill="#F43F5E" fillOpacity={0.5}/>)
+                })}
+
+                {/* X labels */}
+                {trendAllData.map((d,i)=>{
+                  const show=nTotal<=10||i===0||i===nTotal-1||i%Math.ceil(nTotal/8)===0
+                  return show?(<text key={'x'+i} x={txP(i)} y={VH-4} textAnchor="middle" fontSize="9" fill={d.isProj?'rgba(245,158,11,0.45)':'#334155'}>{d.date.slice(5).replace('-','/')}</text>):null
+                })}
+
+                <line x1={PL} y1={PT+CH} x2={VW-PR} y2={PT+CH} stroke="rgba(255,255,255,0.07)" strokeWidth="0.5"/>
+              </svg>
             </div>
             {trendView==='proj'&&(
               <div style={{marginTop:12,padding:'9px 14px',background:'rgba(245,158,11,0.05)',border:'0.5px solid rgba(245,158,11,0.18)',borderRadius:8,fontSize:10.5,color:C.muted}}>
