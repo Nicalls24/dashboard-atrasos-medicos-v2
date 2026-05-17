@@ -95,72 +95,498 @@ function TabAgendas({rows}){
   const[dateFrom,setDateFrom]=useState('')
   const[dateTo,setDateTo]=useState('')
   const[ufFilt,setUfFilt]=useState('TODOS')
-  const[statusFilt,setStatusFilt]=useState('TODOS')
   const[search,setSearch]=useState('')
+  const[horasFilt,setHorasFilt]=useState([])
+  const[unidFilt,setUnidFilt]=useState('')
+  const[trendView,setTrendView]=useState('real')
+  const[aTip,setATip]=useState(null)
+
   const allDates=useMemo(()=>[...new Set(rows.map(r=>r.data_agenda).filter(Boolean))].sort(),[rows])
   const periodoFn=useMemo(()=>buildFilter(allDates,periodo,dateFrom,dateTo),[allDates,periodo,dateFrom,dateTo])
   const ufs=useMemo(()=>[...new Set(rows.map(r=>r.uf).filter(Boolean))].sort(),[rows])
-  const statuses=useMemo(()=>[...new Set(rows.map(r=>r.status).filter(Boolean))].sort(),[rows])
+
+  const horasDisp=useMemo(()=>{
+    const set=new Set()
+    rows.filter(d=>periodoFn(d.data_agenda)).forEach(d=>{
+      const h=d.hr_inicio_min;if(h==null)return
+      const hora=Math.floor(h/60);if(hora>=0&&hora<=23)set.add(hora)
+    })
+    return[...set].sort((a,b)=>a-b)
+  },[rows,periodoFn])
+
+  const toggleHora=useCallback(h=>{
+    setHorasFilt(prev=>prev.includes(h)?prev.filter(x=>x!==h):[...prev,h])
+  },[])
+
   const filtered=useMemo(()=>{
     let r=rows.filter(d=>periodoFn(d.data_agenda))
     if(ufFilt!=='TODOS')r=r.filter(d=>d.uf===ufFilt)
-    if(statusFilt!=='TODOS')r=r.filter(d=>d.status===statusFilt)
     if(search){const q=search.toLowerCase();r=r.filter(d=>[d.nm_local,d.nm_medico,d.ds_especialidade,d.cidade].some(v=>String(v||'').toLowerCase().includes(q)))}
+    if(horasFilt.length>0)r=r.filter(d=>{const h=d.hr_inicio_min;if(h==null)return false;return horasFilt.includes(Math.floor(h/60))})
+    if(unidFilt)r=r.filter(d=>d.nm_local===unidFilt)
     return r
-  },[rows,periodoFn,ufFilt,statusFilt,search])
+  },[rows,periodoFn,ufFilt,search,horasFilt,unidFilt])
+
   const agStats=useMemo(()=>{
-    const cnt=filtered.length
-    const atraso=filtered.filter(d=>String(d.status||'').toUpperCase().includes('ATRASO')).length
-    const sponto=filtered.filter(d=>d.hr_entrada_min===null||d.hr_entrada_min===undefined).length
-    const uMap={},mMap={},sMap={}
-    filtered.forEach(d=>{const u=d.nm_local||'?';uMap[u]=(uMap[u]||0)+1;const m=d.nm_medico||'';if(m)mMap[m]=(mMap[m]||0)+1;const s=d.status||'OK';sMap[s]=(sMap[s]||0)+1})
-    const topU=Object.entries(uMap).map(([n,v])=>({n,v})).sort((a,b)=>b.v-a.v).slice(0,8)
-    const topM=Object.entries(mMap).map(([n,v])=>({n,v})).sort((a,b)=>b.v-a.v).slice(0,8)
-    const sBrk=Object.entries(sMap).map(([k,v])=>({k,v})).sort((a,b)=>b.v-a.v)
-    const dMap={};filtered.forEach(d=>{if(d.data_agenda)dMap[d.data_agenda]=(dMap[d.data_agenda]||0)+1})
-    const byD=Object.entries(dMap).map(([k,v])=>({k,v})).sort((a,b)=>a.k.localeCompare(b.k)).slice(-28)
-    return{cnt,atraso,sponto,topU,topM,sBrk,byD,atrasoPct:cnt>0?((atraso/cnt)*100).toFixed(1):'0',sponPct:cnt>0?((sponto/cnt)*100).toFixed(1):'0'}
-  },[filtered])
-  if(!rows.length)return(<div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',height:'60vh',gap:14}}><div style={{fontSize:44}}>📋</div><div style={{fontSize:18,fontWeight:700,color:C.text}}>Nenhuma agenda carregada</div><div style={{fontSize:13,color:C.muted}}>Use o botão para carregar uma planilha</div></div>)
-  const{cnt,atraso,sponto,topU,topM,sBrk,byD,atrasoPct,sponPct}=agStats
-  const maxU=topU[0]?.v||1,maxM=topM[0]?.v||1
+    const totalRows=filtered.length
+    const totalCons=filtered.reduce((a,d)=>a+(d.qt_consulta||0),0)
+    const totalEnc =filtered.reduce((a,d)=>a+(d.qt_encaixe ||0),0)
+    const totalAg  =totalCons+totalEnc
+
+    // Médicos c/ problemas
+    const faltaRows=filtered.filter(d=>String(d.atraso||'').toUpperCase()==='FALTA'||String(d.status||'').toLowerCase().includes('falta'))
+    const critRows =filtered.filter(d=>String(d.atraso||'').toUpperCase()==='SIM'&&(String(d.status||'').toUpperCase().includes('CRÍTICO')||String(d.status||'').toUpperCase().includes('CRITICO')))
+    const grvRows  =filtered.filter(d=>String(d.atraso||'').toUpperCase()==='SIM'&&String(d.status||'').toUpperCase().includes('GRAVE'))
+    const atrRows  =filtered.filter(d=>String(d.atraso||'').toUpperCase()==='SIM'&&!String(d.status||'').toUpperCase().includes('CRÍTICO')&&!String(d.status||'').toUpperCase().includes('CRITICO')&&!String(d.status||'').toUpperCase().includes('GRAVE'))
+
+    const faltaDocs=[...new Set(faltaRows.map(d=>d.nm_medico).filter(Boolean))]
+    const critDocs =[...new Set(critRows .map(d=>d.nm_medico).filter(Boolean))]
+    const grvDocs  =[...new Set(grvRows  .map(d=>d.nm_medico).filter(Boolean))]
+    const atrDocs  =[...new Set(atrRows  .map(d=>d.nm_medico).filter(Boolean))]
+    const faltaAg=faltaRows.reduce((a,d)=>a+(d.qt_consulta||0)+(d.qt_encaixe||0),0)
+    const critAg =critRows .reduce((a,d)=>a+(d.qt_consulta||0)+(d.qt_encaixe||0),0)
+    const grvAg  =grvRows  .reduce((a,d)=>a+(d.qt_consulta||0)+(d.qt_encaixe||0),0)
+    const atrAg  =atrRows  .reduce((a,d)=>a+(d.qt_consulta||0)+(d.qt_encaixe||0),0)
+
+    // Feed de unidades (por QT_CONSULTA + QT_ENCAIXE)
+    const uMap={}
+    filtered.forEach(d=>{
+      const u=d.nm_local||'?'
+      if(!uMap[u])uMap[u]={nm_local:u,uf:d.uf||'',cidade:d.cidade||'',consultas:0,encaixe:0,total:0,faltas:0,atrasos:0}
+      uMap[u].consultas+=(d.qt_consulta||0)
+      uMap[u].encaixe  +=(d.qt_encaixe ||0)
+      uMap[u].total    +=(d.qt_consulta||0)+(d.qt_encaixe||0)
+      if(String(d.atraso||'').toUpperCase()==='FALTA')uMap[u].faltas++
+      if(String(d.atraso||'').toUpperCase()==='SIM')  uMap[u].atrasos++
+    })
+    const feedList=Object.values(uMap).sort((a,b)=>b.total-a.total).slice(0,20)
+
+    // Top especialidades
+    const sMap={}
+    filtered.forEach(d=>{
+      const s=d.ds_especialidade||'Não informado'
+      if(!sMap[s])sMap[s]={name:s,total:0,consultas:0,encaixe:0}
+      sMap[s].total    +=(d.qt_consulta||0)+(d.qt_encaixe||0)
+      sMap[s].consultas+=(d.qt_consulta||0)
+      sMap[s].encaixe  +=(d.qt_encaixe ||0)
+    })
+    const topSpec=Object.values(sMap).sort((a,b)=>b.total-a.total).slice(0,8)
+
+    // Por data — tendência
+    const dMap={}
+    filtered.forEach(d=>{
+      const dt=d.data_agenda;if(!dt)return
+      if(!dMap[dt])dMap[dt]={date:dt,agendas:0,consultas:0,encaixe:0,impactadas:0}
+      dMap[dt].agendas   +=(d.qt_consulta||0)+(d.qt_encaixe||0)
+      dMap[dt].consultas +=(d.qt_consulta||0)
+      dMap[dt].encaixe   +=(d.qt_encaixe ||0)
+      const prob=String(d.atraso||'').toUpperCase()==='FALTA'||String(d.atraso||'').toUpperCase()==='SIM'
+      if(prob)dMap[dt].impactadas+=(d.qt_consulta||0)+(d.qt_encaixe||0)
+    })
+    const byDate=Object.values(dMap).sort((a,b)=>a.date.localeCompare(b.date))
+
+    // Projeção
+    const addDay=(ds,n)=>{const d=new Date(ds+'T00:00:00Z');d.setUTCDate(d.getUTCDate()+n);return d.toISOString().slice(0,10)}
+    const pts=byDate.slice(-3)
+    const slopeAg =pts.length>=2?(pts[pts.length-1].agendas   -pts[0].agendas   )/(pts.length-1):0
+    const slopeImp=pts.length>=2?(pts[pts.length-1].impactadas-pts[0].impactadas)/(pts.length-1):0
+    const lastDate=byDate[byDate.length-1]?.date||''
+    const lastAg  =byDate[byDate.length-1]?.agendas   ||0
+    const lastImp =byDate[byDate.length-1]?.impactadas||0
+    const projData=lastDate?Array.from({length:5},(_,i)=>({
+      date:addDay(lastDate,i+1),
+      agendas:   Math.max(0,Math.round(lastAg  +slopeAg *(i+1))),
+      impactadas:Math.max(0,Math.round(lastImp +slopeImp*(i+1))),
+      consultas:0,encaixe:0,isProj:true,
+    })):[]
+
+    // Lista de médicos quando unidade filtrada
+    const docsFaltaU =unidFilt?faltaDocs.map(nm=>({nm,tipo:'FALTA', status:'Falta Médica'})):[]
+    const docsCritU  =unidFilt?critDocs .map(nm=>({nm,tipo:'CRIT',  status:'Atraso Crítico'})):[]
+    const docsGrvU   =unidFilt?grvDocs  .map(nm=>({nm,tipo:'GRV',   status:'Atraso Grave'})):[]
+    const docsAtrU   =unidFilt?atrDocs  .map(nm=>({nm,tipo:'ATR',   status:'Atraso 31–45min'})):[]
+
+    return{totalRows,totalCons,totalEnc,totalAg,
+      faltaDocs,critDocs,grvDocs,atrDocs,faltaAg,critAg,grvAg,atrAg,
+      feedList,topSpec,byDate,projData,
+      docsFaltaU,docsCritU,docsGrvU,docsAtrU}
+  },[filtered,unidFilt])
+
+  const{totalRows,totalCons,totalEnc,totalAg,
+    faltaDocs,critDocs,grvDocs,atrDocs,faltaAg,critAg,grvAg,atrAg,
+    feedList,topSpec,byDate,projData,
+    docsFaltaU,docsCritU,docsGrvU,docsAtrU}=agStats
+
+  // Trend vars
+  const trendAllData=trendView==='real'?byDate:[...byDate,...projData]
+  const tMaxAg =Math.max(...trendAllData.map(d=>d.agendas   ||0),1)
+  const tMaxImp=Math.max(...trendAllData.map(d=>d.impactadas||0),1)
+  const tRealCnt=byDate.length
+  const tLastReal=byDate[byDate.length-1]
+  const tVarAg=byDate.length>=2?((tLastReal?.agendas||0)-(byDate[0]?.agendas||0)):0
+  const tAvgAg=byDate.length>0?Math.round(byDate.reduce((a,d)=>a+(d.agendas||0),0)/byDate.length):0
+  const tSlope=projData.length>0?((projData[0]?.agendas||0)-(tLastReal?.agendas||0)):0
+
+  // SVG chart vars
+  const AVW=800,AVH=150,APL=54,APR=54,APT=10,APB=32
+  const ACW=AVW-APL-APR,ACH=AVH-APT-APB
+  const aNT=trendAllData.length
+  const atxP=i=>aNT<=1?APL+ACW/2:APL+i/(aNT-1)*ACW
+  const atyL=(v)=>APT+ACH-(tMaxAg >0?(v||0)/tMaxAg *ACH:0)
+  const atyR=(v)=>APT+ACH-(tMaxImp>0?(v||0)/tMaxImp*ACH:0)
+  const atSmooth=(data,key,scFn,off)=>{
+    if(!data.length)return''
+    const pts=data.map((d,i)=>({x:parseFloat(atxP(i+(off||0)).toFixed(2)),y:parseFloat(scFn(d[key]||0).toFixed(2))}))
+    if(pts.length===1)return'M'+pts[0].x+','+pts[0].y
+    let p='M'+pts[0].x+','+pts[0].y
+    for(let i=1;i<pts.length;i++){
+      const p0=pts[i-2]||pts[i-1],p1=pts[i-1],p2=pts[i],p3=pts[i+1]||pts[i]
+      const c1x=(p1.x+(p2.x-p0.x)/4).toFixed(2),c1y=(p1.y+(p2.y-p0.y)/4).toFixed(2)
+      const c2x=(p2.x-(p3.x-p1.x)/4).toFixed(2),c2y=(p2.y-(p3.y-p1.y)/4).toFixed(2)
+      p+=' C'+c1x+','+c1y+' '+c2x+','+c2y+' '+p2.x+','+p2.y
+    }
+    return p
+  }
+
+  if(!rows.length)return(
+    <div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',height:'60vh',gap:14}}>
+      <div style={{fontSize:44}}>📋</div>
+      <div style={{fontSize:18,fontWeight:700,color:C.text}}>Nenhuma agenda carregada</div>
+      <div style={{fontSize:13,color:C.muted}}>Use o botão para carregar uma planilha</div>
+    </div>
+  )
+
+  const maxFeed=feedList[0]?.total||1
+
   return(
     <div>
-      <div style={{marginBottom:18}}><PeriodoBar value={periodo} onChange={p=>{setPeriodo(p);setDateFrom('');setDateTo('')}} allDates={allDates} dateFrom={dateFrom} dateTo={dateTo} onDateFrom={setDateFrom} onDateTo={setDateTo} label={`${cnt.toLocaleString('pt-BR')} registros`}/></div>
-      <SearchBar search={search} onSearch={setSearch} uf={ufFilt} onUf={setUfFilt} ufs={ufs} showClear={ufFilt!=='TODOS'||statusFilt!=='TODOS'||!!search} onClear={()=>{setUfFilt('TODOS');setStatusFilt('TODOS');setSearch('')}} extra={<select value={statusFilt} onChange={e=>setStatusFilt(e.target.value)} style={{background:'rgba(6,8,15,0.95)',border:`1px solid ${C.border}`,borderRadius:10,color:C.text,fontSize:12,padding:'8px 12px',outline:'none',cursor:'pointer'}}><option value="TODOS">Todos os Status</option>{statuses.map(s=><option key={s}>{s}</option>)}</select>}/>
-      <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12,marginBottom:18}}>
-        {[{icon:'🗓',label:'Total Agendas',value:cnt.toLocaleString('pt-BR'),color:C.teal},{icon:'⚠️',label:'Em Atraso',value:atraso.toLocaleString('pt-BR'),color:C.rose,sub:`${atrasoPct}% do total`},{icon:'🚫',label:'Sem Ponto',value:sponto.toLocaleString('pt-BR'),color:C.violet,sub:`${sponPct}% do total`},{icon:'✅',label:'Com Atendimento',value:(cnt-sponto).toLocaleString('pt-BR'),color:C.emerald,sub:`${(100-Number(sponPct)).toFixed(1)}% presentes`}].map(k=>(
-          <div key={k.label} style={{background:`${k.color}08`,border:`1px solid ${k.color}20`,borderRadius:14,padding:'18px 20px',position:'relative',overflow:'hidden'}}>
-            <div style={{position:'absolute',top:0,left:0,right:0,height:2,background:`linear-gradient(90deg,${k.color},transparent)`}}/>
-            <div style={{fontSize:9.5,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.1em',marginBottom:10}}>{k.icon} {k.label}</div>
-            <div style={{fontSize:32,fontWeight:800,color:k.color,letterSpacing:'-1px',lineHeight:1}}>{k.value}</div>
-            {k.sub&&<div style={{fontSize:10,color:C.muted,marginTop:7}}>{k.sub}</div>}
+      {/* PERÍODO + BUSCA */}
+      <div style={{marginBottom:14}}>
+        <PeriodoBar value={periodo} onChange={p=>{setPeriodo(p);setDateFrom('');setDateTo('');setUnidFilt('');setHorasFilt([])}}
+          allDates={allDates} dateFrom={dateFrom} dateTo={dateTo} onDateFrom={setDateFrom} onDateTo={setDateTo}
+          label={totalRows.toLocaleString('pt-BR')+' registros'}/>
+      </div>
+      <SearchBar search={search} onSearch={setSearch} uf={ufFilt} onUf={setUfFilt} ufs={ufs}
+        showClear={ufFilt!=='TODOS'||!!search||horasFilt.length>0||!!unidFilt}
+        onClear={()=>{setUfFilt('TODOS');setSearch('');setHorasFilt([]);setUnidFilt('')}}/>
+
+      {/* FILTRO DE HORA — MÚLTIPLA SELEÇÃO */}
+      {horasDisp.length>0&&(
+        <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',marginBottom:14,padding:'10px 14px',background:'rgba(255,255,255,0.02)',border:'0.5px solid rgba(255,255,255,0.06)',borderRadius:10}}>
+          <span style={{fontSize:9,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.09em',flexShrink:0}}>Hora início</span>
+          {horasDisp.map(h=>{
+            const sel=horasFilt.includes(h)
+            return(
+              <button key={h} onClick={()=>toggleHora(h)} style={{
+                padding:'4px 10px',borderRadius:6,border:sel?'none':'0.5px solid rgba(255,255,255,0.08)',
+                background:sel?C.amber:'rgba(255,255,255,0.03)',
+                color:sel?'#1a0800':C.muted,fontSize:10,fontWeight:sel?700:400,cursor:'pointer',transition:'all .15s',
+              }}>{String(h).padStart(2,'0')}h</button>
+            )
+          })}
+          {horasFilt.length>0&&(
+            <button onClick={()=>setHorasFilt([])} style={{padding:'4px 10px',borderRadius:6,border:'0.5px solid rgba(244,63,94,0.3)',background:'rgba(244,63,94,0.07)',color:C.rose,fontSize:10,cursor:'pointer'}}>✕ Limpar</button>
+          )}
+        </div>
+      )}
+
+      {/* KPIs */}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:10,marginBottom:14}}>
+        {[
+          {icon:'📅',label:'Total Agendas',  value:totalAg.toLocaleString('pt-BR'),  color:C.amber,  sub:'consultas + encaixe'},
+          {icon:'🩺',label:'Consultas',       value:totalCons.toLocaleString('pt-BR'), color:C.teal,   sub:totalAg>0?((totalCons/totalAg*100).toFixed(1)+'% do total'):''},
+          {icon:'➕',label:'Encaixe',         value:totalEnc.toLocaleString('pt-BR'),  color:C.violet, sub:totalAg>0?((totalEnc/totalAg*100).toFixed(1)+'% do total'):''},
+          {icon:'⚠️',label:'Agendas afetadas',value:(faltaAg+atrAg+critAg+grvAg).toLocaleString('pt-BR'),color:C.rose,sub:(faltaDocs.length+atrDocs.length+critDocs.length+grvDocs.length)+' médicos c/ problema'},
+          {icon:'📊',label:'Dias na base',   value:byDate.length,                     color:C.cyan,   sub:byDate.length>0?fmtDate(byDate[0].date)+' → '+fmtDate(byDate[byDate.length-1].date):''},
+        ].map(k=>(
+          <div key={k.label} style={{background:k.color+'0C',border:'0.5px solid '+k.color+'22',borderRadius:12,padding:'14px 16px',position:'relative',overflow:'hidden'}}>
+            <div style={{position:'absolute',top:0,left:0,right:0,height:2,background:'linear-gradient(90deg,'+k.color+',transparent)'}}/>
+            <div style={{fontSize:9,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.09em',marginBottom:8}}>{k.icon} {k.label}</div>
+            <div style={{fontSize:26,fontWeight:800,color:k.color,letterSpacing:'-1px',lineHeight:1}}>{k.value}</div>
+            {k.sub&&<div style={{fontSize:9,color:C.muted,marginTop:6}}>{k.sub}</div>}
           </div>
         ))}
       </div>
-      <div style={{background:'rgba(255,255,255,0.025)',border:'1px solid rgba(255,255,255,0.06)',borderRadius:14,padding:'20px 22px',marginBottom:14}}>
-        <div style={{fontSize:11,fontWeight:700,color:C.sub,textTransform:'uppercase',letterSpacing:'.1em',marginBottom:14}}>📊 Por Status</div>
-        <div style={{display:'flex',flexDirection:'column',gap:8}}>
-          {sBrk.slice(0,6).map(({k,v})=>{const cfg=getStatusCfg(k);const pct=cnt>0?((v/cnt)*100).toFixed(1):'0';return(<div key={k} style={{display:'flex',alignItems:'center',gap:10}}><div style={{width:8,height:8,borderRadius:'50%',background:cfg.color,flexShrink:0}}/><div style={{flex:1,fontSize:11,color:C.sub,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{cfg.label}</div><span style={{fontSize:11,fontWeight:700,color:cfg.color,minWidth:36,textAlign:'right'}}>{v.toLocaleString('pt-BR')}</span><div style={{width:80,background:'rgba(255,255,255,0.05)',borderRadius:3,height:4,overflow:'hidden',flexShrink:0}}><div style={{height:'100%',background:cfg.color,width:`${(v/(sBrk[0]?.v||1))*100}%`}}/></div><span style={{fontSize:10,color:C.muted,minWidth:32,textAlign:'right'}}>{pct}%</span></div>)})}
+
+      {/* FEED DE UNIDADES + PAINEL MÉDICOS */}
+      <div style={{display:'grid',gridTemplateColumns:'1fr 340px',gap:14,marginBottom:14}}>
+
+        {/* Feed de unidades */}
+        <div style={{background:'rgba(255,255,255,0.025)',border:'1px solid rgba(255,255,255,0.06)',borderRadius:14,padding:'18px 20px'}}>
+          {unidFilt&&(
+            <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:12,padding:'8px 12px',background:'rgba(245,158,11,0.08)',border:'0.5px solid rgba(245,158,11,0.25)',borderRadius:9}}>
+              <div style={{width:6,height:6,borderRadius:'50%',background:C.amber,flexShrink:0}}/>
+              <span style={{fontSize:11,color:C.amber,flex:1,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>Filtrando: {unidFilt}</span>
+              <button onClick={()=>setUnidFilt('')} style={{background:'transparent',border:'none',color:C.muted,cursor:'pointer',fontSize:12}}>✕</button>
+            </div>
+          )}
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
+            <div>
+              <div style={{fontSize:13,fontWeight:700,color:C.text}}>Unidades por volume de agendas</div>
+              <div style={{fontSize:10,color:C.muted,marginTop:2}}>{unidFilt?'clique ✕ para limpar':'clique na unidade para filtrar e ver médicos'}</div>
+            </div>
+          </div>
+          <div style={{display:'flex',flexDirection:'column',gap:5,maxHeight:400,overflowY:'auto'}}>
+            {feedList.slice(0,15).map((item,i)=>{
+              const isSel=unidFilt===item.nm_local
+              const pct=maxFeed>0?(item.total/maxFeed)*100:0
+              const hasProb=item.faltas>0||item.atrasos>0
+              return(
+                <div key={i} onClick={()=>setUnidFilt(isSel?'':item.nm_local)} style={{
+                  display:'flex',alignItems:'center',gap:10,padding:'9px 12px',borderRadius:10,cursor:'pointer',
+                  background:isSel?'rgba(245,158,11,0.1)':'rgba(255,255,255,0.02)',
+                  border:isSel?'1px solid rgba(245,158,11,0.4)':'0.5px solid rgba(255,255,255,0.05)',transition:'all .15s',
+                }}
+                  onMouseEnter={e=>{if(!isSel)e.currentTarget.style.background='rgba(255,255,255,0.04)'}}
+                  onMouseLeave={e=>{if(!isSel)e.currentTarget.style.background='rgba(255,255,255,0.02)'}}>
+                  <div style={{fontSize:10,fontWeight:800,color:i<3?C.amber:C.muted,minWidth:22,flexShrink:0}}>#{i+1}</div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:11,fontWeight:600,color:C.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.nm_local}</div>
+                    <div style={{display:'flex',gap:8,marginTop:4}}>
+                      <div style={{height:3,background:'rgba(255,255,255,0.06)',borderRadius:2,flex:1,overflow:'hidden'}}>
+                        <div style={{height:'100%',borderRadius:2,background:i<3?C.amber:C.teal,width:pct+'%',transition:'width .5s'}}/>
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{textAlign:'right',flexShrink:0}}>
+                    <div style={{fontSize:12,fontWeight:700,color:i<3?C.amber:C.text}}>{item.total.toLocaleString('pt-BR')}</div>
+                    <div style={{fontSize:8,color:C.muted}}>{item.consultas}c + {item.encaixe}e</div>
+                  </div>
+                  {hasProb&&(
+                    <div style={{display:'flex',flexDirection:'column',gap:2,flexShrink:0}}>
+                      {item.faltas>0&&<span style={{fontSize:8,padding:'1px 5px',borderRadius:10,background:'rgba(59,130,246,0.15)',color:'#3B82F6',border:'0.5px solid rgba(59,130,246,0.3)',whiteSpace:'nowrap'}}>{item.faltas} falta{item.faltas>1?'s':''}</span>}
+                      {item.atrasos>0&&<span style={{fontSize:8,padding:'1px 5px',borderRadius:10,background:'rgba(244,63,94,0.12)',color:C.rose,border:'0.5px solid rgba(244,63,94,0.3)',whiteSpace:'nowrap'}}>{item.atrasos} atraso{item.atrasos>1?'s':''}</span>}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+
+        {/* Painel médicos + lista quando unidade filtrada */}
+        <div style={{background:'rgba(255,255,255,0.025)',border:'1px solid rgba(255,255,255,0.06)',borderRadius:14,padding:'18px 20px'}}>
+          <div style={{fontSize:13,fontWeight:700,color:C.text,marginBottom:14}}>Médicos — Impacto nas Agendas</div>
+
+          {/* 3 blocos: falta, crítico, grave */}
+          <div style={{display:'flex',flexDirection:'column',gap:10,marginBottom:12}}>
+            {[
+              {label:'Falta Médica',   docs:faltaDocs.length,ag:faltaAg,color:'#3B82F6'},
+              {label:'Atraso 31–45min',docs:atrDocs.length,  ag:atrAg,  color:C.amber},
+              {label:'Atraso Grave',   docs:grvDocs.length,  ag:grvAg,  color:C.orange},
+              {label:'Atraso Crítico', docs:critDocs.length, ag:critAg, color:C.rose},
+            ].map((k,i)=>(
+              <div key={k.label} style={{background:k.color+'0A',border:'0.5px solid '+k.color+'20',borderRadius:8,padding:'10px 12px'}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
+                  <div style={{display:'flex',alignItems:'center',gap:6}}>
+                    <div style={{width:6,height:6,borderRadius:'50%',background:k.color}}/>
+                    <span style={{fontSize:10,color:C.sub,fontWeight:600}}>{k.label}</span>
+                  </div>
+                  <span style={{fontSize:11,fontWeight:700,color:k.color}}>{k.docs} médico{k.docs!==1?'s':''}</span>
+                </div>
+                <div style={{display:'flex',justifyContent:'space-between',fontSize:9,color:C.muted}}>
+                  <span>Agendas afetadas</span>
+                  <span style={{fontWeight:700,color:k.color}}>{k.ag.toLocaleString('pt-BR')}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Lista de médicos quando unidade filtrada */}
+          {unidFilt&&(docsFaltaU.length>0||docsCritU.length>0||docsGrvU.length>0)&&(
+            <div style={{paddingTop:12,borderTop:'0.5px solid rgba(255,255,255,0.06)'}}>
+              <div style={{fontSize:9,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.09em',marginBottom:8}}>Médicos · {unidFilt}</div>
+              <div style={{display:'flex',flexDirection:'column',gap:5,maxHeight:180,overflowY:'auto'}}>
+                {[...docsFaltaU.map(d=>({...d,color:'#3B82F6'})),...docsAtrU.map(d=>({...d,color:C.amber})),...docsGrvU.map(d=>({...d,color:C.orange})),...docsCritU.map(d=>({...d,color:C.rose}))].map((d,i)=>(
+                  <div key={i} style={{display:'flex',alignItems:'center',gap:8,padding:'4px 0'}}>
+                    <div style={{width:6,height:6,borderRadius:'50%',background:d.color,flexShrink:0}}/>
+                    <span style={{fontSize:10,color:C.text,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{d.nm}</span>
+                    <span style={{fontSize:8,fontWeight:700,padding:'2px 7px',borderRadius:20,background:d.color+'18',color:d.color,border:'0.5px solid '+d.color+'30',flexShrink:0,whiteSpace:'nowrap'}}>{d.status}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {unidFilt&&docsFaltaU.length===0&&docsCritU.length===0&&docsGrvU.length===0&&docsAtrU.length===0&&(
+            <div style={{paddingTop:12,borderTop:'0.5px solid rgba(255,255,255,0.06)',fontSize:11,color:C.muted,textAlign:'center'}}>Sem ocorrências nesta unidade.</div>
+          )}
+          {!unidFilt&&faltaDocs.length===0&&critDocs.length===0&&grvDocs.length===0&&(
+            <div style={{fontSize:11,color:C.muted,textAlign:'center',padding:'16px 0'}}>Nenhum problema registrado.</div>
+          )}
         </div>
       </div>
-      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14,marginBottom:14}}>
-        <div style={{background:'rgba(255,255,255,0.025)',border:'1px solid rgba(255,255,255,0.06)',borderRadius:14,padding:'20px 22px'}}>
-          <div style={{fontSize:11,fontWeight:700,color:C.sub,textTransform:'uppercase',letterSpacing:'.1em',marginBottom:14}}>🏥 Top Unidades</div>
-          {topU.map((u,i)=>{const pct=maxU>0?(u.v/maxU)*100:0;return(<div key={u.n} style={{marginBottom:11}}><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4,gap:8}}><div style={{display:'flex',alignItems:'center',gap:6,minWidth:0}}><span style={{fontSize:10,fontWeight:800,color:i===0?C.amber:C.muted,minWidth:18,flexShrink:0}}>#{i+1}</span><span style={{fontSize:12,color:C.text,fontWeight:500,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{u.n}</span></div><span style={{fontSize:12,fontWeight:700,color:i<3?C.amber:C.teal,flexShrink:0}}>{u.v}</span></div><div style={{background:'rgba(255,255,255,0.05)',borderRadius:4,height:4,overflow:'hidden'}}><div style={{height:'100%',borderRadius:4,background:i<3?C.amber:C.teal,width:`${pct}%`,transition:'width .7s ease'}}/></div></div>)})}
+
+      {/* GRÁFICO TENDÊNCIA */}
+      <div style={{background:'rgba(255,255,255,0.025)',border:'1px solid rgba(255,255,255,0.06)',borderRadius:14,padding:'20px 24px',marginBottom:14}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:14}}>
+          <div>
+            <div style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.12em'}}>{'TENDÊNCIA DE AGENDAS · '+tRealCnt+' DIA'+(tRealCnt!==1?'S':'')}</div>
+            <div style={{fontSize:10,color:C.muted,marginTop:3}}>Volume por dia (esq.) · Agendas afetadas por problemas (dir.)</div>
+          </div>
+          <div style={{display:'flex',background:'rgba(255,255,255,0.04)',border:'0.5px solid rgba(255,255,255,0.08)',borderRadius:9,padding:3,gap:2}}>
+            {[{key:'real',label:'Real'},{key:'proj',label:'Projeção'}].map(v=>(
+              <button key={v.key} onClick={()=>setTrendView(v.key)} style={{padding:'5px 14px',borderRadius:6,border:'none',cursor:'pointer',fontSize:11,fontWeight:700,transition:'all .15s',background:trendView===v.key?C.amber:'transparent',color:trendView===v.key?'#1a0800':C.muted}}>{v.label}</button>
+            ))}
+          </div>
         </div>
-        <div style={{background:'rgba(255,255,255,0.025)',border:'1px solid rgba(255,255,255,0.06)',borderRadius:14,padding:'20px 22px'}}>
-          <div style={{fontSize:11,fontWeight:700,color:C.sub,textTransform:'uppercase',letterSpacing:'.1em',marginBottom:14}}>👨‍⚕️ Top Médicos</div>
-          {topM.map((m,i)=>{const pct=maxM>0?(m.v/maxM)*100:0;return(<div key={m.n} style={{marginBottom:11}}><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4,gap:8}}><div style={{display:'flex',alignItems:'center',gap:6,minWidth:0}}><span style={{fontSize:10,fontWeight:800,color:i===0?C.amber:C.muted,minWidth:18,flexShrink:0}}>#{i+1}</span><span style={{fontSize:12,color:C.text,fontWeight:500,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{m.n}</span></div><span style={{fontSize:12,fontWeight:700,color:i<3?C.violet:C.blue,flexShrink:0}}>{m.v}</span></div><div style={{background:'rgba(255,255,255,0.05)',borderRadius:4,height:4,overflow:'hidden'}}><div style={{height:'100%',borderRadius:4,background:i<3?C.violet:C.blue,width:`${pct}%`,transition:'width .7s ease'}}/></div></div>)})}
+
+        <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:10,marginBottom:16}}>
+          {(trendView==='real'?[
+            {label:'Agendas hoje',value:String(tLastReal?tLastReal.agendas.toLocaleString('pt-BR'):'—'),color:C.amber},
+            {label:'Variação',value:byDate.length>=2?(tVarAg>=0?'+'+tVarAg:String(tVarAg)):'—',color:tVarAg>0?C.rose:tVarAg<0?C.emerald:C.muted},
+            {label:'Média diária',value:tAvgAg.toLocaleString('pt-BR'),color:C.teal},
+            {label:'Afetadas hoje',value:String(tLastReal?tLastReal.impactadas.toLocaleString('pt-BR'):'—'),color:C.rose},
+          ]:[
+            {label:'Proj. amanhã',value:String(projData[0]?projData[0].agendas.toLocaleString('pt-BR'):'—'),color:C.amber},
+            {label:'Proj. +5 dias',value:String(projData[4]?projData[4].agendas.toLocaleString('pt-BR'):'—'),color:C.orange},
+            {label:'Tendência diária',value:tSlope>=0?'+'+tSlope:String(tSlope),color:tSlope>0?C.rose:tSlope<0?C.emerald:C.muted},
+            {label:'Média (base)',value:tAvgAg.toLocaleString('pt-BR'),color:C.teal},
+          ]).map((k,i)=>(
+            <div key={k.label} style={{background:k.color+'12',border:'0.5px solid '+k.color+'20',borderRadius:9,padding:'10px 14px'}}>
+              <div style={{fontSize:9,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.07em',marginBottom:5}}>{k.label}</div>
+              <div style={{fontSize:20,fontWeight:800,color:k.color}}>{k.value}</div>
+            </div>
+          ))}
         </div>
+
+        {/* Tooltip */}
+        {aTip&&(
+          <div style={{position:'fixed',left:aTip.x+14,top:aTip.y-70,zIndex:999,pointerEvents:'none',background:'#0A0D16',border:'1px solid rgba(245,158,11,0.3)',borderRadius:10,padding:'10px 14px',boxShadow:'0 8px 32px rgba(0,0,0,0.6)',minWidth:150}}>
+            <div style={{fontSize:10,fontWeight:700,color:C.muted,marginBottom:6,textTransform:'uppercase',letterSpacing:'.08em'}}>{aTip.date?aTip.date.slice(5).replace('-','/'):'—'} {aTip.isProj?'· Projeção':''}</div>
+            <div style={{display:'flex',flexDirection:'column',gap:4}}>
+              <div style={{display:'flex',justifyContent:'space-between',gap:14,paddingBottom:4,borderBottom:'0.5px solid rgba(255,255,255,0.07)'}}>
+                <span style={{fontSize:11,color:C.muted}}>Total agendas</span>
+                <span style={{fontSize:13,fontWeight:800,color:C.amber}}>{(aTip.agendas||0).toLocaleString('pt-BR')}</span>
+              </div>
+              {!aTip.isProj&&(<>
+                <div style={{display:'flex',justifyContent:'space-between',gap:14}}>
+                  <span style={{fontSize:10,color:C.teal}}>Consultas</span>
+                  <span style={{fontSize:11,fontWeight:700,color:C.teal}}>{(aTip.consultas||0).toLocaleString('pt-BR')}</span>
+                </div>
+                <div style={{display:'flex',justifyContent:'space-between',gap:14}}>
+                  <span style={{fontSize:10,color:C.violet}}>Encaixe</span>
+                  <span style={{fontSize:11,fontWeight:700,color:C.violet}}>{(aTip.encaixe||0).toLocaleString('pt-BR')}</span>
+                </div>
+              </>)}
+              <div style={{display:'flex',justifyContent:'space-between',gap:14,paddingTop:4,borderTop:'0.5px solid rgba(255,255,255,0.07)'}}>
+                <span style={{fontSize:11,color:C.rose}}>Afetadas</span>
+                <span style={{fontSize:12,fontWeight:800,color:C.rose}}>{(aTip.impactadas||0).toLocaleString('pt-BR')}</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {trendAllData.length===0?(
+          <div style={{textAlign:'center',padding:'32px 0',color:C.muted,fontSize:12}}>Sem dados suficientes.</div>
+        ):(
+          <div style={{width:'100%',position:'relative'}}>
+            <div style={{display:'flex',gap:14,marginBottom:10,flexWrap:'wrap'}}>
+              {[{color:C.amber,label:'Volume agendas (eixo esq.)'},{color:C.rose,label:'Agendas afetadas (eixo dir.)'}].concat(trendView==='proj'?[{color:C.amber,label:'Projeção agendas',dashed:true}]:[]).map(l=>(
+                <div key={l.label} style={{display:'flex',alignItems:'center',gap:5}}>
+                  <div style={{width:14,height:3,borderRadius:2,background:l.dashed?'transparent':l.color,border:l.dashed?'1.5px dashed '+l.color:'none',opacity:l.dashed?0.7:1}}/>
+                  <span style={{fontSize:10,color:C.muted}}>{l.label}</span>
+                </div>
+              ))}
+            </div>
+            <svg width="100%" viewBox={'0 0 '+AVW+' '+AVH} style={{display:'block',overflow:'visible',cursor:'crosshair'}}
+              onMouseMove={e=>{
+                if(!trendAllData.length)return
+                const rc=e.currentTarget.getBoundingClientRect()
+                const mx=(e.clientX-rc.left)/rc.width*AVW
+                let near=null,minD=Infinity
+                trendAllData.forEach((d,i)=>{const xv=aNT<=1?APL+ACW/2:APL+i/(aNT-1)*ACW;const dist=Math.abs(mx-xv);if(dist<minD){minD=dist;near={...d,idx:i}}})
+                if(near&&minD<(ACW/Math.max(aNT-1,1))*0.8)setATip({x:e.clientX,y:e.clientY,...near})
+                else setATip(null)
+              }}
+              onMouseLeave={()=>setATip(null)}>
+
+              <defs><clipPath id="aClip"><rect x={APL} y={APT-2} width={ACW} height={ACH+4}/></clipPath></defs>
+
+              {[0,Math.round(tMaxAg*0.5),tMaxAg].map((v,ti)=>(
+                <g key={ti}>
+                  <line x1={APL} y1={atyL(v)} x2={AVW-APR} y2={atyL(v)} stroke="rgba(255,255,255,0.05)" strokeWidth="0.5"/>
+                  <text x={APL-7} y={atyL(v)+4} textAnchor="end" fontSize="9" fill="#475569">{v.toLocaleString('pt-BR')}</text>
+                  <text x={AVW-APR+7} y={atyL(v)+4} textAnchor="start" fontSize="9" fill="rgba(244,63,94,0.4)">{Math.round(v*(tMaxImp/Math.max(tMaxAg,1))).toLocaleString('pt-BR')}</text>
+                </g>
+              ))}
+
+              {trendView==='proj'&&tRealCnt>0&&aNT>tRealCnt&&(
+                <line x1={atxP(tRealCnt-1)} y1={APT} x2={atxP(tRealCnt-1)} y2={APT+ACH} stroke="rgba(245,158,11,0.2)" strokeWidth="1" strokeDasharray="4,3"/>
+              )}
+
+              <g clipPath="url(#aClip)">
+                {tRealCnt>=2&&(
+                  <path d={atSmooth(byDate,'agendas',atyL,0)+' L'+atxP(tRealCnt-1).toFixed(1)+','+(APT+ACH).toFixed(1)+' L'+atxP(0).toFixed(1)+','+(APT+ACH).toFixed(1)+' Z'} fill="rgba(245,158,11,0.10)"/>
+                )}
+                {tRealCnt>=2&&<path d={atSmooth(byDate,'impactadas',atyR,0)} fill="none" stroke={C.rose} strokeWidth="2" strokeOpacity={0.7}/>}
+                {tRealCnt>=2&&<path d={atSmooth(byDate,'agendas',atyL,0)} fill="none" stroke={C.amber} strokeWidth="2.5"/>}
+                {trendView==='proj'&&projData.length>=2&&tRealCnt>=1&&(
+                  <path d={'M'+atxP(tRealCnt-1).toFixed(1)+','+atyL(tLastReal?.agendas||0).toFixed(1)+atSmooth(projData,'agendas',atyL,tRealCnt).slice(1)+' L'+atxP(tRealCnt+projData.length-1).toFixed(1)+','+(APT+ACH).toFixed(1)+' L'+atxP(tRealCnt-1).toFixed(1)+','+(APT+ACH).toFixed(1)+' Z'} fill="rgba(245,158,11,0.04)"/>
+                )}
+                {trendView==='proj'&&projData.length>=1&&tRealCnt>=1&&(
+                  <path d={'M'+atxP(tRealCnt-1).toFixed(1)+','+atyL(tLastReal?.agendas||0).toFixed(1)+atSmooth(projData,'agendas',atyL,tRealCnt).slice(1)} fill="none" stroke={C.amber} strokeWidth="1.5" strokeOpacity={0.45} strokeDasharray="6,4"/>
+                )}
+              </g>
+
+              {byDate.map((d,i)=>(<circle key={'d'+i} cx={atxP(i)} cy={atyL(d.agendas||0)} r="4" fill={C.amber} stroke="#06080F" strokeWidth="1.5"/>))}
+              {byDate.map((d,i)=>(<circle key={'p'+i} cx={atxP(i)} cy={atyR(d.impactadas||0)} r="3" fill={C.rose} stroke="#06080F" strokeWidth="1.5"/>))}
+              {trendView==='proj'&&projData.map((d,i)=>{const cx=atxP(i+tRealCnt),cy=atyL(d.agendas||0);return(<polygon key={'t'+i} points={cx.toFixed(1)+','+(cy-7).toFixed(1)+' '+(cx-5).toFixed(1)+','+(cy+4).toFixed(1)+' '+(cx+5).toFixed(1)+','+(cy+4).toFixed(1)} fill={C.amber} fillOpacity={0.5}/>)})}
+              {aTip&&aTip.idx!=null&&(<circle cx={aNT<=1?APL+ACW/2:APL+(aTip.idx)/(aNT-1)*ACW} cy={atyL(aTip.agendas||0)} r="7" fill="none" stroke={C.amber} strokeWidth="2" strokeOpacity={0.8}/>)}
+
+              {trendAllData.map((d,i)=>{const show=aNT<=10||i===0||i===aNT-1||i%Math.ceil(aNT/8)===0;return show?(<text key={'x'+i} x={atxP(i)} y={AVH-3} textAnchor="middle" fontSize="9" fill={d.isProj?'rgba(245,158,11,0.4)':'#334155'}>{d.date.slice(5).replace('-','/')}</text>):null})}
+              <line x1={APL} y1={APT+ACH} x2={AVW-APR} y2={APT+ACH} stroke="rgba(255,255,255,0.07)" strokeWidth="0.5"/>
+            </svg>
+          </div>
+        )}
       </div>
-      <div style={{background:'rgba(255,255,255,0.025)',border:'1px solid rgba(255,255,255,0.06)',borderRadius:14,padding:'20px 22px'}}>
-        <div style={{fontSize:11,fontWeight:700,color:C.sub,textTransform:'uppercase',letterSpacing:'.1em',marginBottom:14}}>📋 Detalhamento</div>
-        <div style={{overflowX:'auto'}}>
-          <table style={{width:'100%',borderCollapse:'collapse',fontSize:11.5}}>
-            <thead><tr style={{borderBottom:'1px solid rgba(255,255,255,0.06)'}}>{['Data','Unidade','Médico','Especialidade','UF','Status','Atraso'].map(h=>(<th key={h} style={{padding:'7px 10px',textAlign:'left',color:C.muted,fontWeight:700,fontSize:9.5,textTransform:'uppercase',letterSpacing:'.07em',whiteSpace:'nowrap'}}>{h}</th>))}</tr></thead>
-            <tbody>{filtered.slice(0,50).map((r,i)=>{const cfg=getStatusCfg(r.status);return(<tr key={i} style={{borderBottom:'1px solid rgba(255,255,255,0.03)',transition:'background .1s'}} onMouseEnter={e=>e.currentTarget.style.background='rgba(245,158,11,0.04)'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}><td style={{padding:'8px 10px',color:C.sub,whiteSpace:'nowrap'}}>{fmtDate(r.data_agenda)}</td><td style={{padding:'8px 10px',color:C.text,fontWeight:600,maxWidth:180,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.nm_local}</td><td style={{padding:'8px 10px',color:C.sub,whiteSpace:'nowrap'}}>{r.nm_medico}</td><td style={{padding:'8px 10px',color:C.muted,maxWidth:140,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.ds_especialidade}</td><td style={{padding:'8px 10px',color:C.muted}}>{r.uf}</td><td style={{padding:'8px 10px'}}><span style={{fontSize:9.5,fontWeight:700,padding:'2px 8px',borderRadius:20,background:cfg.glow,color:cfg.color,border:`0.5px solid ${cfg.color}30`}}>{r.status||'—'}</span></td><td style={{padding:'8px 10px',color:r.atraso==='SIM'?C.rose:C.emerald,fontWeight:700}}>{r.atraso||'—'}</td></tr>)})}</tbody>
-          </table>
+
+      {/* TOP UNIDADES + TOP ESPECIALIDADES */}
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
+        <div style={{background:'rgba(255,255,255,0.025)',border:'1px solid rgba(255,255,255,0.06)',borderRadius:14,padding:'18px 20px'}}>
+          <div style={{fontSize:11,fontWeight:700,color:C.sub,textTransform:'uppercase',letterSpacing:'.1em',marginBottom:14}}>🏥 Top Unidades por Agendas</div>
+          {feedList.slice(0,8).map((u,i)=>{
+            const pct=maxFeed>0?(u.total/maxFeed)*100:0
+            return(
+              <div key={u.nm_local} style={{marginBottom:10}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4,gap:8}}>
+                  <div style={{display:'flex',alignItems:'center',gap:6,minWidth:0}}>
+                    <span style={{fontSize:9,fontWeight:800,color:i===0?C.amber:C.muted,minWidth:20,flexShrink:0}}>#{i+1}</span>
+                    <span style={{fontSize:11,color:C.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{u.nm_local}</span>
+                  </div>
+                  <span style={{fontSize:11,fontWeight:700,color:i<3?C.amber:C.teal,flexShrink:0}}>{u.total.toLocaleString('pt-BR')}</span>
+                </div>
+                <div style={{display:'flex',gap:1,height:5,borderRadius:3,overflow:'hidden',background:'rgba(255,255,255,0.04)'}}>
+                  <div style={{width:(u.consultas/Math.max(u.total,1)*pct)+'%',background:C.teal,transition:'width .5s'}}/>
+                  <div style={{width:(u.encaixe/Math.max(u.total,1)*pct)+'%',background:C.violet,transition:'width .5s'}}/>
+                </div>
+              </div>
+            )
+          })}
+          <div style={{display:'flex',gap:12,marginTop:8}}>
+            <div style={{display:'flex',alignItems:'center',gap:4}}><div style={{width:8,height:8,borderRadius:2,background:C.teal}}/><span style={{fontSize:9,color:C.muted}}>Consultas</span></div>
+            <div style={{display:'flex',alignItems:'center',gap:4}}><div style={{width:8,height:8,borderRadius:2,background:C.violet}}/><span style={{fontSize:9,color:C.muted}}>Encaixe</span></div>
+          </div>
+        </div>
+
+        <div style={{background:'rgba(255,255,255,0.025)',border:'1px solid rgba(255,255,255,0.06)',borderRadius:14,padding:'18px 20px'}}>
+          <div style={{fontSize:11,fontWeight:700,color:C.sub,textTransform:'uppercase',letterSpacing:'.1em',marginBottom:14}}>🩺 Top Especialidades por Pacientes</div>
+          {topSpec.map((s,i)=>{
+            const pct=topSpec[0]?.total>0?(s.total/topSpec[0].total)*100:0
+            return(
+              <div key={s.name} style={{marginBottom:10}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4,gap:8}}>
+                  <div style={{display:'flex',alignItems:'center',gap:6,minWidth:0}}>
+                    <span style={{fontSize:9,fontWeight:800,color:i===0?C.amber:C.muted,minWidth:20,flexShrink:0}}>#{i+1}</span>
+                    <span style={{fontSize:11,color:C.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{s.name}</span>
+                  </div>
+                  <span style={{fontSize:11,fontWeight:700,color:i<3?C.amber:C.cyan,flexShrink:0}}>{s.total.toLocaleString('pt-BR')}</span>
+                </div>
+                <div style={{background:'rgba(255,255,255,0.05)',borderRadius:3,height:4,overflow:'hidden'}}>
+                  <div style={{height:'100%',background:i<3?C.amber:C.cyan,width:pct+'%',transition:'width .6s ease',borderRadius:3}}/>
+                </div>
+              </div>
+            )
+          })}
         </div>
       </div>
     </div>
