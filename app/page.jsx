@@ -218,35 +218,58 @@ function TabEspera({rows}){
     const comEsp=filtered.filter(d=>d.tempo_espera_min!=null&&d.tempo_espera_min>=15)
     const totalReg=filtered.length
     const totalPac=filtered.reduce((a,d)=>a+(d.qt_pacientes_aguardando||0),0)
-    const modCnt=comEsp.filter(d=>d.tempo_espera_min<=30).length
-    const grvCnt=comEsp.filter(d=>d.tempo_espera_min>30&&d.tempo_espera_min<=89).length
-    const critCnt=comEsp.filter(d=>d.tempo_espera_min>=90).length
-    const totalEsp=modCnt+grvCnt+critCnt
+
+    // Agrupa por unidade+hora (mesma lógica do feed) — base para TODOS os counts
     const grupoMap={}
     comEsp.forEach(d=>{
       const h=d.hr_registro_espera_min;if(h==null)return
       const hora=Math.floor(h/60),mins=Math.floor(h%60);if(hora<0||hora>23)return
       const horaStr=String(hora).padStart(2,'0')+':'+String(mins).padStart(2,'0')
-      const unidade=d.nm_local||'Sem Unidade',key=`${horaStr}||${unidade}`
+      const unidade=d.nm_local||'Sem Unidade',key=horaStr+'||'+unidade
       if(!grupoMap[key])grupoMap[key]={horaStr,hora,nm_local:unidade,uf:d.uf||'',cidade:d.cidade||'',maxTempo:0,pac:0,count:0}
       if(d.tempo_espera_min>grupoMap[key].maxTempo){grupoMap[key].maxTempo=d.tempo_espera_min;grupoMap[key].pac=d.qt_pacientes_aguardando||0}
       grupoMap[key].count+=1
     })
-    const feedList=Object.values(grupoMap).sort((a,b)=>b.maxTempo-a.maxTempo).slice(0,25)
+    const incidentes=Object.values(grupoMap)
+    const feedList=incidentes.slice().sort((a,b)=>b.maxTempo-a.maxTempo).slice(0,25)
+
+    // Counts por incidente único (não por linha bruta)
+    const modCnt =incidentes.filter(g=>g.maxTempo>=15&&g.maxTempo<=30).length
+    const grvCnt =incidentes.filter(g=>g.maxTempo>30&&g.maxTempo<=89).length
+    const critCnt=incidentes.filter(g=>g.maxTempo>=90).length
+    const totalEsp=modCnt+grvCnt+critCnt
+
+    // Top unidades por incidentes únicos
     const uMap={}
-    comEsp.forEach(d=>{const u=d.nm_local||'?';if(!uMap[u])uMap[u]={n:u,total:0,crit:0,grv:0,mod:0};uMap[u].total++;const m=d.tempo_espera_min;if(m>=90)uMap[u].crit++;else if(m>=31)uMap[u].grv++;else uMap[u].mod++})
+    incidentes.forEach(g=>{
+      const u=g.nm_local
+      if(!uMap[u])uMap[u]={n:u,total:0,crit:0,grv:0,mod:0}
+      uMap[u].total++
+      if(g.maxTempo>=90)uMap[u].crit++;else if(g.maxTempo>=31)uMap[u].grv++;else uMap[u].mod++
+    })
     const topU=Object.values(uMap).sort((a,b)=>b.crit-a.crit||b.grv-a.grv).slice(0,6)
     const faltasList=filtered.filter(d=>String(d.atraso||'').toUpperCase()==='FALTA')
     const atrasosList=filtered.filter(d=>{if(String(d.atraso||'').toUpperCase()!=='SIM')return false;const t=d.tempo_atraso_min;return t!=null&&Math.abs(t)>31})
     const sMap={};atrasosList.forEach(d=>{const s=d.status||'Sem Status';sMap[s]=(sMap[s]||0)+1})
     const statusAt=Object.entries(sMap).map(([k,v])=>({k,v})).sort((a,b)=>b.v-a.v)
-    const dMap={}
-    filtered.forEach(d=>{
+    // Agrupa por data+unidade+hora (mesma lógica do feed) para contar incidentes únicos
+    const gMap={}
+    comEsp.forEach(d=>{
       const dt=d.data_agenda;if(!dt)return
+      const h=d.hr_registro_espera_min;if(h==null)return
+      const hora=Math.floor(h/60)
+      const unidade=d.nm_local||'?'
+      const key=dt+'||'+String(hora).padStart(2,'0')+'||'+unidade
+      if(!gMap[key])gMap[key]={date:dt,maxTempo:0,pac:0}
+      if(d.tempo_espera_min>gMap[key].maxTempo){gMap[key].maxTempo=d.tempo_espera_min;gMap[key].pac=d.qt_pacientes_aguardando||0}
+    })
+    const dMap={}
+    Object.values(gMap).forEach(g=>{
+      const dt=g.date
       if(!dMap[dt])dMap[dt]={date:dt,mod:0,grv:0,crit:0,pac:0}
-      const m=d.tempo_espera_min
+      const m=g.maxTempo
       if(m>=90)dMap[dt].crit++;else if(m>=31)dMap[dt].grv++;else if(m>=15)dMap[dt].mod++
-      dMap[dt].pac+=d.qt_pacientes_aguardando||0
+      dMap[dt].pac+=g.pac
     })
     const byDate=Object.values(dMap).sort((a,b)=>a.date.localeCompare(b.date))
     const addDay=(ds,n)=>{const d=new Date(ds+'T00:00:00Z');d.setUTCDate(d.getUTCDate()+n);return d.toISOString().slice(0,10)}
