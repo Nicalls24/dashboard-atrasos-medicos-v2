@@ -906,13 +906,13 @@ function TabEspera({ rows }) {
               {/* Pacientes line (teal, right axis, dotted) */}
               {trendRealCnt>=2 && trendMaxPac>0 && (
                 <path d={tSmooth(byDate,'pac',trendMaxPac)} fill="none"
-                  stroke="#00C9A7" strokeWidth="1.5" strokeOpacity="0.5" strokeDasharray="3,3" />
+                  stroke="#00C9A7" strokeWidth="1.5" strokeOpacity={0.5} strokeDasharray="3,3" />
               )}
 
               {/* Line — Grave (smooth) */}
               {trendRealCnt>=2 && (
                 <path d={tSmooth(byDate,'grv',trendMaxCrit)} fill="none"
-                  stroke="#F97316" strokeWidth="1.5" strokeOpacity="0.75" />
+                  stroke="#F97316" strokeWidth="1.5" strokeOpacity={0.75} />
               )}
 
               {/* Line — Crítica (smooth, main) */}
@@ -932,7 +932,7 @@ function TabEspera({ rows }) {
               {trendView==='proj' && projData.length>=1 && trendRealCnt>=1 && (
                 <path
                   d={`M${txPos(trendRealCnt-1).toFixed(1)},${tyPos(trendLastReal?.crit||0,trendMaxCrit).toFixed(1)} ${tSmooth(projData,'crit',trendMaxCrit,trendRealCnt).slice(1)}`}
-                  fill="none" stroke="#F43F5E" strokeWidth="1.5" strokeOpacity="0.5" strokeDasharray="6,4" />
+                  fill="none" stroke="#F43F5E" strokeWidth="1.5" strokeOpacity={0.5} strokeDasharray="6,4" />
               )}
 
               {/* Dots — real */}
@@ -947,7 +947,7 @@ function TabEspera({ rows }) {
                 return (
                   <polygon key={`tri-${i}`}
                     points={`${cx},${(cy-7).toFixed(1)} ${(cx-5).toFixed(1)},${(cy+4).toFixed(1)} ${(cx+5).toFixed(1)},${(cy+4).toFixed(1)}`}
-                    fill="#F43F5E" fillOpacity="0.5" stroke="#F43F5E" strokeWidth="0.5" />
+                    fill="#F43F5E" fillOpacity={0.5} stroke="#F43F5E" strokeWidth="0.5" />
                 )
               })}
 
