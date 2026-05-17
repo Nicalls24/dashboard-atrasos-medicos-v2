@@ -20,8 +20,10 @@ const fmtDate=s=>{if(!s)return'—';const[y,mo,d]=String(s).split('-');return`${
 const buildFilter=(allDates,periodo,df,dt)=>{
   if(!allDates.length)return()=>true
   const s=[...allDates].sort(),max=s[s.length-1]
-  if(periodo==='HOJE')return d=>d===max
-  if(periodo==='ONTEM'){const prev=s.length>=2?s[s.length-2]:null;return d=>prev?d===prev:false}
+  const sysToday=()=>{const n=new Date();return n.getUTCFullYear()+'-'+String(n.getUTCMonth()+1).padStart(2,'0')+'-'+String(n.getUTCDate()).padStart(2,'0')}
+  const sysYest=()=>{const n=new Date();n.setUTCDate(n.getUTCDate()-1);return n.toISOString().slice(0,10)}
+  if(periodo==='HOJE')return d=>d===sysToday()
+  if(periodo==='ONTEM')return d=>d===sysYest()
   if(periodo==='SEMANA'){const r=new Date(max+'T00:00:00Z');r.setUTCDate(r.getUTCDate()-6);const c=r.toISOString().slice(0,10);return d=>d>=c&&d<=max}
   if(periodo==='MES')return d=>d.slice(0,7)===max.slice(0,7)
   if(periodo==='ANO')return d=>d.slice(0,4)===max.slice(0,4)
@@ -292,6 +294,10 @@ function TabEspera({rows}){
   }
   const tYTicks=[0,Math.round(trendMaxCrit*0.5),trendMaxCrit]
 
+  // Lista de médicos filtrados pela unidade selecionada
+  const docsFalta  = unidFilt ? Object.entries(faltasList.reduce((a,d)=>{const nm=d.nm_medico||'—';a[nm]=(a[nm]||0)+1;return a},{})).map(([nm,cnt])=>({nm,cnt})).sort((a,b)=>b.cnt-a.cnt) : []
+  const docsAtraso = unidFilt ? Object.entries(atrasosList.reduce((a,d)=>{const nm=d.nm_medico||'—';if(!a[nm])a[nm]={cnt:0,status:d.status};a[nm].cnt++;return a},{})).map(([nm,v])=>({nm,...v})).sort((a,b)=>b.cnt-a.cnt) : []
+
   if(!rows.length)return(<div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',height:'60vh',gap:14}}><div style={{fontSize:44}}>⏱️</div><div style={{fontSize:18,fontWeight:700,color:C.text}}>Nenhum dado de espera</div><div style={{fontSize:13,color:C.muted}}>Use o botão para carregar uma planilha</div></div>)
 
   const horasDispFim=horaFilt==='TODAS'?[]:horasDisp.filter(h=>h>parseInt(horaFilt))
@@ -430,7 +436,34 @@ function TabEspera({rows}){
               })}
             </div>
           </div>
-          {medTotalProb===0&&<div style={{color:C.muted,fontSize:11,textAlign:'center',padding:'8px 0',marginTop:10}}>Nenhuma ocorrência no período.</div>}
+          {medTotalProb===0&&!unidFilt&&<div style={{color:C.muted,fontSize:11,textAlign:'center',padding:'8px 0',marginTop:10}}>Nenhuma ocorrência no período.</div>}
+
+          {/* Lista de médicos quando unidade filtrada */}
+          {unidFilt&&(docsFalta.length>0||docsAtraso.length>0)&&(
+            <div style={{marginTop:12,paddingTop:12,borderTop:'0.5px solid rgba(255,255,255,0.06)'}}>
+              <div style={{fontSize:9,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.09em',marginBottom:8}}>Médicos · {unidFilt}</div>
+              <div style={{display:'flex',flexDirection:'column',gap:5,maxHeight:140,overflowY:'auto'}}>
+                {docsFalta.map(d=>(
+                  <div key={'f'+d.nm} style={{display:'flex',alignItems:'center',gap:8,padding:'4px 0'}}>
+                    <div style={{width:6,height:6,borderRadius:'50%',background:C.rose,flexShrink:0}}/>
+                    <span style={{fontSize:10.5,color:C.text,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{d.nm}</span>
+                    <span style={{fontSize:9,fontWeight:700,padding:'1px 7px',borderRadius:20,background:'rgba(244,63,94,0.12)',color:C.rose,border:'0.5px solid rgba(244,63,94,0.3)',flexShrink:0}}>Falta</span>
+                  </div>
+                ))}
+                {docsAtraso.map(d=>{
+                  const cfg=getStatusCfg(d.status)
+                  return(
+                    <div key={'a'+d.nm} style={{display:'flex',alignItems:'center',gap:8,padding:'4px 0'}}>
+                      <div style={{width:6,height:6,borderRadius:'50%',background:C.amber,flexShrink:0}}/>
+                      <span style={{fontSize:10.5,color:C.text,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{d.nm}</span>
+                      <span style={{fontSize:9,fontWeight:700,padding:'1px 7px',borderRadius:20,background:`${cfg.color}18`,color:cfg.color,border:`0.5px solid ${cfg.color}30`,flexShrink:0,whiteSpace:'nowrap'}}>{cfg.label}</span>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+          {unidFilt&&docsFalta.length===0&&docsAtraso.length===0&&<div style={{marginTop:10,fontSize:11,color:C.muted,textAlign:'center'}}>Sem ocorrências nesta unidade.</div>}
         </div>
       </div>
 
@@ -565,15 +598,14 @@ export default function Home(){
   const[storageInfo,setStorageInfo]=useState({agendas:0,espera:0})
 
   const loadTable=useCallback(async table=>{
-    const PAGE=1000;let all=[],offset=0,maxTries=50
-    while(maxTries-->0){
-      const from=offset,to=offset+PAGE-1
-      const res=await fetch(`${SB_URL}/rest/v1/${table}?select=*&order=id.asc`,{headers:{...SBH,'Range':`${from}-${to}`,'Range-Unit':'items','Prefer':'count=none'}})
-      if(res.status===416||!res.ok)break
+    const PAGE=1000;let all=[],offset=0
+    while(true){
+      const res=await fetch(`${SB_URL}/rest/v1/${table}?select=*&order=id.asc&limit=${PAGE}&offset=${offset}`,{headers:SBH})
+      if(!res.ok)break
       const batch=await res.json()
       if(!Array.isArray(batch)||!batch.length)break
       all=all.concat(batch)
-      if(res.status===200)break
+      if(batch.length<PAGE)break
       offset+=PAGE
     }
     return all
