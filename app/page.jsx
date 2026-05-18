@@ -669,8 +669,9 @@ function TabEspera({rows}){
   const[dateTo,setDateTo]=useState('')
   const[ufFilt,setUfFilt]=useState('TODOS')
   const[search,setSearch]=useState('')
-  const[horaFilt,setHoraFilt]=useState('TODAS')
-  const[horaFiltFim,setHoraFiltFim]=useState('TODAS')
+const[horaFilt,setHoraFilt]=useState('TODAS')
+const[horaFiltFim,setHoraFiltFim]=useState('TODAS')
+const[classFiltro,setClassFiltro]=useState('TODAS')
   const[unidFilt,setUnidFilt]=useState('')
   const[justModal,setJustModal]=useState(false)
   const[justificativas,setJustificativas]=useState({})
@@ -706,6 +707,18 @@ function TabEspera({rows}){
     if(ufFilt!=='TODOS')r=r.filter(d=>d.uf===ufFilt)
     if(search){const q=search.toLowerCase();r=r.filter(d=>[d.nm_local,d.nm_medico,d.cidade].some(v=>String(v||'').toLowerCase().includes(q)))}
     if(horaFilt!=='TODAS'){const ini=parseInt(horaFilt,10),fim=horaFiltFim==='TODAS'?ini:parseInt(horaFiltFim,10);r=r.filter(d=>{const h=d.hr_registro_espera_min;if(h==null)return false;const hora=Math.floor(h/60);return hora>=ini&&hora<=fim})}
+    if(classFiltro!=='TODAS'){
+  r=r.filter(d=>{
+    const t=d.tempo_espera_min
+    if(t==null)return false
+
+    if(classFiltro==='MODERADA')return t>=15&&t<=30
+    if(classFiltro==='GRAVE')return t>=31&&t<=89
+    if(classFiltro==='CRITICA')return t>=90
+
+    return true
+  })
+}
     if(unidFilt)r=r.filter(d=>d.nm_local===unidFilt)
     return r
   },[rows,periodoFn,ufFilt,search,horaFilt,horaFiltFim,unidFilt])
@@ -727,7 +740,9 @@ function TabEspera({rows}){
       grupoMap[key].count+=1
     })
     const incidentes=Object.values(grupoMap)
-    const feedList=incidentes.slice().sort((a,b)=>b.maxTempo-a.maxTempo).slice(0,25)
+    const feedList=incidentes
+  .slice()
+  .sort((a,b)=>b.maxTempo-a.maxTempo)
 
     // Counts por incidente único (não por linha bruta)
     const modCnt =incidentes.filter(g=>g.maxTempo>=15&&g.maxTempo<=30).length
@@ -907,6 +922,25 @@ function TabEspera({rows}){
                 <option value="TODAS">Todas</option>
                 {horasDisp.map(h=><option key={h} value={h}>{String(h).padStart(2,'0')}:00</option>)}
               </select>
+              <select
+  value={classFiltro}
+  onChange={e=>setClassFiltro(e.target.value)}
+  style={{
+    background:'rgba(255,255,255,0.05)',
+    border:'0.5px solid rgba(245,158,11,0.2)',
+    borderRadius:8,
+    color:C.text,
+    fontSize:11,
+    padding:'5px 8px',
+    outline:'none',
+    cursor:'pointer'
+  }}
+>
+  <option value="TODAS">Todas</option>
+  <option value="MODERADA">Moderada</option>
+  <option value="GRAVE">Grave</option>
+  <option value="CRITICA">Crítica</option>
+</select>
               {horaFilt!=='TODAS'&&(<><span style={{fontSize:11,color:C.muted}}>→</span><select value={horaFiltFim} onChange={e=>setHoraFiltFim(e.target.value)} style={{background:'rgba(255,255,255,0.05)',border:'0.5px solid rgba(245,158,11,0.2)',borderRadius:8,color:C.text,fontSize:11,padding:'5px 8px',outline:'none',cursor:'pointer'}}><option value="TODAS">{String(horaFilt).padStart(2,'0')}:00 só</option>{horasDispFim.map(h=><option key={h} value={h}>{String(h).padStart(2,'0')}:00</option>)}</select></>)}
             </div>
           </div>
