@@ -1038,8 +1038,6 @@ const feedList=incidentesFiltrados
     </div>
   )
 })}
- 
-        </div>
 
         <div style={{background:'rgba(255,255,255,0.025)',border:'1px solid rgba(255,255,255,0.06)',borderRadius:14,padding:'18px 20px'}}>
           <div style={{fontSize:13,fontWeight:700,color:C.text,marginBottom:14}}>Médicos — Falta e Atraso</div>
