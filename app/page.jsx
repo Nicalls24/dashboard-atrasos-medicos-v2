@@ -22,8 +22,14 @@ const buildFilter=(allDates,periodo,df,dt)=>{
   const s=[...allDates].sort(),max=s[s.length-1]
   const sysToday=()=>{const n=new Date();return n.getUTCFullYear()+'-'+String(n.getUTCMonth()+1).padStart(2,'0')+'-'+String(n.getUTCDate()).padStart(2,'0')}
   const sysYest=()=>{const n=new Date();n.setUTCDate(n.getUTCDate()-1);return n.toISOString().slice(0,10)}
-  if(periodo==='HOJE')return d=>d===sysToday()
-  if(periodo==='ONTEM')return d=>d===sysYest()
+ if(periodo==='HOJE')return d => String(d) === String(max)
+
+if(periodo==='ONTEM'){
+  const idx=s.indexOf(max)
+  const ontem=idx>0?s[idx-1]:max
+  return d => String(d) === String(ontem)
+}
+  
   if(periodo==='SEMANA'){const r=new Date(max+'T00:00:00Z');r.setUTCDate(r.getUTCDate()-6);const c=r.toISOString().slice(0,10);return d=>d>=c&&d<=max}
   if(periodo==='MES')return d=>d.slice(0,7)===max.slice(0,7)
   if(periodo==='ANO')return d=>d.slice(0,4)===max.slice(0,4)
