@@ -740,7 +740,20 @@ const[classFiltro,setClassFiltro]=useState('TODAS')
       grupoMap[key].count+=1
     })
     const incidentes=Object.values(grupoMap)
-    const feedList=incidentes
+    let incidentesFiltrados=incidentes
+
+if(classFiltro!=='TODAS'){
+  incidentesFiltrados=incidentes.filter(g=>{
+    const t=g.maxTempo
+
+    if(classFiltro==='MODERADA')return t>=15&&t<=30
+    if(classFiltro==='GRAVE')return t>=31&&t<=89
+    if(classFiltro==='CRITICA')return t>=90
+
+    return true
+  })
+}
+    const feedList=incidentesFiltrados
   .slice()
   .sort((a,b)=>b.maxTempo-a.maxTempo)
 
