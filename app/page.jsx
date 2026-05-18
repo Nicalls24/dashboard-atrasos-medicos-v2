@@ -222,11 +222,11 @@ function TabAgendas({rows}){
 
   // Trend vars
   const trendAllData=trendView==='real'?byDate:[...byDate,...projData]
-  const tMaxAg =Math.max(...trendAllData.map(d=>d.agendas||0),1)
-  const tLastDel=tLastReal?.delivered||0
-  const tTotalGap=byDate.reduce((a,d)=>a+(d.impactadas||0),0)
+  const tMaxAg  =Math.max(...trendAllData.map(d=>d.agendas||0),1)
   const tRealCnt=byDate.length
   const tLastReal=byDate[byDate.length-1]
+  const tLastDel=tLastReal?.delivered||0
+  const tTotalGap=byDate.reduce((a,d)=>a+(d.impactadas||0),0)
   const tVarAg=byDate.length>=2?((tLastReal?.agendas||0)-(byDate[0]?.agendas||0)):0
   const tAvgAg=byDate.length>0?Math.round(byDate.reduce((a,d)=>a+(d.agendas||0),0)/byDate.length):0
   const tSlope=projData.length>0?((projData[0]?.agendas||0)-(tLastReal?.agendas||0)):0
