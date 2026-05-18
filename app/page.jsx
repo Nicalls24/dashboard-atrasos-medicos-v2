@@ -963,19 +963,82 @@ const feedList=incidentesFiltrados
           {feedList.length===0?(<div style={{textAlign:'center',padding:'32px 0',color:C.muted,fontSize:12}}>Sem esperas ≥ 15min no período/filtro selecionado.</div>):(
             <div style={{display:'flex',flexDirection:'column',gap:5,maxHeight:440,overflowY:'auto'}}>
            {[...feedList].map((g,i)=>{
-               const cls=clsEspera(g.maxTempo),isCrit=g.maxTempo>=90,isGrv=g.maxTempo>=31&&g.maxTempo<90,isSel=unidFilt===g.nm_local;
-               return (
-                <div key={i} onClick={()=>setUnidFilt(isSel?'':g.nm_local)} style={{display:'flex',alignItems:'center',gap:12,padding:'10px 14px'
-                  <div style={{width:8,height:8,borderRadius:'50%',background:cls.color,flexShrink:0,boxShadow:isCrit?`0 0 8px ${cls.color}`:'none'}}/>
-                  <div style={{fontFamily:'monospace',fontSize:13,fontWeight:700,color:C.sub,flexShrink:0,minWidth:44}}>{g.horaStr}</div>
-                  <div style={{flex:1,minWidth:0}}><div style={{fontSize:12,fontWeight:600,color:C.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{g.nm_local}</div>
-                  <div style={{textAlign:'center',flexShrink:0,minWidth:42}}><div style={{fontSize:12,fontWeight:700,color:'#0EA5E9'}}>{g.pac?g.pac:'—'}</div>
-                  <div style={{fontSize:15,fontWeight:900,color:cls.color,flexShrink:0,minWidth:52,textAlign:'right'}}>{fmtMin(g.maxTempo)}</div>
-                  <span style={{fontSize:9.5,fontWeight:700,padding:'3px 9px',borderRadius:20,background:cls.bg,color:cls.color,border:`0.5px solid ${cls.border}`,whiteSpace:'nowrap',flexShrink:0}}>{cls.label}</span>
-                </div>
-             })}
-            </div>
-          )}
+  const cls=clsEspera(g.maxTempo)
+  const isCrit=g.maxTempo>=90
+  const isSel=unidFilt===g.nm_local
+
+  return (
+    <div
+      key={i}
+      onClick={()=>setUnidFilt(isSel?'':g.nm_local)}
+      style={{
+        display:'flex',
+        alignItems:'center',
+        gap:12,
+        padding:'10px 14px'
+      }}
+    >
+      <div
+        style={{
+          width:8,
+          height:8,
+          borderRadius:'50%',
+          background:cls.color,
+          flexShrink:0,
+          boxShadow:isCrit?`0 0 8px ${cls.color}`:'none'
+        }}
+      />
+
+      <div
+        style={{
+          fontFamily:'monospace',
+          fontSize:13,
+          fontWeight:700,
+          color:C.sub,
+          flexShrink:0,
+          minWidth:44
+        }}
+      >
+        {g.horaStr}
+      </div>
+
+      <div style={{flex:1,minWidth:0}}>
+        <div
+          style={{
+            fontSize:12,
+            fontWeight:600,
+            color:C.text,
+            overflow:'hidden',
+            textOverflow:'ellipsis',
+            whiteSpace:'nowrap'
+          }}
+        >
+          {g.nm_local}
+        </div>
+      </div>
+
+      <div style={{textAlign:'center',flexShrink:0,minWidth:42}}>
+        <div style={{fontSize:12,fontWeight:700,color:'#0EA5E9'}}>
+          {g.pac?g.pac:'—'}
+        </div>
+      </div>
+
+      <div
+        style={{
+          fontSize:15,
+          fontWeight:900,
+          color:cls.color,
+          flexShrink:0,
+          minWidth:52,
+          textAlign:'right'
+        }}
+      >
+        {fmtMin(g.maxTempo)}
+      </div>
+    </div>
+  )
+})}
+ 
         </div>
 
         <div style={{background:'rgba(255,255,255,0.025)',border:'1px solid rgba(255,255,255,0.06)',borderRadius:14,padding:'18px 20px'}}>
