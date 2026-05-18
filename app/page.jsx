@@ -965,7 +965,7 @@ const feedList=incidentesFiltrados
            {[...feedList].map((g,i)=>{
                const cls=clsEspera(g.maxTempo),isCrit=g.maxTempo>=90,isGrv=g.maxTempo>=31&&g.maxTempo<90,isSel=unidFilt===g.nm_local;
                return (
-<div key={i} onClick={()=>setUnidFilt(isSel?'':g.nm_local)} style={{display:'flex',alignItems:'center',gap:12,padding:'10px 14px'
+                <div key={i} onClick={()=>setUnidFilt(isSel?'':g.nm_local)} style={{display:'flex',alignItems:'center',gap:12,padding:'10px 14px'
                   <div style={{width:8,height:8,borderRadius:'50%',background:cls.color,flexShrink:0,boxShadow:isCrit?`0 0 8px ${cls.color}`:'none'}}/>
                   <div style={{fontFamily:'monospace',fontSize:13,fontWeight:700,color:C.sub,flexShrink:0,minWidth:44}}>{g.horaStr}</div>
                   <div style={{flex:1,minWidth:0}}><div style={{fontSize:12,fontWeight:600,color:C.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{g.nm_local}</div>
