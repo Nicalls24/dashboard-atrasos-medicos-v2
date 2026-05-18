@@ -1281,7 +1281,6 @@ const feedList=incidentesFiltrados
       </div>
     </div>
   )
-}
 
 export default function Home(){
   const[tab,setTab]=useState('espera')
