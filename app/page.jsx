@@ -1105,7 +1105,7 @@ const feedList=incidentesFiltrados
           {unidFilt&&docsFalta.length===0&&docsAtraso.length===0&&<div style={{marginTop:10,fontSize:11,color:C.muted,textAlign:'center'}}>Sem ocorrências nesta unidade.</div>}
         </div>
       </div>
-
+     )}
       {/* TENDÊNCIA */}
       <div style={{background:'rgba(255,255,255,0.025)',border:'1px solid rgba(255,255,255,0.06)',borderRadius:14,padding:'20px 24px',marginBottom:14}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:16}}>
