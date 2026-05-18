@@ -739,7 +739,10 @@ const[classFiltro,setClassFiltro]=useState('TODAS')
       if(d.tempo_espera_min>grupoMap[key].maxTempo){grupoMap[key].maxTempo=d.tempo_espera_min;grupoMap[key].pac=d.qt_pacientes_aguardando||0}
       grupoMap[key].count+=1
     })
-    const incidentes=Object.values(grupoMap)
+   const incidentes=Object.values(grupoMap).map(g=>({
+  ...g,
+  maxTempo:Number(g.maxTempo||0)
+}))
     let incidentesFiltrados=incidentes
 
 if(classFiltro!=='TODAS'){
@@ -753,7 +756,7 @@ if(classFiltro!=='TODAS'){
     return true
   })
 }
-    const feedList=incidentesFiltrados
+const feedList=incidentesFiltrados
   .slice()
   .sort((a,b)=>b.maxTempo-a.maxTempo)
 
