@@ -774,6 +774,16 @@ function TabEspera({rows}){
       dMap[dt].pac+=g.pac
     })
     const byDate=Object.values(dMap).map(d=>({...d,total:d.mod+d.grv+d.crit})).sort((a,b)=>a.date.localeCompare(b.date))
+    const addDay=(ds,n)=>{const d=new Date(ds+'T00:00:00Z');d.setUTCDate(d.getUTCDate()+n);return d.toISOString().slice(0,10)}
+    const pts=byDate.slice(-3)
+    const slopeMod=pts.length>=2?(pts[pts.length-1].mod-pts[0].mod)/(pts.length-1):0
+    const slopeGrv=pts.length>=2?(pts[pts.length-1].grv-pts[0].grv)/(pts.length-1):0
+    const slopeCrt=pts.length>=2?(pts[pts.length-1].crit-pts[0].crit)/(pts.length-1):0
+    const lastDate=byDate[byDate.length-1]?.date||''
+    const lastMod =byDate[byDate.length-1]?.mod||0
+    const lastGrv =byDate[byDate.length-1]?.grv||0
+    const lastCrt =byDate[byDate.length-1]?.crit||0
+    const projData=lastDate?Array.from({length:5},(_,i)=>({
       date:addDay(lastDate,i+1),
       mod: Math.max(0,Math.round(lastMod+slopeMod*(i+1))),
       grv: Math.max(0,Math.round(lastGrv+slopeGrv*(i+1))),
@@ -782,7 +792,7 @@ function TabEspera({rows}){
       pac:0,isProj:true,
     })):[]
     return{totalReg,totalPac,modCnt,grvCnt,critCnt,totalEsp,feedList,topU,faltasList,atrasosList,statusAt,byDate,projData}
-  },[filtered])
+   },[filtered])
 
   const totalJust=useMemo(()=>Object.values(justificativas).reduce((a,v)=>a+(parseInt(v)||0),0),[justificativas])
   const metaPct=espStats.totalEsp>0?Math.min(Math.round((totalJust/espStats.totalEsp)*100),100):0
