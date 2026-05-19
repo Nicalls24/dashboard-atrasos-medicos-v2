@@ -101,13 +101,13 @@ function TabAgendas({rows}){
   const[trendView,setTrendView]=useState('real')
   const[aTip,setATip]=useState(null)
 
-  const allDates=useMemo(()=>[...new Set(rows.map(r=>r.DT_REGISTRO||r.DATA_AGENDA).filter(Boolean))].sort(),[rows])
+  const allDates=useMemo(()=>[...new Set(rows.map(r=>r.dt_registro||r.data_agenda).filter(Boolean))].sort(),[rows])
   const periodoFn=useMemo(()=>buildFilter(allDates,periodo,dateFrom,dateTo),[allDates,periodo,dateFrom,dateTo])
   const ufs=useMemo(()=>[...new Set(rows.map(r=>r.uf).filter(Boolean))].sort(),[rows])
 
   const horasDisp=useMemo(()=>{
     const set=new Set()
-    rows.filter(d=>periodoFn(d.DT_REGISTRO||d.DATA_AGENDA)).forEach(d=>{
+    rows.filter(d=>periodoFn(d.dt_registro||d.data_agenda)).forEach(d=>{
       const h=d.hr_inicio_min;if(h==null)return
       const hora=Math.floor(h/60);if(hora>=0&&hora<=23)set.add(hora)
     })
@@ -119,7 +119,7 @@ function TabAgendas({rows}){
   },[])
 
   const filtered=useMemo(()=>{
-    let r=rows.filter(d=>periodoFn(d.DT_REGISTRO||d.DATA_AGENDA))
+    let r=rows.filter(d=>periodoFn(d.dt_registro||d.data_agenda))
     if(ufFilt!=='TODOS')r=r.filter(d=>d.uf===ufFilt)
     if(search){const q=search.toLowerCase();r=r.filter(d=>[d.nm_local,d.nm_medico,d.ds_especialidade,d.cidade].some(v=>String(v||'').toLowerCase().includes(q)))}
     if(horasFilt.length>0)r=r.filter(d=>{const h=d.hr_inicio_min;if(h==null)return false;return horasFilt.includes(Math.floor(h/60))})
@@ -692,12 +692,12 @@ function TabEspera({rows}){
 
   const horasDisp=useMemo(()=>{
     const set=new Set()
-    rows.filter(d=>periodoFn(d.DT_REGISTRO||d.DATA_AGENDA)&&d.tempo_espera_min>=15).forEach(d=>{const h=d.hr_registro_espera_min;if(h==null)return;const hora=Math.floor(h/60);if(hora>=0&&hora<=23)set.add(hora)})
+    rows.filter(d=>periodoFn(d.dt_registro||d.data_agenda)&&d.tempo_espera_min>=15).forEach(d=>{const h=d.hr_registro_espera_min;if(h==null)return;const hora=Math.floor(h/60);if(hora>=0&&hora<=23)set.add(hora)})
     return[...set].sort((a,b)=>a-b)
   },[rows,periodoFn])
 
   const filtered=useMemo(()=>{
-    let r=rows.filter(d=>periodoFn(d.DT_REGISTRO||d.DATA_AGENDA))
+    let r=rows.filter(d=>periodoFn(d.dt_registro||d.data_agenda))
     if(ufFilt!=='TODOS')r=r.filter(d=>d.uf===ufFilt)
     if(search){const q=search.toLowerCase();r=r.filter(d=>[d.nm_local,d.nm_medico,d.cidade].some(v=>String(v||'').toLowerCase().includes(q)))}
     if(horaFilt!=='TODAS'){const ini=parseInt(horaFilt,10),fim=horaFiltFim==='TODAS'?ini:parseInt(horaFiltFim,10);r=r.filter(d=>{const h=d.hr_registro_espera_min;if(h==null)return false;const hora=Math.floor(h/60);return hora>=ini&&hora<=fim})}
@@ -1251,37 +1251,13 @@ export default function Home(){
     try{
       setStoreMsg('Lendo planilha…')
       const buf=await file.arrayBuffer()
-      const wb=XLSX.read(buf,{type:'buffer',cellDates:true})
+      const wb=XLSX.read(buf,{type:'buffer'})
       const ws=wb.Sheets['PONTOS']||wb.Sheets[wb.SheetNames[0]]
-      const json=XLSX.utils.sheet_to_json(ws,{range:3,defval:'',raw:false,dateNF:'yyyy-mm-dd'})
-      
-      // Converter datas do Excel para formato ISO
-      json.forEach(row=>{
-        // Converter DATA_AGENDA
-        if(row.DATA_AGENDA){
-          const val=row.DATA_AGENDA
-          if(typeof val==='number'||/^\d+$/.test(String(val))){
-            const d=new Date((parseFloat(val)-25569)*86400*1000)
-            row.DATA_AGENDA=d.toISOString().slice(0,10)
-          }else if(String(val).includes(' ')){
-            row.DATA_AGENDA=String(val).split(' ')[0]
-          }
-        }
-        // Converter DT_REGISTRO (usado para filtros de período)
-        if(row.DT_REGISTRO){
-          const val=row.DT_REGISTRO
-          if(typeof val==='number'||/^\d+$/.test(String(val))){
-            const d=new Date((parseFloat(val)-25569)*86400*1000)
-            row.DT_REGISTRO=d.toISOString().slice(0,10)
-          }else if(String(val).includes(' ')){
-            row.DT_REGISTRO=String(val).split(' ')[0]
-          }
-        }
-      })
+      const json=XLSX.utils.sheet_to_json(ws,{range:3,defval:''})
       
       setStoreMsg(`${json.length.toLocaleString('pt-BR')} linhas — salvando (sem duplicatas)…`)
       const CHUNK=500
-      // Salva via API (agora SEM o DELETE, apenas acumula)
+      // Salva via API (a API fará a conversão de datas)
       for(let i=0;i<json.length;i+=CHUNK){setStoreMsg(`Agendas… ${Math.min(i+CHUNK,json.length).toLocaleString('pt-BR')}/${json.length.toLocaleString('pt-BR')}`);await fetch('/api/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows:json.slice(i,i+CHUNK),ts,table:'agendas'})})}
       for(let i=0;i<json.length;i+=CHUNK){setStoreMsg(`Espera… ${Math.min(i+CHUNK,json.length).toLocaleString('pt-BR')}/${json.length.toLocaleString('pt-BR')}`);await fetch('/api/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows:json.slice(i,i+CHUNK),ts,table:'espera'})})}
       setStoreMsg('Recarregando…')
