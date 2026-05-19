@@ -895,6 +895,14 @@ function TabEspera({rows}){
             <div>
               <div style={{fontSize:13,fontWeight:700,color:C.text}}>Feed de Esperas por Hora</div>
               <div style={{fontSize:10.5,color:C.muted,marginTop:3}}>TEMPO_DE_ESPERA · hora via HR_REGISTRO_ESPERA · {unidFilt?'clique ✕ para limpar':'clique na unidade para filtrar'}</div>
+              <div style={{display:'flex',gap:12,marginTop:8}}>
+                {[{label:'Moderada 15–30min',color:'#F59E0B'},{label:'Grave 31–89min',color:'#F97316'},{label:'Crítica ≥90min',color:'#F43F5E'}].map(k=>(
+                  <div key={k.label} style={{display:'flex',alignItems:'center',gap:5}}>
+                    <div style={{width:8,height:8,borderRadius:'50%',background:k.color}}/>
+                    <span style={{fontSize:9,color:C.muted}}>{k.label}</span>
+                  </div>
+                ))}
+              </div>
             </div>
             <div style={{display:'flex',alignItems:'center',gap:6,flexShrink:0}}>
               <select value={horaFilt} onChange={e=>{setHoraFilt(e.target.value);setHoraFiltFim('TODAS');setUnidFilt('')}} style={{background:'rgba(255,255,255,0.05)',border:'0.5px solid rgba(245,158,11,0.2)',borderRadius:8,color:C.text,fontSize:11,padding:'5px 8px',outline:'none',cursor:'pointer'}}>
@@ -907,8 +915,8 @@ function TabEspera({rows}){
           {feedList.length===0?(<div style={{textAlign:'center',padding:'32px 0',color:C.muted,fontSize:12}}>Sem esperas ≥ 15min no período/filtro selecionado.</div>):(
             <div style={{display:'flex',flexDirection:'column',gap:5,maxHeight:440,overflowY:'auto'}}>
               {feedList.map((item,i)=>{
-                const cls=clsEspera(item.maxTempo),isCrit=item.maxTempo>=90,isGrv=item.maxTempo>=31&&item.maxTempo<90,isSel=unidFilt===item.nm_local
-                return(<div key={i} onClick={()=>setUnidFilt(isSel?'':item.nm_local)} style={{display:'flex',alignItems:'center',gap:12,padding:'10px 14px',borderRadius:10,cursor:'pointer',background:isSel?`${cls.color}18`:isCrit?'rgba(244,63,94,0.06)':isGrv?'rgba(249,115,22,0.04)':'rgba(255,255,255,0.02)',border:isSel?`1px solid ${cls.color}55`:`0.5px solid ${i<3?cls.border:'rgba(255,255,255,0.05)'}`,transition:'all .15s'}} onMouseEnter={e=>{if(!isSel)e.currentTarget.style.background=cls.bg}} onMouseLeave={e=>{if(!isSel)e.currentTarget.style.background=isCrit?'rgba(244,63,94,0.06)':isGrv?'rgba(249,115,22,0.04)':'rgba(255,255,255,0.02)'}}>
+                const cls=clsEspera(item.maxTempo),isCrit=item.maxTempo>=90,isGrv=item.maxTempo>=31&&item.maxTempo<90,isMod=item.maxTempo>=15&&item.maxTempo<=30,isSel=unidFilt===item.nm_local
+                return(<div key={i} onClick={()=>setUnidFilt(isSel?'':item.nm_local)} style={{display:'flex',alignItems:'center',gap:12,padding:'10px 14px',borderRadius:10,cursor:'pointer',background:isSel?`${cls.color}18`:isCrit?'rgba(244,63,94,0.06)':isGrv?'rgba(249,115,22,0.04)':isMod?'rgba(245,158,11,0.03)':'rgba(255,255,255,0.02)',border:isSel?`1px solid ${cls.color}55`:`0.5px solid ${i<3?cls.border:'rgba(255,255,255,0.05)'}`,transition:'all .15s'}} onMouseEnter={e=>{if(!isSel)e.currentTarget.style.background=cls.bg}} onMouseLeave={e=>{if(!isSel)e.currentTarget.style.background=isCrit?'rgba(244,63,94,0.06)':isGrv?'rgba(249,115,22,0.04)':isMod?'rgba(245,158,11,0.03)':'rgba(255,255,255,0.02)'}}>
                   <div style={{width:8,height:8,borderRadius:'50%',background:cls.color,flexShrink:0,boxShadow:isCrit?`0 0 8px ${cls.color}`:'none'}}/>
                   <div style={{fontFamily:'monospace',fontSize:13,fontWeight:700,color:C.sub,flexShrink:0,minWidth:44}}>{item.horaStr}</div>
                   <div style={{flex:1,minWidth:0}}><div style={{fontSize:12,fontWeight:600,color:C.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.nm_local}</div><div style={{fontSize:10,color:C.muted,marginTop:2}}>{[item.cidade,item.uf].filter(Boolean).join(' · ')}</div></div>
