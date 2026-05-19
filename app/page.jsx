@@ -1254,12 +1254,32 @@ export default function Home(){
       const wb=XLSX.read(buf,{type:'buffer'})
       const ws=wb.Sheets['PONTOS']||wb.Sheets[wb.SheetNames[0]]
       const json=XLSX.utils.sheet_to_json(ws,{range:3,defval:''})
-      setStoreMsg(`${json.length.toLocaleString('pt-BR')} linhas — limpando banco…`)
-      const delRes=await fetch('/api/save',{method:'DELETE'})
-      if(!delRes.ok){setStoreMsg('⚠ Erro ao limpar banco');setStoring(false);return}
+      
+      setStoreMsg(`${json.length.toLocaleString('pt-BR')} linhas — salvando agendas (upsert)…`)
       const CHUNK=500
-      for(let i=0;i<json.length;i+=CHUNK){setStoreMsg(`Agendas… ${Math.min(i+CHUNK,json.length).toLocaleString('pt-BR')}/${json.length.toLocaleString('pt-BR')}`);await fetch('/api/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows:json.slice(i,i+CHUNK),ts,table:'agendas'})})}
-      for(let i=0;i<json.length;i+=CHUNK){setStoreMsg(`Espera… ${Math.min(i+CHUNK,json.length).toLocaleString('pt-BR')}/${json.length.toLocaleString('pt-BR')}`);await fetch('/api/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows:json.slice(i,i+CHUNK),ts,table:'espera'})})}
+      
+      // UPSERT agendas - atualiza se existir, insere se não existir
+      for(let i=0;i<json.length;i+=CHUNK){
+        setStoreMsg(`Agendas… ${Math.min(i+CHUNK,json.length).toLocaleString('pt-BR')}/${json.length.toLocaleString('pt-BR')}`)
+        const chunk=json.slice(i,i+CHUNK).map(row=>({...row,verif_ts:ts}))
+        await fetch(`${SB_URL}/rest/v1/agendas`,{
+          method:'POST',
+          headers:{...SBH,'Prefer':'resolution=merge-duplicates'},
+          body:JSON.stringify(chunk)
+        })
+      }
+      
+      // UPSERT espera - atualiza se existir, insere se não existir
+      for(let i=0;i<json.length;i+=CHUNK){
+        setStoreMsg(`Espera… ${Math.min(i+CHUNK,json.length).toLocaleString('pt-BR')}/${json.length.toLocaleString('pt-BR')}`)
+        const chunk=json.slice(i,i+CHUNK).map(row=>({...row,verif_ts:ts}))
+        await fetch(`${SB_URL}/rest/v1/espera`,{
+          method:'POST',
+          headers:{...SBH,'Prefer':'resolution=merge-duplicates'},
+          body:JSON.stringify(chunk)
+        })
+      }
+      
       setStoreMsg('Recarregando…')
       const[ag,esp]=await Promise.all([loadTable('agendas'),loadTable('espera')])
       setAgendas(ag);setEspera(esp);setStorageInfo({agendas:ag.length,espera:esp.length})
@@ -1272,7 +1292,10 @@ export default function Home(){
   const handleClear=async()=>{
     if(!confirm('Apagar TODOS os dados do banco?'))return
     setStoring(true);setStoreMsg('Apagando…')
-    await fetch('/api/save',{method:'DELETE'})
+    try{
+      await fetch(`${SB_URL}/rest/v1/agendas?id=gte.0`,{method:'DELETE',headers:SBH})
+      await fetch(`${SB_URL}/rest/v1/espera?id=gte.0`,{method:'DELETE',headers:SBH})
+    }catch(e){console.error(e)}
     setAgendas([]);setEspera([]);setStorageInfo({agendas:0,espera:0});setTimestamp('');setStoreMsg('');setStoring(false)
   }
 
