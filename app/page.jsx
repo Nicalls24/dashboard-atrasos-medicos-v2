@@ -665,6 +665,7 @@ function TabEspera({rows}){
   const[search,setSearch]=useState('')
   const[horaFilt,setHoraFilt]=useState('TODAS')
   const[horaFiltFim,setHoraFiltFim]=useState('TODAS')
+  const[sevFilt,setSevFilt]=useState(['MOD','GRV','CRIT']) // Todas selecionadas por padrão
   const[unidFilt,setUnidFilt]=useState('')
   const[justModal,setJustModal]=useState(false)
   const[justificativas,setJustificativas]=useState({})
@@ -783,6 +784,16 @@ function TabEspera({rows}){
     return{totalReg,totalPac,modCnt,grvCnt,critCnt,totalEsp,feedList,topU,faltasList,atrasosList,statusAt,byDate,projData}
    },[filtered])
 
+  // Aplicar filtro de severidade no feed
+  const feedListFiltered=useMemo(()=>{
+    return espStats.feedList.filter(item=>{
+      if(sevFilt.includes('CRIT')&&item.maxTempo>=90)return true
+      if(sevFilt.includes('GRV')&&item.maxTempo>=31&&item.maxTempo<90)return true
+      if(sevFilt.includes('MOD')&&item.maxTempo>=15&&item.maxTempo<=30)return true
+      return false
+    })
+  },[espStats.feedList,sevFilt])
+
   const totalJust=useMemo(()=>Object.values(justificativas).reduce((a,v)=>a+(parseInt(v)||0),0),[justificativas])
   const metaPct=espStats.totalEsp>0?Math.min(Math.round((totalJust/espStats.totalEsp)*100),100):0
   const metaColor=metaPct>=80?C.emerald:metaPct>=50?C.amber:C.rose
@@ -895,7 +906,7 @@ function TabEspera({rows}){
             <div>
               <div style={{display:'flex',alignItems:'center',gap:8}}>
                 <div style={{fontSize:13,fontWeight:700,color:C.text}}>Feed de Esperas por Hora</div>
-                <span style={{fontSize:11,fontWeight:700,padding:'2px 8px',borderRadius:10,background:'rgba(245,158,11,0.15)',color:C.amber,border:'0.5px solid rgba(245,158,11,0.3)'}}>{feedList.length} espera{feedList.length!==1?'s':''}</span>
+                <span style={{fontSize:11,fontWeight:700,padding:'2px 8px',borderRadius:10,background:'rgba(245,158,11,0.15)',color:C.amber,border:'0.5px solid rgba(245,158,11,0.3)'}}>{feedListFiltered.length} espera{feedListFiltered.length!==1?'s':''}</span>
               </div>
               <div style={{fontSize:10.5,color:C.muted,marginTop:3}}>TEMPO_DE_ESPERA · hora via HR_REGISTRO_ESPERA · {unidFilt?'clique ✕ para limpar':'clique na unidade para filtrar'}</div>
               <div style={{display:'flex',gap:12,marginTop:8}}>
@@ -907,7 +918,26 @@ function TabEspera({rows}){
                 ))}
               </div>
             </div>
-            <div style={{display:'flex',alignItems:'center',gap:6,flexShrink:0}}>
+            <div style={{display:'flex',alignItems:'center',gap:8,flexShrink:0,flexWrap:'wrap'}}>
+              {/* Filtro de Severidade */}
+              <div style={{display:'flex',alignItems:'center',gap:6,background:'rgba(255,255,255,0.03)',border:'0.5px solid rgba(255,255,255,0.08)',borderRadius:8,padding:'4px 10px'}}>
+                <span style={{fontSize:10,color:C.muted,fontWeight:600}}>Exibir:</span>
+                {[{key:'MOD',label:'Mod',color:'#F59E0B'},{key:'GRV',label:'Grv',color:'#F97316'},{key:'CRIT',label:'Crt',color:'#F43F5E'}].map(s=>{
+                  const sel=sevFilt.includes(s.key)
+                  return(
+                    <button key={s.key} onClick={()=>setSevFilt(prev=>prev.includes(s.key)?prev.filter(x=>x!==s.key):[...prev,s.key])} style={{
+                      display:'flex',alignItems:'center',gap:4,padding:'3px 8px',borderRadius:6,border:'none',
+                      background:sel?s.color+'20':'transparent',cursor:'pointer',transition:'all .15s'
+                    }}>
+                      <div style={{width:12,height:12,borderRadius:3,border:`1.5px solid ${s.color}`,background:sel?s.color:'transparent',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+                        {sel&&<span style={{color:'#0A0D16',fontSize:9,fontWeight:900}}>✓</span>}
+                      </div>
+                      <span style={{fontSize:10,fontWeight:600,color:sel?s.color:C.muted}}>{s.label}</span>
+                    </button>
+                  )
+                })}
+              </div>
+              {/* Filtro de Hora */}
               <select value={horaFilt} onChange={e=>{setHoraFilt(e.target.value);setHoraFiltFim('TODAS');setUnidFilt('')}} style={{background:'rgba(255,255,255,0.05)',border:'0.5px solid rgba(245,158,11,0.2)',borderRadius:8,color:C.text,fontSize:11,padding:'5px 8px',outline:'none',cursor:'pointer'}}>
                 <option value="TODAS">Todas</option>
                 {horasDisp.map(h=><option key={h} value={h}>{String(h).padStart(2,'0')}:00</option>)}
@@ -915,9 +945,9 @@ function TabEspera({rows}){
               {horaFilt!=='TODAS'&&(<><span style={{fontSize:11,color:C.muted}}>→</span><select value={horaFiltFim} onChange={e=>setHoraFiltFim(e.target.value)} style={{background:'rgba(255,255,255,0.05)',border:'0.5px solid rgba(245,158,11,0.2)',borderRadius:8,color:C.text,fontSize:11,padding:'5px 8px',outline:'none',cursor:'pointer'}}><option value="TODAS">{String(horaFilt).padStart(2,'0')}:00 só</option>{horasDispFim.map(h=><option key={h} value={h}>{String(h).padStart(2,'0')}:00</option>)}</select></>)}
             </div>
           </div>
-          {feedList.length===0?(<div style={{textAlign:'center',padding:'32px 0',color:C.muted,fontSize:12}}>Sem esperas ≥ 15min no período/filtro selecionado.</div>):(
+          {feedListFiltered.length===0?(<div style={{textAlign:'center',padding:'32px 0',color:C.muted,fontSize:12}}>Sem esperas ≥ 15min no período/filtro selecionado.</div>):(
             <div style={{display:'flex',flexDirection:'column',gap:5,maxHeight:600,overflowY:'auto'}}>
-              {feedList.map((item,i)=>{
+              {feedListFiltered.map((item,i)=>{
                 const cls=clsEspera(item.maxTempo),isCrit=item.maxTempo>=90,isGrv=item.maxTempo>=31&&item.maxTempo<90,isMod=item.maxTempo>=15&&item.maxTempo<=30,isSel=unidFilt===item.nm_local
                 return(<div key={i} onClick={()=>setUnidFilt(isSel?'':item.nm_local)} style={{display:'flex',alignItems:'center',gap:12,padding:'10px 14px',borderRadius:10,cursor:'pointer',background:isSel?`${cls.color}18`:isCrit?'rgba(244,63,94,0.06)':isGrv?'rgba(249,115,22,0.04)':isMod?'rgba(245,158,11,0.03)':'rgba(255,255,255,0.02)',border:isSel?`1px solid ${cls.color}55`:`0.5px solid ${i<3?cls.border:'rgba(255,255,255,0.05)'}`,transition:'all .15s'}} onMouseEnter={e=>{if(!isSel)e.currentTarget.style.background=cls.bg}} onMouseLeave={e=>{if(!isSel)e.currentTarget.style.background=isCrit?'rgba(244,63,94,0.06)':isGrv?'rgba(249,115,22,0.04)':isMod?'rgba(245,158,11,0.03)':'rgba(255,255,255,0.02)'}}>
                   <div style={{width:8,height:8,borderRadius:'50%',background:cls.color,flexShrink:0,boxShadow:isCrit?`0 0 8px ${cls.color}`:'none'}}/>
