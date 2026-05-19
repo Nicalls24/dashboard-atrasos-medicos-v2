@@ -1251,43 +1251,13 @@ export default function Home(){
     try{
       setStoreMsg('Lendo planilha…')
       const buf=await file.arrayBuffer()
-      const wb=XLSX.read(buf,{type:'buffer',cellDates:true})
+      const wb=XLSX.read(buf,{type:'buffer'})
       const ws=wb.Sheets['PONTOS']||wb.Sheets[wb.SheetNames[0]]
-      const json=XLSX.utils.sheet_to_json(ws,{range:3,defval:'',raw:false,dateNF:'yyyy-mm-dd'})
-      
-      // Converter datas do Excel para formato ISO
-      json.forEach(row=>{
-        // Converter DATA_AGENDA
-        if(row.DATA_AGENDA){
-          const val=row.DATA_AGENDA
-          if(typeof val==='number'||/^\d+$/.test(String(val))){
-            const d=new Date((parseFloat(val)-25569)*86400*1000)
-            row.DATA_AGENDA=d.toISOString().slice(0,10)
-          }else if(String(val).includes(' ')){
-            row.DATA_AGENDA=String(val).split(' ')[0]
-          }
-        }
-        // Converter DT_REGISTRO (usado para filtros de período)
-        if(row.DT_REGISTRO){
-          const val=row.DT_REGISTRO
-          if(typeof val==='number'||/^\d+$/.test(String(val))){
-            const d=new Date((parseFloat(val)-25569)*86400*1000)
-            row.DT_REGISTRO=d.toISOString().slice(0,10)
-          }else if(String(val).includes(' ')){
-            row.DT_REGISTRO=String(val).split(' ')[0]
-          }
-          // Copiar para minúscula (PostgreSQL normaliza para minúscula)
-          row.dt_registro=row.DT_REGISTRO
-        }
-        // Normalizar data_agenda também
-        if(row.DATA_AGENDA){
-          row.data_agenda=row.DATA_AGENDA
-        }
-      })
+      const json=XLSX.utils.sheet_to_json(ws,{range:3,defval:''})
       
       setStoreMsg(`${json.length.toLocaleString('pt-BR')} linhas — salvando (sem duplicatas)…`)
       const CHUNK=500
-      // Salva via API (agora SEM o DELETE, apenas acumula)
+      // Salva via API (a API fará a conversão de datas)
       for(let i=0;i<json.length;i+=CHUNK){setStoreMsg(`Agendas… ${Math.min(i+CHUNK,json.length).toLocaleString('pt-BR')}/${json.length.toLocaleString('pt-BR')}`);await fetch('/api/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows:json.slice(i,i+CHUNK),ts,table:'agendas'})})}
       for(let i=0;i<json.length;i+=CHUNK){setStoreMsg(`Espera… ${Math.min(i+CHUNK,json.length).toLocaleString('pt-BR')}/${json.length.toLocaleString('pt-BR')}`);await fetch('/api/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows:json.slice(i,i+CHUNK),ts,table:'espera'})})}
       setStoreMsg('Recarregando…')
