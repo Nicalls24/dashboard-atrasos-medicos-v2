@@ -743,18 +743,7 @@ function TabEspera({rows}){
     const atrasosList=filtered.filter(d=>{if(String(d.atraso||'').toUpperCase()!=='SIM')return false;const t=d.tempo_atraso_min;return t!=null&&Math.abs(t)>31})
     const sMap={};atrasosList.forEach(d=>{const s=d.status||'Sem Status';sMap[s]=(sMap[s]||0)+1})
     const statusAt=Object.entries(sMap).map(([k,v])=>({k,v})).sort((a,b)=>b.v-a.v)
-    // Agrupa por data+unidade+hora (mesma lógica do feed) para contar incidentes únicos
-    const gMap={}
-    comEsp.forEach(d=>{
-      const dt=d.data_agenda;if(!dt)return
-      const h=d.hr_registro_espera_min;if(h==null)return
-      const hora=Math.floor(h/60)
-      const unidade=d.nm_local||'?'
-      const key=dt+'||'+String(hora).padStart(2,'0')+'||'+unidade
-      if(!gMap[key])gMap[key]={date:dt,maxTempo:0,pac:0}
-      if(d.tempo_espera_min>gMap[key].maxTempo){gMap[key].maxTempo=d.tempo_espera_min;gMap[key].pac=d.qt_pacientes_aguardando||0}
-    })
-// BUG FIX #2: Agrupa por data+hora+unidade (mesma chave do feed) para contar incidentes únicos por dia
+    // BUG FIX #2: Agrupa por data+hora+unidade (mesma chave do feed) para contar incidentes únicos por dia
   const gMap={}
   comEsp.forEach(d=>{
     const dt=d.data_agenda;if(!dt)return
