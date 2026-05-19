@@ -755,16 +755,16 @@ function TabEspera({rows}){
       if(d.tempo_espera_min>gMap[key].maxTempo){gMap[key].maxTempo=d.tempo_espera_min;gMap[key].pac=d.qt_pacientes_aguardando||0}
     })
 // BUG FIX #2: Agrupa por data+hora+unidade (mesma chave do feed) para contar incidentes únicos por dia
-    const gMap={}
-    comEsp.forEach(d=>{
-      const dt=d.data_agenda;if(!dt)return
-      const h=d.hr_registro_espera_min;if(h==null)return
-      const hora=Math.floor(h/60)
-      const unidade=d.nm_local||'?'
-      const key=dt+'||'+String(hora).padStart(2,'0')+'||'+unidade
-      if(!gMap[key])gMap[key]={date:dt,maxTempo:0,pac:0}
-      if(d.tempo_espera_min>gMap[key].maxTempo){gMap[key].maxTempo=d.tempo_espera_min;gMap[key].pac=d.qt_pacientes_aguardando||0}
-    })
+  const gMap={}
+  comEsp.forEach(d=>{
+    const dt=d.data_agenda;if(!dt)return
+    const h=d.hr_registro_espera_min;if(h==null)return
+    const hora=Math.floor(h/60)
+    const unidade=d.nm_local||'?'
+    const key=dt+'||'+String(hora).padStart(2,'0')+'||'+unidade
+    if(!gMap[key])gMap[key]={date:dt,maxTempo:0,pac:0}
+    if(d.tempo_espera_min>gMap[key].maxTempo){gMap[key].maxTempo=d.tempo_espera_min;gMap[key].pac=d.qt_pacientes_aguardando||0}
+  })
     const dMap={}
     Object.values(gMap).forEach(g=>{
       const dt=g.date
