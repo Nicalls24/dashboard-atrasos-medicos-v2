@@ -7,7 +7,7 @@ const SB_HEADERS = {
   'apikey': SB_KEY,
   'Authorization': `Bearer ${SB_KEY}`,
   'Content-Type': 'application/json',
-  'Prefer': 'return=minimal',
+  'Prefer': 'return=minimal,resolution=merge-duplicates',
 }
 
 function serialToDate(v) {

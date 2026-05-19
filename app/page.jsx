@@ -668,7 +668,7 @@ function TabEspera({rows}){
   const[sevFilt,setSevFilt]=useState(['MOD','GRV','CRIT']) // Todas selecionadas por padrão
   const[unidFilt,setUnidFilt]=useState('')
   const[justModal,setJustModal]=useState(false)
-  const[justificativas,setJustificativas]=useState({})
+  const[allJust,setAllJust]=useState([])
   const[justLoading,setJustLoading]=useState(false)
   const[trendView,setTrendView]=useState('real')
   const[tTip,setTTip]=useState(null)
@@ -678,15 +678,31 @@ function TabEspera({rows}){
   const ufs=useMemo(()=>[...new Set(rows.map(r=>r.uf).filter(Boolean))].sort(),[rows])
   const dataRef=useMemo(()=>allDates.length?allDates[allDates.length-1]:'',[allDates])
 
+  // Carrega TODAS as justificativas (todas as datas) - permite somar por período
   useEffect(()=>{
-    if(!dataRef)return
-    fetch(`${SB_URL}/rest/v1/justificativas_espera?select=hora,quantidade&data_ref=eq.${dataRef}&order=hora.asc`,{headers:SBH})
-      .then(r=>r.json()).then(data=>{if(!Array.isArray(data))return;const map={};data.forEach(r=>{map[r.hora]=r.quantidade});setJustificativas(map)}).catch(console.error)
-  },[dataRef])
+    fetch(`${SB_URL}/rest/v1/justificativas_espera?select=data_ref,hora,quantidade`,{headers:SBH})
+      .then(r=>r.json()).then(data=>{if(Array.isArray(data))setAllJust(data)}).catch(console.error)
+  },[rows])
+
+  // Justificativas filtradas pelo período selecionado (Hoje/Ontem/Semana/Mês/Ano)
+  const justificativas=useMemo(()=>{
+    const map={}
+    allJust.filter(j=>j.data_ref&&periodoFn(j.data_ref)).forEach(j=>{
+      map[j.hora]=(map[j.hora]||0)+(parseInt(j.quantidade)||0)
+    })
+    return map
+  },[allJust,periodoFn])
 
   const saveJustificativa=useCallback(async(hora,qtd)=>{
     if(!dataRef)return;setJustLoading(true)
-    try{await fetch(`${SB_URL}/rest/v1/justificativas_espera`,{method:'POST',headers:{...SBH,'Prefer':'resolution=merge-duplicates'},body:JSON.stringify({data_ref:dataRef,hora:parseInt(hora),quantidade:parseInt(qtd)||0})});setJustificativas(prev=>({...prev,[hora]:parseInt(qtd)||0}))}catch(e){console.error(e)}
+    const h=parseInt(hora),q=parseInt(qtd)||0
+    try{
+      await fetch(`${SB_URL}/rest/v1/justificativas_espera`,{method:'POST',headers:{...SBH,'Prefer':'resolution=merge-duplicates'},body:JSON.stringify({data_ref:dataRef,hora:h,quantidade:q})})
+      setAllJust(prev=>{
+        const semEsta=prev.filter(j=>!(j.data_ref===dataRef&&j.hora===h))
+        return[...semEsta,{data_ref:dataRef,hora:h,quantidade:q}]
+      })
+    }catch(e){console.error(e)}
     setJustLoading(false)
   },[dataRef])
 
