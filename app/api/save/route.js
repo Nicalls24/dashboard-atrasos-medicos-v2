@@ -111,11 +111,27 @@ export async function POST(request) {
     if (!['agendas','espera'].includes(table))
       return NextResponse.json({ ok:false, error:'Invalid table' }, { status:400 })
 
-    const mapped = table === 'agendas'
+    const mappedRaw = table === 'agendas'
       ? rows.map(r => mapAgenda(r, ts)).filter(Boolean)
       : rows.map(r => mapEspera(r, ts)).filter(Boolean)
 
-    if (!mapped.length) return NextResponse.json({ ok:true, saved:0 })
+    if (!mappedRaw.length) return NextResponse.json({ ok:true, saved:0 })
+
+    // DEDUPLICAÇÃO: remove linhas com mesma constraint única dentro do lote.
+    // O Postgres rejeita upsert se 2 linhas do mesmo batch têm a mesma chave.
+    // Mantém a de MAIOR tempo_espera_min (espera/agendas), a mais relevante.
+    const dedup = new Map()
+    for (const m of mappedRaw) {
+      const key = table === 'espera'
+        ? `${m.data_agenda}|${m.hr_registro_espera_min}|${m.nm_local}|${m.nm_medico}`
+        : `${m.data_agenda}|${m.nm_local}|${m.nm_medico}`
+      const prev = dedup.get(key)
+      if (!prev) { dedup.set(key, m); continue }
+      const pv = table === 'espera' ? (prev.tempo_espera_min||0) : 0
+      const cv = table === 'espera' ? (m.tempo_espera_min||0) : 0
+      if (cv >= pv) dedup.set(key, m)
+    }
+    const mapped = Array.from(dedup.values())
 
     const res = await fetch(`${SB_URL}/rest/v1/${table}`, {
       method: 'POST',
