@@ -1254,32 +1254,11 @@ export default function Home(){
       const wb=XLSX.read(buf,{type:'buffer'})
       const ws=wb.Sheets['PONTOS']||wb.Sheets[wb.SheetNames[0]]
       const json=XLSX.utils.sheet_to_json(ws,{range:3,defval:''})
-      
-      setStoreMsg(`${json.length.toLocaleString('pt-BR')} linhas — salvando agendas (upsert)…`)
+      setStoreMsg(`${json.length.toLocaleString('pt-BR')} linhas — salvando (sem duplicatas)…`)
       const CHUNK=500
-      
-      // UPSERT agendas - atualiza se existir, insere se não existir
-      for(let i=0;i<json.length;i+=CHUNK){
-        setStoreMsg(`Agendas… ${Math.min(i+CHUNK,json.length).toLocaleString('pt-BR')}/${json.length.toLocaleString('pt-BR')}`)
-        const chunk=json.slice(i,i+CHUNK).map(row=>({...row,verif_ts:ts}))
-        await fetch(`${SB_URL}/rest/v1/agendas`,{
-          method:'POST',
-          headers:{...SBH,'Prefer':'resolution=merge-duplicates'},
-          body:JSON.stringify(chunk)
-        })
-      }
-      
-      // UPSERT espera - atualiza se existir, insere se não existir
-      for(let i=0;i<json.length;i+=CHUNK){
-        setStoreMsg(`Espera… ${Math.min(i+CHUNK,json.length).toLocaleString('pt-BR')}/${json.length.toLocaleString('pt-BR')}`)
-        const chunk=json.slice(i,i+CHUNK).map(row=>({...row,verif_ts:ts}))
-        await fetch(`${SB_URL}/rest/v1/espera`,{
-          method:'POST',
-          headers:{...SBH,'Prefer':'resolution=merge-duplicates'},
-          body:JSON.stringify(chunk)
-        })
-      }
-      
+      // Salva via API (agora SEM o DELETE, apenas acumula)
+      for(let i=0;i<json.length;i+=CHUNK){setStoreMsg(`Agendas… ${Math.min(i+CHUNK,json.length).toLocaleString('pt-BR')}/${json.length.toLocaleString('pt-BR')}`);await fetch('/api/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows:json.slice(i,i+CHUNK),ts,table:'agendas'})})}
+      for(let i=0;i<json.length;i+=CHUNK){setStoreMsg(`Espera… ${Math.min(i+CHUNK,json.length).toLocaleString('pt-BR')}/${json.length.toLocaleString('pt-BR')}`);await fetch('/api/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows:json.slice(i,i+CHUNK),ts,table:'espera'})})}
       setStoreMsg('Recarregando…')
       const[ag,esp]=await Promise.all([loadTable('agendas'),loadTable('espera')])
       setAgendas(ag);setEspera(esp);setStorageInfo({agendas:ag.length,espera:esp.length})
