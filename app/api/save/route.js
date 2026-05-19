@@ -49,6 +49,7 @@ function toMinutes(v) {
 function mapAgenda(r, ts) {
   return {
     data_agenda:         serialToDate(r['DATA_AGENDA']),
+    dt_registro:         serialToDate(r['DT_REGISTRO'] || r['dt_registro']),
     uf:                  r['UF']                  || null,
     nm_filial:           r['NM_FILIAL']            || null,
     nm_local:            r['NM_LOCAL']             || null,
@@ -87,6 +88,7 @@ function mapEspera(r, ts) {
 
   return {
     data_agenda:             serialToDate(r['DATA_AGENDA']),
+    dt_registro:             serialToDate(r['DT_REGISTRO'] || r['dt_registro']),
     uf:                      r['UF']              || null,
     nm_local:                r['NM_LOCAL']        || null,
     nm_medico:               r['NM_MEDICO']       || null,

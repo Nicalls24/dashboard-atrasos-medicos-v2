@@ -101,13 +101,13 @@ function TabAgendas({rows}){
   const[trendView,setTrendView]=useState('real')
   const[aTip,setATip]=useState(null)
 
-  const allDates=useMemo(()=>[...new Set(rows.map(r=>r.data_agenda).filter(Boolean))].sort(),[rows])
+  const allDates=useMemo(()=>[...new Set(rows.map(r=>r.dt_registro||r.data_agenda).filter(Boolean))].sort(),[rows])
   const periodoFn=useMemo(()=>buildFilter(allDates,periodo,dateFrom,dateTo),[allDates,periodo,dateFrom,dateTo])
   const ufs=useMemo(()=>[...new Set(rows.map(r=>r.uf).filter(Boolean))].sort(),[rows])
 
   const horasDisp=useMemo(()=>{
     const set=new Set()
-    rows.filter(d=>periodoFn(d.data_agenda)).forEach(d=>{
+    rows.filter(d=>periodoFn(d.dt_registro||d.data_agenda)).forEach(d=>{
       const h=d.hr_inicio_min;if(h==null)return
       const hora=Math.floor(h/60);if(hora>=0&&hora<=23)set.add(hora)
     })
@@ -119,7 +119,7 @@ function TabAgendas({rows}){
   },[])
 
   const filtered=useMemo(()=>{
-    let r=rows.filter(d=>periodoFn(d.data_agenda))
+    let r=rows.filter(d=>periodoFn(d.dt_registro||d.data_agenda))
     if(ufFilt!=='TODOS')r=r.filter(d=>d.uf===ufFilt)
     if(search){const q=search.toLowerCase();r=r.filter(d=>[d.nm_local,d.nm_medico,d.ds_especialidade,d.cidade].some(v=>String(v||'').toLowerCase().includes(q)))}
     if(horasFilt.length>0)r=r.filter(d=>{const h=d.hr_inicio_min;if(h==null)return false;return horasFilt.includes(Math.floor(h/60))})
@@ -665,6 +665,7 @@ function TabEspera({rows}){
   const[search,setSearch]=useState('')
   const[horaFilt,setHoraFilt]=useState('TODAS')
   const[horaFiltFim,setHoraFiltFim]=useState('TODAS')
+  const[sevFilt,setSevFilt]=useState(['MOD','GRV','CRIT']) // Todas selecionadas por padrão
   const[unidFilt,setUnidFilt]=useState('')
   const[justModal,setJustModal]=useState(false)
   const[justificativas,setJustificativas]=useState({})
@@ -672,7 +673,7 @@ function TabEspera({rows}){
   const[trendView,setTrendView]=useState('real')
   const[tTip,setTTip]=useState(null)
 
-  const allDates=useMemo(()=>[...new Set(rows.map(r=>r.data_agenda).filter(Boolean))].sort(),[rows])
+  const allDates=useMemo(()=>[...new Set(rows.map(r=>r.dt_registro||r.data_agenda).filter(Boolean))].sort(),[rows])
   const periodoFn=useMemo(()=>buildFilter(allDates,periodo,dateFrom,dateTo),[allDates,periodo,dateFrom,dateTo])
   const ufs=useMemo(()=>[...new Set(rows.map(r=>r.uf).filter(Boolean))].sort(),[rows])
   const dataRef=useMemo(()=>allDates.length?allDates[allDates.length-1]:'',[allDates])
@@ -691,12 +692,12 @@ function TabEspera({rows}){
 
   const horasDisp=useMemo(()=>{
     const set=new Set()
-    rows.filter(d=>periodoFn(d.data_agenda)&&d.tempo_espera_min>=15).forEach(d=>{const h=d.hr_registro_espera_min;if(h==null)return;const hora=Math.floor(h/60);if(hora>=0&&hora<=23)set.add(hora)})
+    rows.filter(d=>periodoFn(d.dt_registro||d.data_agenda)&&d.tempo_espera_min>=15).forEach(d=>{const h=d.hr_registro_espera_min;if(h==null)return;const hora=Math.floor(h/60);if(hora>=0&&hora<=23)set.add(hora)})
     return[...set].sort((a,b)=>a-b)
   },[rows,periodoFn])
 
   const filtered=useMemo(()=>{
-    let r=rows.filter(d=>periodoFn(d.data_agenda))
+    let r=rows.filter(d=>periodoFn(d.dt_registro||d.data_agenda))
     if(ufFilt!=='TODOS')r=r.filter(d=>d.uf===ufFilt)
     if(search){const q=search.toLowerCase();r=r.filter(d=>[d.nm_local,d.nm_medico,d.cidade].some(v=>String(v||'').toLowerCase().includes(q)))}
     if(horaFilt!=='TODAS'){const ini=parseInt(horaFilt,10),fim=horaFiltFim==='TODAS'?ini:parseInt(horaFiltFim,10);r=r.filter(d=>{const h=d.hr_registro_espera_min;if(h==null)return false;const hora=Math.floor(h/60);return hora>=ini&&hora<=fim})}
@@ -710,49 +711,50 @@ function TabEspera({rows}){
     const totalPac=filtered.reduce((a,d)=>a+(d.qt_pacientes_aguardando||0),0)
 
     // Agrupa por unidade+hora (mesma lógica do feed) — base para TODOS os counts
-    const grupoMap={}
-    comEsp.forEach(d=>{
-      const h=d.hr_registro_espera_min;if(h==null)return
-      const hora=Math.floor(h/60),mins=Math.floor(h%60);if(hora<0||hora>23)return
-      const horaStr=String(hora).padStart(2,'0')+':'+String(mins).padStart(2,'0')
-      const unidade=d.nm_local||'Sem Unidade',key=horaStr+'||'+unidade
-      if(!grupoMap[key])grupoMap[key]={horaStr,hora,nm_local:unidade,uf:d.uf||'',cidade:d.cidade||'',maxTempo:0,pac:0,count:0}
-      if(d.tempo_espera_min>grupoMap[key].maxTempo){grupoMap[key].maxTempo=d.tempo_espera_min;grupoMap[key].pac=d.qt_pacientes_aguardando||0}
-      grupoMap[key].count+=1
-    })
-    const incidentes=Object.values(grupoMap)
-    const feedList=incidentes.slice().sort((a,b)=>b.maxTempo-a.maxTempo).slice(0,25)
+// BUG FIX #1: Agrupa por unidade+hora para contar INCIDENTES ÚNICOS (não linhas brutas)
+  const grupoMap={}
+  comEsp.forEach(d=>{
+    const h=d.hr_registro_espera_min;if(h==null)return
+    const hora=Math.floor(h/60),mins=Math.floor(h%60);if(hora<0||hora>23)return
+    const horaStr=String(hora).padStart(2,'0')+':'+String(mins).padStart(2,'0')
+    const unidade=d.nm_local||'Sem Unidade',key=horaStr+'||'+unidade
+    if(!grupoMap[key])grupoMap[key]={horaStr,hora,nm_local:unidade,uf:d.uf||'',cidade:d.cidade||'',maxTempo:0,pac:0,count:0}
+    if(d.tempo_espera_min>grupoMap[key].maxTempo){grupoMap[key].maxTempo=d.tempo_espera_min;grupoMap[key].pac=d.qt_pacientes_aguardando||0}
+    grupoMap[key].count+=1
+  })
+  const incidentes=Object.values(grupoMap)
+  const feedList=incidentes.slice().sort((a,b)=>b.maxTempo-a.maxTempo)
 
-    // Counts por incidente único (não por linha bruta)
-    const modCnt =incidentes.filter(g=>g.maxTempo>=15&&g.maxTempo<=30).length
-    const grvCnt =incidentes.filter(g=>g.maxTempo>30&&g.maxTempo<=89).length
-    const critCnt=incidentes.filter(g=>g.maxTempo>=90).length
-    const totalEsp=modCnt+grvCnt+critCnt
+  // Counts por incidente único (usa grupoMap, não linhas brutas)
+  const modCnt =incidentes.filter(g=>g.maxTempo>=15&&g.maxTempo<=30).length
+  const grvCnt =incidentes.filter(g=>g.maxTempo>30&&g.maxTempo<=89).length
+  const critCnt=incidentes.filter(g=>g.maxTempo>=90).length
+  const totalEsp=modCnt+grvCnt+critCnt
 
-    // Top unidades por incidentes únicos
-    const uMap={}
-    incidentes.forEach(g=>{
-      const u=g.nm_local
-      if(!uMap[u])uMap[u]={n:u,total:0,crit:0,grv:0,mod:0}
-      uMap[u].total++
-      if(g.maxTempo>=90)uMap[u].crit++;else if(g.maxTempo>=31)uMap[u].grv++;else uMap[u].mod++
-    })
-    const topU=Object.values(uMap).sort((a,b)=>b.crit-a.crit||b.grv-a.grv).slice(0,6)
+  // Top unidades por incidentes únicos
+  const uMap={}
+  incidentes.forEach(g=>{
+    const u=g.nm_local
+    if(!uMap[u])uMap[u]={n:u,total:0,crit:0,grv:0,mod:0}
+    uMap[u].total++
+    if(g.maxTempo>=90)uMap[u].crit++;else if(g.maxTempo>=31)uMap[u].grv++;else uMap[u].mod++
+  })
+  const topU=Object.values(uMap).sort((a,b)=>b.crit-a.crit||b.grv-a.grv).slice(0,6)
     const faltasList=filtered.filter(d=>String(d.atraso||'').toUpperCase()==='FALTA')
     const atrasosList=filtered.filter(d=>{if(String(d.atraso||'').toUpperCase()!=='SIM')return false;const t=d.tempo_atraso_min;return t!=null&&Math.abs(t)>31})
     const sMap={};atrasosList.forEach(d=>{const s=d.status||'Sem Status';sMap[s]=(sMap[s]||0)+1})
     const statusAt=Object.entries(sMap).map(([k,v])=>({k,v})).sort((a,b)=>b.v-a.v)
-    // Agrupa por data+unidade+hora (mesma lógica do feed) para contar incidentes únicos
-    const gMap={}
-    comEsp.forEach(d=>{
-      const dt=d.data_agenda;if(!dt)return
-      const h=d.hr_registro_espera_min;if(h==null)return
-      const hora=Math.floor(h/60)
-      const unidade=d.nm_local||'?'
-      const key=dt+'||'+String(hora).padStart(2,'0')+'||'+unidade
-      if(!gMap[key])gMap[key]={date:dt,maxTempo:0,pac:0}
-      if(d.tempo_espera_min>gMap[key].maxTempo){gMap[key].maxTempo=d.tempo_espera_min;gMap[key].pac=d.qt_pacientes_aguardando||0}
-    })
+    // BUG FIX #2: Agrupa por data+hora+unidade (mesma chave do feed) para contar incidentes únicos por dia
+  const gMap={}
+  comEsp.forEach(d=>{
+    const dt=d.data_agenda;if(!dt)return
+    const h=d.hr_registro_espera_min;if(h==null)return
+    const hora=Math.floor(h/60)
+    const unidade=d.nm_local||'?'
+    const key=dt+'||'+String(hora).padStart(2,'0')+'||'+unidade
+    if(!gMap[key])gMap[key]={date:dt,maxTempo:0,pac:0}
+    if(d.tempo_espera_min>gMap[key].maxTempo){gMap[key].maxTempo=d.tempo_espera_min;gMap[key].pac=d.qt_pacientes_aguardando||0}
+  })
     const dMap={}
     Object.values(gMap).forEach(g=>{
       const dt=g.date
@@ -780,7 +782,17 @@ function TabEspera({rows}){
       pac:0,isProj:true,
     })):[]
     return{totalReg,totalPac,modCnt,grvCnt,critCnt,totalEsp,feedList,topU,faltasList,atrasosList,statusAt,byDate,projData}
-  },[filtered])
+   },[filtered])
+
+  // Aplicar filtro de severidade no feed
+  const feedListFiltered=useMemo(()=>{
+    return espStats.feedList.filter(item=>{
+      if(sevFilt.includes('CRIT')&&item.maxTempo>=90)return true
+      if(sevFilt.includes('GRV')&&item.maxTempo>=31&&item.maxTempo<90)return true
+      if(sevFilt.includes('MOD')&&item.maxTempo>=15&&item.maxTempo<=30)return true
+      return false
+    })
+  },[espStats.feedList,sevFilt])
 
   const totalJust=useMemo(()=>Object.values(justificativas).reduce((a,v)=>a+(parseInt(v)||0),0),[justificativas])
   const metaPct=espStats.totalEsp>0?Math.min(Math.round((totalJust/espStats.totalEsp)*100),100):0
@@ -816,10 +828,9 @@ function TabEspera({rows}){
     return p
   }
 
-  // Lista de médicos filtrados pela unidade selecionada
-  const docsFalta  = unidFilt ? Object.entries(faltasList.reduce((a,d)=>{const nm=d.nm_medico||'—';a[nm]=(a[nm]||0)+1;return a},{})).map(([nm,cnt])=>({nm,cnt})).sort((a,b)=>b.cnt-a.cnt) : []
-  const docsAtraso = unidFilt ? Object.entries(atrasosList.reduce((a,d)=>{const nm=d.nm_medico||'—';if(!a[nm])a[nm]={cnt:0,status:d.status};a[nm].cnt++;return a},{})).map(([nm,v])=>({nm,...v})).sort((a,b)=>b.cnt-a.cnt) : []
-
+  // BUG FIX #3: Filtrar médicos apenas quando unidade está selecionada — e por dados filtrados
+  const docsFalta  = unidFilt ? Object.entries(faltasList.filter(d=>d.nm_local===unidFilt).reduce((a,d)=>{const nm=d.nm_medico||'—';a[nm]=(a[nm]||0)+1;return a},{})).map(([nm,cnt])=>({nm,cnt})).sort((a,b)=>b.cnt-a.cnt) : []
+  const docsAtraso = unidFilt ? Object.entries(atrasosList.filter(d=>d.nm_local===unidFilt).reduce((a,d)=>{const nm=d.nm_medico||'—';if(!a[nm])a[nm]={cnt:0,status:d.status};a[nm].cnt++;return a},{})).map(([nm,v])=>({nm,...v})).sort((a,b)=>b.cnt-a.cnt) : []
   if(!rows.length)return(<div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',height:'60vh',gap:14}}><div style={{fontSize:44}}>⏱️</div><div style={{fontSize:18,fontWeight:700,color:C.text}}>Nenhum dado de espera</div><div style={{fontSize:13,color:C.muted}}>Use o botão para carregar uma planilha</div></div>)
 
   const horasDispFim=horaFilt==='TODAS'?[]:horasDisp.filter(h=>h>parseInt(horaFilt))
@@ -893,10 +904,40 @@ function TabEspera({rows}){
           {unidFilt&&(<div style={{display:'flex',alignItems:'center',gap:10,marginBottom:12,padding:'8px 12px',background:'rgba(245,158,11,0.08)',border:'0.5px solid rgba(245,158,11,0.25)',borderRadius:9}}><div style={{width:6,height:6,borderRadius:'50%',background:C.amber,flexShrink:0}}/><span style={{fontSize:11,color:C.amber,flex:1,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>Filtrando: {unidFilt}</span><button onClick={()=>setUnidFilt('')} style={{background:'transparent',border:'none',color:C.muted,cursor:'pointer',fontSize:12}}>✕</button></div>)}
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:16}}>
             <div>
-              <div style={{fontSize:13,fontWeight:700,color:C.text}}>Feed de Esperas por Hora</div>
+              <div style={{display:'flex',alignItems:'center',gap:8}}>
+                <div style={{fontSize:13,fontWeight:700,color:C.text}}>Feed de Esperas por Hora</div>
+                <span style={{fontSize:11,fontWeight:700,padding:'2px 8px',borderRadius:10,background:'rgba(245,158,11,0.15)',color:C.amber,border:'0.5px solid rgba(245,158,11,0.3)'}}>{feedListFiltered.length} espera{feedListFiltered.length!==1?'s':''}</span>
+              </div>
               <div style={{fontSize:10.5,color:C.muted,marginTop:3}}>TEMPO_DE_ESPERA · hora via HR_REGISTRO_ESPERA · {unidFilt?'clique ✕ para limpar':'clique na unidade para filtrar'}</div>
+              <div style={{display:'flex',gap:12,marginTop:8}}>
+                {[{label:'Moderada 15–30min',color:'#F59E0B'},{label:'Grave 31–89min',color:'#F97316'},{label:'Crítica ≥90min',color:'#F43F5E'}].map(k=>(
+                  <div key={k.label} style={{display:'flex',alignItems:'center',gap:5}}>
+                    <div style={{width:8,height:8,borderRadius:'50%',background:k.color}}/>
+                    <span style={{fontSize:9,color:C.muted}}>{k.label}</span>
+                  </div>
+                ))}
+              </div>
             </div>
-            <div style={{display:'flex',alignItems:'center',gap:6,flexShrink:0}}>
+            <div style={{display:'flex',alignItems:'center',gap:8,flexShrink:0,flexWrap:'wrap'}}>
+              {/* Filtro de Severidade */}
+              <div style={{display:'flex',alignItems:'center',gap:6,background:'rgba(255,255,255,0.03)',border:'0.5px solid rgba(255,255,255,0.08)',borderRadius:8,padding:'4px 10px'}}>
+                <span style={{fontSize:10,color:C.muted,fontWeight:600}}>Exibir:</span>
+                {[{key:'MOD',label:'Mod',color:'#F59E0B'},{key:'GRV',label:'Grv',color:'#F97316'},{key:'CRIT',label:'Crt',color:'#F43F5E'}].map(s=>{
+                  const sel=sevFilt.includes(s.key)
+                  return(
+                    <button key={s.key} onClick={()=>setSevFilt(prev=>prev.includes(s.key)?prev.filter(x=>x!==s.key):[...prev,s.key])} style={{
+                      display:'flex',alignItems:'center',gap:4,padding:'3px 8px',borderRadius:6,border:'none',
+                      background:sel?s.color+'20':'transparent',cursor:'pointer',transition:'all .15s'
+                    }}>
+                      <div style={{width:12,height:12,borderRadius:3,border:`1.5px solid ${s.color}`,background:sel?s.color:'transparent',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+                        {sel&&<span style={{color:'#0A0D16',fontSize:9,fontWeight:900}}>✓</span>}
+                      </div>
+                      <span style={{fontSize:10,fontWeight:600,color:sel?s.color:C.muted}}>{s.label}</span>
+                    </button>
+                  )
+                })}
+              </div>
+              {/* Filtro de Hora */}
               <select value={horaFilt} onChange={e=>{setHoraFilt(e.target.value);setHoraFiltFim('TODAS');setUnidFilt('')}} style={{background:'rgba(255,255,255,0.05)',border:'0.5px solid rgba(245,158,11,0.2)',borderRadius:8,color:C.text,fontSize:11,padding:'5px 8px',outline:'none',cursor:'pointer'}}>
                 <option value="TODAS">Todas</option>
                 {horasDisp.map(h=><option key={h} value={h}>{String(h).padStart(2,'0')}:00</option>)}
@@ -904,11 +945,11 @@ function TabEspera({rows}){
               {horaFilt!=='TODAS'&&(<><span style={{fontSize:11,color:C.muted}}>→</span><select value={horaFiltFim} onChange={e=>setHoraFiltFim(e.target.value)} style={{background:'rgba(255,255,255,0.05)',border:'0.5px solid rgba(245,158,11,0.2)',borderRadius:8,color:C.text,fontSize:11,padding:'5px 8px',outline:'none',cursor:'pointer'}}><option value="TODAS">{String(horaFilt).padStart(2,'0')}:00 só</option>{horasDispFim.map(h=><option key={h} value={h}>{String(h).padStart(2,'0')}:00</option>)}</select></>)}
             </div>
           </div>
-          {feedList.length===0?(<div style={{textAlign:'center',padding:'32px 0',color:C.muted,fontSize:12}}>Sem esperas ≥ 15min no período/filtro selecionado.</div>):(
-            <div style={{display:'flex',flexDirection:'column',gap:5,maxHeight:440,overflowY:'auto'}}>
-              {feedList.map((item,i)=>{
-                const cls=clsEspera(item.maxTempo),isCrit=item.maxTempo>=90,isGrv=item.maxTempo>=31&&item.maxTempo<90,isSel=unidFilt===item.nm_local
-                return(<div key={i} onClick={()=>setUnidFilt(isSel?'':item.nm_local)} style={{display:'flex',alignItems:'center',gap:12,padding:'10px 14px',borderRadius:10,cursor:'pointer',background:isSel?`${cls.color}18`:isCrit?'rgba(244,63,94,0.06)':isGrv?'rgba(249,115,22,0.04)':'rgba(255,255,255,0.02)',border:isSel?`1px solid ${cls.color}55`:`0.5px solid ${i<3?cls.border:'rgba(255,255,255,0.05)'}`,transition:'all .15s'}} onMouseEnter={e=>{if(!isSel)e.currentTarget.style.background=cls.bg}} onMouseLeave={e=>{if(!isSel)e.currentTarget.style.background=isCrit?'rgba(244,63,94,0.06)':isGrv?'rgba(249,115,22,0.04)':'rgba(255,255,255,0.02)'}}>
+          {feedListFiltered.length===0?(<div style={{textAlign:'center',padding:'32px 0',color:C.muted,fontSize:12}}>Sem esperas ≥ 15min no período/filtro selecionado.</div>):(
+            <div style={{display:'flex',flexDirection:'column',gap:5,maxHeight:600,overflowY:'auto'}}>
+              {feedListFiltered.map((item,i)=>{
+                const cls=clsEspera(item.maxTempo),isCrit=item.maxTempo>=90,isGrv=item.maxTempo>=31&&item.maxTempo<90,isMod=item.maxTempo>=15&&item.maxTempo<=30,isSel=unidFilt===item.nm_local
+                return(<div key={i} onClick={()=>setUnidFilt(isSel?'':item.nm_local)} style={{display:'flex',alignItems:'center',gap:12,padding:'10px 14px',borderRadius:10,cursor:'pointer',background:isSel?`${cls.color}18`:isCrit?'rgba(244,63,94,0.06)':isGrv?'rgba(249,115,22,0.04)':isMod?'rgba(245,158,11,0.03)':'rgba(255,255,255,0.02)',border:isSel?`1px solid ${cls.color}55`:`0.5px solid ${i<3?cls.border:'rgba(255,255,255,0.05)'}`,transition:'all .15s'}} onMouseEnter={e=>{if(!isSel)e.currentTarget.style.background=cls.bg}} onMouseLeave={e=>{if(!isSel)e.currentTarget.style.background=isCrit?'rgba(244,63,94,0.06)':isGrv?'rgba(249,115,22,0.04)':isMod?'rgba(245,158,11,0.03)':'rgba(255,255,255,0.02)'}}>
                   <div style={{width:8,height:8,borderRadius:'50%',background:cls.color,flexShrink:0,boxShadow:isCrit?`0 0 8px ${cls.color}`:'none'}}/>
                   <div style={{fontFamily:'monospace',fontSize:13,fontWeight:700,color:C.sub,flexShrink:0,minWidth:44}}>{item.horaStr}</div>
                   <div style={{flex:1,minWidth:0}}><div style={{fontSize:12,fontWeight:600,color:C.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.nm_local}</div><div style={{fontSize:10,color:C.muted,marginTop:2}}>{[item.cidade,item.uf].filter(Boolean).join(' · ')}</div></div>
@@ -1210,13 +1251,43 @@ export default function Home(){
     try{
       setStoreMsg('Lendo planilha…')
       const buf=await file.arrayBuffer()
-      const wb=XLSX.read(buf,{type:'buffer'})
+      const wb=XLSX.read(buf,{type:'buffer',cellDates:true})
       const ws=wb.Sheets['PONTOS']||wb.Sheets[wb.SheetNames[0]]
-      const json=XLSX.utils.sheet_to_json(ws,{range:3,defval:''})
-      setStoreMsg(`${json.length.toLocaleString('pt-BR')} linhas — limpando banco…`)
-      const delRes=await fetch('/api/save',{method:'DELETE'})
-      if(!delRes.ok){setStoreMsg('⚠ Erro ao limpar banco');setStoring(false);return}
+      const json=XLSX.utils.sheet_to_json(ws,{range:3,defval:'',raw:false,dateNF:'yyyy-mm-dd'})
+      
+      // Converter datas do Excel para formato ISO
+      json.forEach(row=>{
+        // Converter DATA_AGENDA
+        if(row.DATA_AGENDA){
+          const val=row.DATA_AGENDA
+          if(typeof val==='number'||/^\d+$/.test(String(val))){
+            const d=new Date((parseFloat(val)-25569)*86400*1000)
+            row.DATA_AGENDA=d.toISOString().slice(0,10)
+          }else if(String(val).includes(' ')){
+            row.DATA_AGENDA=String(val).split(' ')[0]
+          }
+        }
+        // Converter DT_REGISTRO (usado para filtros de período)
+        if(row.DT_REGISTRO){
+          const val=row.DT_REGISTRO
+          if(typeof val==='number'||/^\d+$/.test(String(val))){
+            const d=new Date((parseFloat(val)-25569)*86400*1000)
+            row.DT_REGISTRO=d.toISOString().slice(0,10)
+          }else if(String(val).includes(' ')){
+            row.DT_REGISTRO=String(val).split(' ')[0]
+          }
+          // Copiar para minúscula (PostgreSQL normaliza para minúscula)
+          row.dt_registro=row.DT_REGISTRO
+        }
+        // Normalizar data_agenda também
+        if(row.DATA_AGENDA){
+          row.data_agenda=row.DATA_AGENDA
+        }
+      })
+      
+      setStoreMsg(`${json.length.toLocaleString('pt-BR')} linhas — salvando (sem duplicatas)…`)
       const CHUNK=500
+      // Salva via API (agora SEM o DELETE, apenas acumula)
       for(let i=0;i<json.length;i+=CHUNK){setStoreMsg(`Agendas… ${Math.min(i+CHUNK,json.length).toLocaleString('pt-BR')}/${json.length.toLocaleString('pt-BR')}`);await fetch('/api/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows:json.slice(i,i+CHUNK),ts,table:'agendas'})})}
       for(let i=0;i<json.length;i+=CHUNK){setStoreMsg(`Espera… ${Math.min(i+CHUNK,json.length).toLocaleString('pt-BR')}/${json.length.toLocaleString('pt-BR')}`);await fetch('/api/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows:json.slice(i,i+CHUNK),ts,table:'espera'})})}
       setStoreMsg('Recarregando…')
@@ -1231,7 +1302,10 @@ export default function Home(){
   const handleClear=async()=>{
     if(!confirm('Apagar TODOS os dados do banco?'))return
     setStoring(true);setStoreMsg('Apagando…')
-    await fetch('/api/save',{method:'DELETE'})
+    try{
+      await fetch(`${SB_URL}/rest/v1/agendas?id=gte.0`,{method:'DELETE',headers:SBH})
+      await fetch(`${SB_URL}/rest/v1/espera?id=gte.0`,{method:'DELETE',headers:SBH})
+    }catch(e){console.error(e)}
     setAgendas([]);setEspera([]);setStorageInfo({agendas:0,espera:0});setTimestamp('');setStoreMsg('');setStoring(false)
   }
 
