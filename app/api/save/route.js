@@ -15,8 +15,7 @@ function serialToDate(v) {
   if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)) return v
   const n = Number(v)
   if (isNaN(n) || n < 1) return null
-  const offsetDays = n > 60 ? 25568 : 25569
-  const d = new Date(Math.round((n - offsetDays) * 86400 * 1000) + 43200000)
+  const d = new Date(Math.round((n - 25569) * 86400 * 1000))
   if (isNaN(d.getTime())) return null
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`
 }
