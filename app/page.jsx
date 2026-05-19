@@ -1251,9 +1251,26 @@ export default function Home(){
     try{
       setStoreMsg('Lendo planilha…')
       const buf=await file.arrayBuffer()
-      const wb=XLSX.read(buf,{type:'buffer'})
+      const wb=XLSX.read(buf,{type:'buffer',cellDates:true})
       const ws=wb.Sheets['PONTOS']||wb.Sheets[wb.SheetNames[0]]
-      const json=XLSX.utils.sheet_to_json(ws,{range:3,defval:''})
+      const json=XLSX.utils.sheet_to_json(ws,{range:3,defval:'',raw:false,dateNF:'yyyy-mm-dd'})
+      
+      // Converter datas do Excel para formato ISO
+      json.forEach(row=>{
+        if(row.DATA_AGENDA){
+          const val=row.DATA_AGENDA
+          // Se for número do Excel (46146, 46147, etc)
+          if(typeof val==='number'||/^\d+$/.test(String(val))){
+            const d=new Date((parseFloat(val)-25569)*86400*1000)
+            row.DATA_AGENDA=d.toISOString().slice(0,10)
+          }
+          // Se for datetime "2026-05-19 00:00:00"
+          else if(String(val).includes(' ')){
+            row.DATA_AGENDA=String(val).split(' ')[0]
+          }
+        }
+      })
+      
       setStoreMsg(`${json.length.toLocaleString('pt-BR')} linhas — salvando (sem duplicatas)…`)
       const CHUNK=500
       // Salva via API (agora SEM o DELETE, apenas acumula)
