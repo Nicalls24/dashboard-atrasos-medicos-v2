@@ -16,7 +16,6 @@ const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZ
 const SBH={'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json'}
 
 const fmtMin=m=>{if(m==null)return'—';const abs=Math.round(Math.abs(m)),s=m<0?'-':'';if(abs<60)return`${s}${abs}min`;return`${s}${Math.floor(abs/60)}h${abs%60>0?` ${abs%60}m`:''}`}
-const fmtDate=s=>{if(!s)return'—';const[y,mo,d]=String(s).split('-');return`${d}/${mo}/${y}`}
 const buildFilter=(allDates,periodo,df,dt)=>{
   if(!allDates.length)return()=>true
   const s=[...allDates].sort(),max=s[s.length-1]
@@ -31,13 +30,14 @@ const buildFilter=(allDates,periodo,df,dt)=>{
   return()=>true
 }
 const STATUS_CFG={
-  'OK':{label:'OK',color:'#10B981',glow:'rgba(16,185,129,0.2)'},
-  'ATRASO':{label:'Atraso 31–45min',color:'#F59E0B',glow:'rgba(245,158,11,0.2)'},
-  'ATRASO CRÍTICO':{label:'Atraso Crítico',color:'#F97316',glow:'rgba(249,115,22,0.2)'},
-  'ATRASO GRAVE':{label:'Atraso Grave',color:'#F43F5E',glow:'rgba(244,63,94,0.2)'},
-  'Falta Médica':{label:'Médico Faltou',color:'#3B82F6',glow:'rgba(59,130,246,0.2)'},
-  'SEM PONTO':{label:'Sem Ponto',color:'#64748B',glow:'rgba(100,116,139,0.2)'},
+  'OK':{label:'OK',color:'#10B981'},
+  'ATRASO':{label:'Atraso 31–45min',color:'#F59E0B'},
+  'ATRASO CRÍTICO':{label:'Atraso Crítico',color:'#F97316'},
+  'ATRASO GRAVE':{label:'Atraso Grave',color:'#F43F5E'},
+  'Falta Médica':{label:'Médico Faltou',color:'#3B82F6'},
+  'SEM PONTO':{label:'Sem Ponto',color:'#64748B'},
 }
+const STATUS_ORDER=['ATRASO CRÍTICO','ATRASO GRAVE','Falta Médica','ATRASO','SEM PONTO','OK']
 const getStatusCfg=s=>{
   if(!s)return STATUS_CFG['OK'];if(STATUS_CFG[s])return STATUS_CFG[s]
   const u=s.toUpperCase()
@@ -73,7 +73,7 @@ function PeriodoBar({value,onChange,allDates,dateFrom,dateTo,onDateFrom,onDateTo
   )
 }
 
-function SearchBar({search,onSearch,uf,onUf,ufs,extra,showClear,onClear}){
+function SearchBar({search,onSearch,uf,onUf,ufs,showClear,onClear}){
   return(
     <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center',marginBottom:18}}>
       <div style={{position:'relative',flex:1,minWidth:220}}>
@@ -84,12 +84,12 @@ function SearchBar({search,onSearch,uf,onUf,ufs,extra,showClear,onClear}){
         <option value="TODOS">Todos os Estados</option>
         {ufs.map(u=><option key={u}>{u}</option>)}
       </select>
-      {extra}
       {showClear&&<button onClick={onClear} style={{background:'rgba(244,63,94,0.08)',border:`1px solid rgba(244,63,94,0.25)`,borderRadius:10,color:C.rose,fontSize:12,padding:'8px 12px',cursor:'pointer'}}>✕ Limpar</button>}
     </div>
   )
 }
 
+// ─── TAB AGENDAS ────────────────────────────────────────────────────────────
 function TabAgendas({rows}){
   const[periodo,setPeriodo]=useState('MES')
   const[dateFrom,setDateFrom]=useState('')
@@ -100,10 +100,39 @@ function TabAgendas({rows}){
   const[unidFilt,setUnidFilt]=useState('')
   const[trendView,setTrendView]=useState('real')
   const[aTip,setATip]=useState(null)
+  // ── Justificativas por médico ──────────────────────────────────────────────
+  const[allAgJust,setAllAgJust]=useState([])   // [{data_ref,nm_local,nm_medico,hora,texto}]
+  const[agJustDraft,setAgJustDraft]=useState({}) // {key: texto}
+  const[agJustSaving,setAgJustSaving]=useState(false)
+  const[justExpanded,setJustExpanded]=useState({}) // {key: bool}
 
   const allDates=useMemo(()=>[...new Set(rows.map(r=>r.dt_registro||r.data_agenda).filter(Boolean))].sort(),[rows])
   const periodoFn=useMemo(()=>buildFilter(allDates,periodo,dateFrom,dateTo),[allDates,periodo,dateFrom,dateTo])
   const ufs=useMemo(()=>[...new Set(rows.map(r=>r.uf).filter(Boolean))].sort(),[rows])
+  const dataRefAg=useMemo(()=>allDates.length?allDates[allDates.length-1]:'',[allDates])
+
+  // Carrega justificativas
+  useEffect(()=>{
+    fetch(`${SB_URL}/rest/v1/justif_agenda?select=data_ref,nm_local,nm_medico,hora,texto`,{headers:SBH})
+      .then(r=>r.json()).then(d=>{if(Array.isArray(d))setAllAgJust(d)}).catch(()=>{})
+  },[rows])
+
+  const saveAgJust=useCallback(async(nm_medico,hora,texto)=>{
+    if(!unidFilt||!dataRefAg)return
+    setAgJustSaving(true)
+    const horaVal=hora!=null?parseInt(hora):-1
+    try{
+      await fetch(`${SB_URL}/rest/v1/justif_agenda`,{
+        method:'POST',headers:{...SBH,'Prefer':'resolution=merge-duplicates'},
+        body:JSON.stringify({data_ref:dataRefAg,nm_local:unidFilt,nm_medico,hora:horaVal,texto})
+      })
+      setAllAgJust(prev=>{
+        const sem=prev.filter(j=>!(j.data_ref===dataRefAg&&j.nm_local===unidFilt&&j.nm_medico===nm_medico&&j.hora===horaVal))
+        return[...sem,{data_ref:dataRefAg,nm_local:unidFilt,nm_medico,hora:horaVal,texto}]
+      })
+    }catch(e){console.error(e)}
+    setAgJustSaving(false)
+  },[unidFilt,dataRefAg])
 
   const horasDisp=useMemo(()=>{
     const set=new Set()
@@ -114,9 +143,7 @@ function TabAgendas({rows}){
     return[...set].sort((a,b)=>a-b)
   },[rows,periodoFn])
 
-  const toggleHora=useCallback(h=>{
-    setHorasFilt(prev=>prev.includes(h)?prev.filter(x=>x!==h):[...prev,h])
-  },[])
+  const toggleHora=useCallback(h=>setHorasFilt(prev=>prev.includes(h)?prev.filter(x=>x!==h):[...prev,h]),[])
 
   const filtered=useMemo(()=>{
     let r=rows.filter(d=>periodoFn(d.dt_registro||d.data_agenda))
@@ -127,13 +154,40 @@ function TabAgendas({rows}){
     return r
   },[rows,periodoFn,ufFilt,search,horasFilt,unidFilt])
 
+  // Mapa médico → hora (primeira hora encontrada nos dados filtrados)
+  const docHoraMap=useMemo(()=>{
+    const map={}
+    filtered.forEach(d=>{
+      if(!d.nm_medico)return
+      const h=d.hr_inicio_min
+      if(h!=null&&map[d.nm_medico]==null)map[d.nm_medico]=Math.floor(h/60)
+    })
+    return map
+  },[filtered])
+
+  // Justificativas filtradas por período + unidade + hora
+  const justAgFiltered=useMemo(()=>{
+    let j=allAgJust.filter(x=>periodoFn(x.data_ref))
+    if(unidFilt)j=j.filter(x=>x.nm_local===unidFilt)
+    if(horasFilt.length>0)j=j.filter(x=>x.hora===-1||horasFilt.includes(parseInt(x.hora)))
+    return j
+  },[allAgJust,periodoFn,unidFilt,horasFilt])
+
+  const docsJustSet=useMemo(()=>{
+    const s=new Set()
+    justAgFiltered.forEach(j=>{
+      const hora=j.hora===-1?null:j.hora
+      s.add(j.nm_medico+'::'+String(hora??'x'))
+    })
+    return s
+  },[justAgFiltered])
+
   const agStats=useMemo(()=>{
     const totalRows=filtered.length
     const totalCons=filtered.reduce((a,d)=>a+(d.qt_consulta||0),0)
     const totalEnc =filtered.reduce((a,d)=>a+(d.qt_encaixe ||0),0)
     const totalAg  =totalCons+totalEnc
 
-    // Médicos c/ problemas
     const faltaRows=filtered.filter(d=>String(d.atraso||'').toUpperCase()==='FALTA'||String(d.status||'').toLowerCase().includes('falta'))
     const critRows =filtered.filter(d=>String(d.atraso||'').toUpperCase()==='SIM'&&(String(d.status||'').toUpperCase().includes('CRÍTICO')||String(d.status||'').toUpperCase().includes('CRITICO')))
     const grvRows  =filtered.filter(d=>String(d.atraso||'').toUpperCase()==='SIM'&&String(d.status||'').toUpperCase().includes('GRAVE'))
@@ -148,7 +202,6 @@ function TabAgendas({rows}){
     const grvAg  =grvRows  .reduce((a,d)=>a+(d.qt_consulta||0)+(d.qt_encaixe||0),0)
     const atrAg  =atrRows  .reduce((a,d)=>a+(d.qt_consulta||0)+(d.qt_encaixe||0),0)
 
-    // Feed de unidades (por QT_CONSULTA + QT_ENCAIXE)
     const uMap={}
     filtered.forEach(d=>{
       const u=d.nm_local||'?'
@@ -161,7 +214,6 @@ function TabAgendas({rows}){
     })
     const feedList=Object.values(uMap).sort((a,b)=>b.total-a.total).slice(0,20)
 
-    // Top especialidades
     const sMap={}
     filtered.forEach(d=>{
       const s=d.ds_especialidade||'Não informado'
@@ -172,7 +224,6 @@ function TabAgendas({rows}){
     })
     const topSpec=Object.values(sMap).sort((a,b)=>b.total-a.total).slice(0,8)
 
-    // Por data — tendência
     const dMap={}
     filtered.forEach(d=>{
       const dt=d.data_agenda;if(!dt)return
@@ -185,58 +236,99 @@ function TabAgendas({rows}){
     })
     const byDate=Object.values(dMap).map(d=>({...d,delivered:Math.max(0,d.agendas-d.impactadas)})).sort((a,b)=>a.date.localeCompare(b.date))
 
-    // Projeção
     const addDay=(ds,n)=>{const d=new Date(ds+'T00:00:00Z');d.setUTCDate(d.getUTCDate()+n);return d.toISOString().slice(0,10)}
     const pts=byDate.slice(-3)
     const slopeAg =pts.length>=2?(pts[pts.length-1].agendas   -pts[0].agendas   )/(pts.length-1):0
     const slopeImp=pts.length>=2?(pts[pts.length-1].impactadas-pts[0].impactadas)/(pts.length-1):0
     const slopeDel=pts.length>=2?(pts[pts.length-1].delivered -pts[0].delivered )/(pts.length-1):0
     const lastDate=byDate[byDate.length-1]?.date||''
-    const lastAg  =byDate[byDate.length-1]?.agendas   ||0
-    const lastImp =byDate[byDate.length-1]?.impactadas||0
-    const lastDel =byDate[byDate.length-1]?.delivered ||0
     const projData=lastDate?Array.from({length:5},(_,i)=>({
       date:addDay(lastDate,i+1),
-      agendas:   Math.max(0,Math.round(lastAg  +slopeAg *(i+1))),
-      impactadas:Math.max(0,Math.round(lastImp +slopeImp*(i+1))),
-      delivered: Math.max(0,Math.round(lastDel +slopeDel*(i+1))),
+      agendas:   Math.max(0,Math.round((byDate[byDate.length-1]?.agendas||0)   +slopeAg *(i+1))),
+      impactadas:Math.max(0,Math.round((byDate[byDate.length-1]?.impactadas||0)+slopeImp*(i+1))),
+      delivered: Math.max(0,Math.round((byDate[byDate.length-1]?.delivered||0) +slopeDel*(i+1))),
       consultas:0,encaixe:0,isProj:true,
     })):[]
 
-    // Lista de médicos quando unidade filtrada
-    const docsFaltaU =unidFilt?faltaDocs.map(nm=>({nm,tipo:'FALTA', status:'Falta Médica'})):[]
-    const docsCritU  =unidFilt?critDocs .map(nm=>({nm,tipo:'CRIT',  status:'Atraso Crítico'})):[]
-    const docsGrvU   =unidFilt?grvDocs  .map(nm=>({nm,tipo:'GRV',   status:'Atraso Grave'})):[]
-    const docsAtrU   =unidFilt?atrDocs  .map(nm=>({nm,tipo:'ATR',   status:'Atraso 31–45min'})):[]
+    // Listas de médicos quando unidade filtrada — baseado em filtered (já com unidFilt aplicado)
+    const docsFaltaU=unidFilt?faltaDocs.map(nm=>({nm,status:'Falta Médica',color:'#3B82F6'})):[]
+    const docsCritU =unidFilt?critDocs .map(nm=>({nm,status:'Atraso Crítico',color:C.rose})):[]
+    const docsGrvU  =unidFilt?grvDocs  .map(nm=>({nm,status:'Atraso Grave',color:C.orange})):[]
+    const docsAtrU  =unidFilt?atrDocs  .map(nm=>({nm,status:'Atraso 31–45min',color:C.amber})):[]
+
+    // Sem Ponto / Com Ponto (col O = hr_entrada, col U = status)
+    const rowsPonto=rows.filter(d=>periodoFn(d.dt_registro||d.data_agenda))
+      .filter(d=>ufFilt==='TODOS'||d.uf===ufFilt)
+      .filter(d=>{if(!search)return true;const q=search.toLowerCase();return[d.nm_local,d.nm_medico,d.ds_especialidade,d.cidade].some(v=>String(v||'').toLowerCase().includes(q))})
+      .filter(d=>{if(horasFilt.length===0)return true;const h=d.hr_inicio_min;if(h==null)return false;return horasFilt.includes(Math.floor(h/60))})
+    const semPontoMap={}
+    const comPontoList=[]
+    rowsPonto.forEach(d=>{
+      const hrE=d.hr_entrada
+      const temPonto=hrE!==undefined&&hrE!==null&&String(hrE).trim()!==''
+      const h=d.hr_inicio_min!=null?Math.floor(d.hr_inicio_min/60):null
+      if(h==null||h<0||h>23)return
+      if(!temPonto){
+        if(!semPontoMap[h])semPontoMap[h]=new Set()
+        if(d.nm_medico)semPontoMap[h].add(d.nm_medico)
+      }else{
+        comPontoList.push({nm:d.nm_medico||'—',nm_local:d.nm_local||'—',status:d.status||'OK',hora:h})
+      }
+    })
+    const semPontoHoras=Object.entries(semPontoMap).map(([h,nms])=>({hora:parseInt(h),medicos:[...nms]})).sort((a,b)=>a.hora-b.hora)
+    const semPontoTotal=[...new Set(Object.values(semPontoMap).flatMap(s=>[...s]))].length
+    const comPontoByStatus={}
+    comPontoList.forEach(d=>{
+      const s=d.status||'OK';if(!comPontoByStatus[s])comPontoByStatus[s]=[];comPontoByStatus[s].push(d)
+    })
 
     return{totalRows,totalCons,totalEnc,totalAg,
       faltaDocs,critDocs,grvDocs,atrDocs,faltaAg,critAg,grvAg,atrAg,
       feedList,topSpec,byDate,projData,
-      docsFaltaU,docsCritU,docsGrvU,docsAtrU}
-  },[filtered,unidFilt])
+      docsFaltaU,docsCritU,docsGrvU,docsAtrU,
+      semPontoHoras,semPontoTotal,comPontoByStatus}
+  },[filtered,unidFilt,rows,periodoFn,ufFilt,search,horasFilt])
 
   const{totalRows,totalCons,totalEnc,totalAg,
     faltaDocs,critDocs,grvDocs,atrDocs,faltaAg,critAg,grvAg,atrAg,
     feedList,topSpec,byDate,projData,
-    docsFaltaU,docsCritU,docsGrvU,docsAtrU}=agStats
+    docsFaltaU,docsCritU,docsGrvU,docsAtrU,
+    semPontoHoras,semPontoTotal,comPontoByStatus}=agStats
 
-  // Trend vars
+  // Lista unificada de médicos com problema (para justificativas)
+  const allDocsList=useMemo(()=>[
+    ...docsFaltaU,
+    ...docsAtrU,
+    ...docsGrvU,
+    ...docsCritU,
+  ],[docsFaltaU,docsAtrU,docsGrvU,docsCritU])
+
+  const justPct=useMemo(()=>{
+    if(!allDocsList.length)return 0
+    const just=allDocsList.filter(d=>{
+      const hora=docHoraMap[d.nm]
+      return docsJustSet.has(d.nm+'::'+String(hora??'x'))
+    }).length
+    return Math.min(Math.round(just/allDocsList.length*100),100)
+  },[allDocsList,docsJustSet,docHoraMap])
+
+  const justColor=justPct>=80?C.emerald:justPct>=50?C.amber:C.rose
+
+  // Trend chart vars
   const trendAllData=trendView==='real'?byDate:[...byDate,...projData]
-  const tMaxAg  =Math.max(...trendAllData.map(d=>d.agendas||0),1)
+  const tMaxAg=Math.max(...trendAllData.map(d=>d.agendas||0),1)
   const tRealCnt=byDate.length
   const tLastReal=byDate[byDate.length-1]
   const tLastDel=tLastReal?.delivered||0
   const tTotalGap=byDate.reduce((a,d)=>a+(d.impactadas||0),0)
-  const tVarAg=byDate.length>=2?((tLastReal?.agendas||0)-(byDate[0]?.agendas||0)):0
   const tAvgAg=byDate.length>0?Math.round(byDate.reduce((a,d)=>a+(d.agendas||0),0)/byDate.length):0
   const tSlope=projData.length>0?((projData[0]?.agendas||0)-(tLastReal?.agendas||0)):0
 
-  // SVG chart vars
   const AVW=800,AVH=150,APL=52,APR=20,APT=10,APB=32
   const ACW=AVW-APL-APR,ACH=AVH-APT-APB
   const aNT=trendAllData.length
   const atxP=i=>aNT<=1?APL+ACW/2:APL+i/(aNT-1)*ACW
-  const atyS=(v)=>APT+ACH-(tMaxAg>0?(v||0)/tMaxAg*ACH:0)
+  const atyS=v=>APT+ACH-(tMaxAg>0?(v||0)/tMaxAg*ACH:0)
   const atSmooth=(data,key,scFn,off)=>{
     if(!data.length)return''
     const pts=data.map((d,i)=>({x:parseFloat(atxP(i+(off||0)).toFixed(2)),y:parseFloat(scFn(d[key]||0).toFixed(2))}))
@@ -250,6 +342,8 @@ function TabAgendas({rows}){
     }
     return p
   }
+  const maxFeed=feedList[0]?.total||1
+  const cardBase={background:'rgba(255,255,255,0.025)',border:'1px solid rgba(255,255,255,0.06)',borderRadius:14,padding:'18px 20px'}
 
   if(!rows.length)return(
     <div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',height:'60vh',gap:14}}>
@@ -259,11 +353,9 @@ function TabAgendas({rows}){
     </div>
   )
 
-  const maxFeed=feedList[0]?.total||1
-
   return(
     <div>
-      {/* PERÍODO + BUSCA */}
+      {/* PERÍODO */}
       <div style={{marginBottom:14}}>
         <PeriodoBar value={periodo} onChange={p=>{setPeriodo(p);setDateFrom('');setDateTo('');setUnidFilt('');setHorasFilt([])}}
           allDates={allDates} dateFrom={dateFrom} dateTo={dateTo} onDateFrom={setDateFrom} onDateTo={setDateTo}
@@ -273,71 +365,43 @@ function TabAgendas({rows}){
         showClear={ufFilt!=='TODOS'||!!search||horasFilt.length>0||!!unidFilt}
         onClear={()=>{setUfFilt('TODOS');setSearch('');setHorasFilt([]);setUnidFilt('')}}/>
 
-      {/* FILTRO DE HORA — MÚLTIPLA SELEÇÃO */}
+      {/* FILTRO DE HORA */}
       {horasDisp.length>0&&(
         <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',marginBottom:14,padding:'10px 14px',background:'rgba(255,255,255,0.02)',border:'0.5px solid rgba(255,255,255,0.06)',borderRadius:10}}>
           <span style={{fontSize:9,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.09em',flexShrink:0}}>Hora início</span>
           {horasDisp.map(h=>{
             const sel=horasFilt.includes(h)
-            return(
-              <button key={h} onClick={()=>toggleHora(h)} style={{
-                padding:'4px 10px',borderRadius:6,border:sel?'none':'0.5px solid rgba(255,255,255,0.08)',
-                background:sel?C.amber:'rgba(255,255,255,0.03)',
-                color:sel?'#1a0800':C.muted,fontSize:10,fontWeight:sel?700:400,cursor:'pointer',transition:'all .15s',
-              }}>{String(h).padStart(2,'0')}h</button>
-            )
+            return <button key={h} onClick={()=>toggleHora(h)} style={{padding:'4px 10px',borderRadius:6,border:sel?'none':'0.5px solid rgba(255,255,255,0.08)',background:sel?C.amber:'rgba(255,255,255,0.03)',color:sel?'#1a0800':C.muted,fontSize:10,fontWeight:sel?700:400,cursor:'pointer',transition:'all .15s'}}>{String(h).padStart(2,'0')}h</button>
           })}
-          {horasFilt.length>0&&(
-            <button onClick={()=>setHorasFilt([])} style={{padding:'4px 10px',borderRadius:6,border:'0.5px solid rgba(244,63,94,0.3)',background:'rgba(244,63,94,0.07)',color:C.rose,fontSize:10,cursor:'pointer'}}>✕ Limpar</button>
-          )}
+          {horasFilt.length>0&&<button onClick={()=>setHorasFilt([])} style={{padding:'4px 10px',borderRadius:6,border:'0.5px solid rgba(244,63,94,0.3)',background:'rgba(244,63,94,0.07)',color:C.rose,fontSize:10,cursor:'pointer'}}>✕ Limpar</button>}
         </div>
       )}
 
-      {/* KPIs — Barra horizontal Opção A */}
+      {/* KPIs */}
       <div style={{display:'flex',background:'rgba(255,255,255,0.025)',border:'0.5px solid rgba(255,255,255,0.07)',borderRadius:12,overflow:'hidden',marginBottom:14}}>
-
-        {/* Bloco 1 — Total + consultas/encaixe */}
         <div style={{flex:'1.4',padding:'16px 20px',borderRight:'0.5px solid rgba(255,255,255,0.07)'}}>
           <div style={{fontSize:9,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.1em',marginBottom:5}}>Total Agendas</div>
           <div style={{fontSize:30,fontWeight:800,color:C.amber,letterSpacing:'-1px',lineHeight:1}}>{totalAg.toLocaleString('pt-BR')}</div>
           <div style={{display:'flex',gap:14,marginTop:8}}>
-            <div style={{display:'flex',alignItems:'center',gap:5}}>
-              <div style={{width:18,height:3,background:C.teal,borderRadius:2}}/>
-              <span style={{fontSize:9,color:C.muted}}>{totalCons.toLocaleString('pt-BR')} consultas</span>
-            </div>
-            <div style={{display:'flex',alignItems:'center',gap:5}}>
-              <div style={{width:18,height:3,background:C.violet,borderRadius:2}}/>
-              <span style={{fontSize:9,color:C.muted}}>{totalEnc.toLocaleString('pt-BR')} encaixe</span>
-            </div>
+            <div style={{display:'flex',alignItems:'center',gap:5}}><div style={{width:18,height:3,background:C.teal,borderRadius:2}}/><span style={{fontSize:9,color:C.muted}}>{totalCons.toLocaleString('pt-BR')} consultas</span></div>
+            <div style={{display:'flex',alignItems:'center',gap:5}}><div style={{width:18,height:3,background:C.violet,borderRadius:2}}/><span style={{fontSize:9,color:C.muted}}>{totalEnc.toLocaleString('pt-BR')} encaixe</span></div>
           </div>
           <div style={{marginTop:8,height:4,background:'rgba(255,255,255,0.04)',borderRadius:2,overflow:'hidden',display:'flex',gap:1}}>
-            <div style={{flex:totalCons,background:C.teal,opacity:.7}}/>
-            <div style={{flex:totalEnc,background:C.violet,opacity:.7}}/>
+            <div style={{flex:totalCons,background:C.teal,opacity:.7}}/><div style={{flex:totalEnc,background:C.violet,opacity:.7}}/>
           </div>
         </div>
-
-        {/* Bloco 2 — Afetadas */}
         <div style={{flex:'1',padding:'16px 20px',borderRight:'0.5px solid rgba(255,255,255,0.07)'}}>
           <div style={{fontSize:9,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.1em',marginBottom:5}}>Afetadas por problema</div>
           <div style={{fontSize:30,fontWeight:800,color:C.rose,letterSpacing:'-1px',lineHeight:1}}>{(faltaAg+atrAg+critAg+grvAg).toLocaleString('pt-BR')}</div>
-          <div style={{fontSize:9,color:C.muted,marginTop:6}}>
-            {totalAg>0?((faltaAg+atrAg+critAg+grvAg)/totalAg*100).toFixed(1):'0'}% das agendas totais
-          </div>
+          <div style={{fontSize:9,color:C.muted,marginTop:6}}>{totalAg>0?((faltaAg+atrAg+critAg+grvAg)/totalAg*100).toFixed(1):'0'}% das agendas totais</div>
           <div style={{marginTop:8,height:4,background:'rgba(255,255,255,0.04)',borderRadius:2,overflow:'hidden'}}>
             <div style={{width:(totalAg>0?((faltaAg+atrAg+critAg+grvAg)/totalAg*100).toFixed(1):0)+'%',height:'100%',background:C.rose,opacity:.7,borderRadius:2}}/>
           </div>
         </div>
-
-        {/* Bloco 3 — 4 mini cards por tipo */}
         <div style={{flex:'2.4',padding:'16px 20px'}}>
           <div style={{fontSize:9,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.1em',marginBottom:10}}>{(faltaDocs.length+atrDocs.length+critDocs.length+grvDocs.length).toLocaleString('pt-BR')} médicos com ocorrências</div>
           <div style={{display:'flex',gap:8}}>
-            {[
-              {label:'Falta',docs:faltaDocs.length,color:'#3B82F6'},
-              {label:'Atraso',docs:atrDocs.length,color:C.amber},
-              {label:'Grave',docs:grvDocs.length,color:C.orange},
-              {label:'Crítico',docs:critDocs.length,color:C.rose},
-            ].map(k=>(
+            {[{label:'Falta',docs:faltaDocs.length,color:'#3B82F6'},{label:'Atraso',docs:atrDocs.length,color:C.amber},{label:'Grave',docs:grvDocs.length,color:C.orange},{label:'Crítico',docs:critDocs.length,color:C.rose}].map(k=>(
               <div key={k.label} style={{flex:1,background:k.color+'10',border:'0.5px solid '+k.color+'28',borderRadius:8,padding:'8px 10px'}}>
                 <div style={{fontSize:8,color:k.color,opacity:.8,marginBottom:4,fontWeight:700}}>{k.label}</div>
                 <div style={{fontSize:20,fontWeight:800,color:k.color}}>{k.docs}</div>
@@ -347,11 +411,10 @@ function TabAgendas({rows}){
         </div>
       </div>
 
-      {/* FEED DE UNIDADES + PAINEL MÉDICOS */}
-      <div style={{display:'grid',gridTemplateColumns:'1fr 340px',gap:14,marginBottom:14}}>
-
+      {/* FEED + PAINEL MÉDICOS COM JUSTIFICATIVAS */}
+      <div style={{display:'grid',gridTemplateColumns:'1fr 360px',gap:14,marginBottom:14}}>
         {/* Feed de unidades */}
-        <div style={{background:'rgba(255,255,255,0.025)',border:'1px solid rgba(255,255,255,0.06)',borderRadius:14,padding:'18px 20px'}}>
+        <div style={cardBase}>
           {unidFilt&&(
             <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:12,padding:'8px 12px',background:'rgba(245,158,11,0.08)',border:'0.5px solid rgba(245,158,11,0.25)',borderRadius:9}}>
               <div style={{width:6,height:6,borderRadius:'50%',background:C.amber,flexShrink:0}}/>
@@ -365,26 +428,20 @@ function TabAgendas({rows}){
               <div style={{fontSize:10,color:C.muted,marginTop:2}}>{unidFilt?'clique ✕ para limpar':'clique na unidade para filtrar e ver médicos'}</div>
             </div>
           </div>
-          <div style={{display:'flex',flexDirection:'column',gap:5,maxHeight:400,overflowY:'auto'}}>
+          <div style={{display:'flex',flexDirection:'column',gap:5,maxHeight:440,overflowY:'auto'}}>
             {feedList.slice(0,15).map((item,i)=>{
               const isSel=unidFilt===item.nm_local
               const pct=maxFeed>0?(item.total/maxFeed)*100:0
               const hasProb=item.faltas>0||item.atrasos>0
               return(
-                <div key={i} onClick={()=>setUnidFilt(isSel?'':item.nm_local)} style={{
-                  display:'flex',alignItems:'center',gap:10,padding:'9px 12px',borderRadius:10,cursor:'pointer',
-                  background:isSel?'rgba(245,158,11,0.1)':'rgba(255,255,255,0.02)',
-                  border:isSel?'1px solid rgba(245,158,11,0.4)':'0.5px solid rgba(255,255,255,0.05)',transition:'all .15s',
-                }}
+                <div key={i} onClick={()=>setUnidFilt(isSel?'':item.nm_local)} style={{display:'flex',alignItems:'center',gap:10,padding:'9px 12px',borderRadius:10,cursor:'pointer',background:isSel?'rgba(245,158,11,0.1)':'rgba(255,255,255,0.02)',border:isSel?'1px solid rgba(245,158,11,0.4)':'0.5px solid rgba(255,255,255,0.05)',transition:'all .15s'}}
                   onMouseEnter={e=>{if(!isSel)e.currentTarget.style.background='rgba(255,255,255,0.04)'}}
                   onMouseLeave={e=>{if(!isSel)e.currentTarget.style.background='rgba(255,255,255,0.02)'}}>
                   <div style={{fontSize:10,fontWeight:800,color:i<3?C.amber:C.muted,minWidth:22,flexShrink:0}}>#{i+1}</div>
                   <div style={{flex:1,minWidth:0}}>
                     <div style={{fontSize:11,fontWeight:600,color:C.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.nm_local}</div>
-                    <div style={{display:'flex',gap:8,marginTop:4}}>
-                      <div style={{height:3,background:'rgba(255,255,255,0.06)',borderRadius:2,flex:1,overflow:'hidden'}}>
-                        <div style={{height:'100%',borderRadius:2,background:i<3?C.amber:C.teal,width:pct+'%',transition:'width .5s'}}/>
-                      </div>
+                    <div style={{height:3,background:'rgba(255,255,255,0.06)',borderRadius:2,marginTop:4,overflow:'hidden'}}>
+                      <div style={{height:'100%',borderRadius:2,background:i<3?C.amber:C.teal,width:pct+'%',transition:'width .5s'}}/>
                     </div>
                   </div>
                   <div style={{textAlign:'right',flexShrink:0}}>
@@ -403,60 +460,221 @@ function TabAgendas({rows}){
           </div>
         </div>
 
-        {/* Painel médicos + lista quando unidade filtrada */}
-        <div style={{background:'rgba(255,255,255,0.025)',border:'1px solid rgba(255,255,255,0.06)',borderRadius:14,padding:'18px 20px'}}>
-          <div style={{fontSize:13,fontWeight:700,color:C.text,marginBottom:14}}>Médicos — Impacto nas Agendas</div>
+        {/* PAINEL DIREITO — Médicos + Justificativas */}
+        <div style={{...cardBase,display:'flex',flexDirection:'column',gap:0}}>
+          {/* Header do painel */}
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14}}>
+            <div style={{fontSize:13,fontWeight:700,color:C.text}}>Médicos — Impacto nas Agendas</div>
+            {unidFilt&&allDocsList.length>0&&(
+              <div style={{display:'flex',alignItems:'center',gap:6}}>
+                <div style={{width:56,height:5,background:'rgba(255,255,255,0.06)',borderRadius:3,overflow:'hidden',position:'relative'}}>
+                  <div style={{height:'100%',width:`${justPct}%`,background:justColor,borderRadius:3,transition:'width .5s'}}/>
+                  <div style={{position:'absolute',top:0,bottom:0,left:'80%',width:1.5,background:'rgba(255,255,255,0.3)'}}/>
+                </div>
+                <span style={{fontSize:12,fontWeight:800,color:justColor}}>{justPct}%</span>
+                <span style={{fontSize:9,color:C.muted}}>just.</span>
+              </div>
+            )}
+          </div>
 
-          {/* 3 blocos: falta, crítico, grave */}
-          <div style={{display:'flex',flexDirection:'column',gap:10,marginBottom:12}}>
+          {/* 4 mini cards de tipo */}
+          <div style={{display:'flex',flexDirection:'column',gap:8,marginBottom:14}}>
             {[
               {label:'Falta Médica',   docs:faltaDocs.length,ag:faltaAg,color:'#3B82F6'},
               {label:'Atraso 31–45min',docs:atrDocs.length,  ag:atrAg,  color:C.amber},
               {label:'Atraso Grave',   docs:grvDocs.length,  ag:grvAg,  color:C.orange},
               {label:'Atraso Crítico', docs:critDocs.length, ag:critAg, color:C.rose},
-            ].map((k,i)=>(
-              <div key={k.label} style={{background:k.color+'0A',border:'0.5px solid '+k.color+'20',borderRadius:8,padding:'10px 12px'}}>
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
-                  <div style={{display:'flex',alignItems:'center',gap:6}}>
-                    <div style={{width:6,height:6,borderRadius:'50%',background:k.color}}/>
-                    <span style={{fontSize:10,color:C.sub,fontWeight:600}}>{k.label}</span>
-                  </div>
+            ].map(k=>(
+              <div key={k.label} style={{background:k.color+'0A',border:'0.5px solid '+k.color+'20',borderRadius:8,padding:'9px 12px'}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:5}}>
+                  <div style={{display:'flex',alignItems:'center',gap:6}}><div style={{width:6,height:6,borderRadius:'50%',background:k.color}}/><span style={{fontSize:10,color:C.sub,fontWeight:600}}>{k.label}</span></div>
                   <span style={{fontSize:11,fontWeight:700,color:k.color}}>{k.docs} médico{k.docs!==1?'s':''}</span>
                 </div>
-                <div style={{display:'flex',justifyContent:'space-between',fontSize:9,color:C.muted}}>
-                  <span>Agendas afetadas</span>
-                  <span style={{fontWeight:700,color:k.color}}>{k.ag.toLocaleString('pt-BR')}</span>
-                </div>
+                <div style={{display:'flex',justifyContent:'space-between',fontSize:9,color:C.muted}}><span>Agendas afetadas</span><span style={{fontWeight:700,color:k.color}}>{k.ag.toLocaleString('pt-BR')}</span></div>
               </div>
             ))}
           </div>
 
-          {/* Lista de médicos quando unidade filtrada */}
-          {unidFilt&&(docsFaltaU.length>0||docsCritU.length>0||docsGrvU.length>0)&&(
-            <div style={{paddingTop:12,borderTop:'0.5px solid rgba(255,255,255,0.06)'}}>
-              <div style={{fontSize:9,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.09em',marginBottom:8}}>Médicos · {unidFilt}</div>
-              <div style={{display:'flex',flexDirection:'column',gap:5,maxHeight:180,overflowY:'auto'}}>
-                {[...docsFaltaU.map(d=>({...d,color:'#3B82F6'})),...docsAtrU.map(d=>({...d,color:C.amber})),...docsGrvU.map(d=>({...d,color:C.orange})),...docsCritU.map(d=>({...d,color:C.rose}))].map((d,i)=>(
-                  <div key={i} style={{display:'flex',alignItems:'center',gap:8,padding:'4px 0'}}>
-                    <div style={{width:6,height:6,borderRadius:'50%',background:d.color,flexShrink:0}}/>
-                    <span style={{fontSize:10,color:C.text,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{d.nm}</span>
-                    <span style={{fontSize:8,fontWeight:700,padding:'2px 7px',borderRadius:20,background:d.color+'18',color:d.color,border:'0.5px solid '+d.color+'30',flexShrink:0,whiteSpace:'nowrap'}}>{d.status}</span>
+          {/* ── LISTA COM JUSTIFICATIVAS (quando unidade selecionada) ── */}
+          {unidFilt&&allDocsList.length>0&&(
+            <div style={{borderTop:'0.5px solid rgba(255,255,255,0.07)',paddingTop:14,flex:1}}>
+              {/* Cabeçalho da seção */}
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
+                <div>
+                  <div style={{fontSize:10,fontWeight:700,color:C.amber,textTransform:'uppercase',letterSpacing:'.08em'}}>Justificativas · {unidFilt}</div>
+                  <div style={{fontSize:9,color:C.muted,marginTop:2}}>
+                    {horasFilt.length>0?`Filtrando ${horasFilt.map(h=>String(h).padStart(2,'0')+'h').join(', ')}`:' Clique em ✎ para justificar'}
                   </div>
-                ))}
+                </div>
+                <div style={{textAlign:'right'}}>
+                  <div style={{fontSize:9,color:C.muted}}>{allDocsList.filter(d=>docsJustSet.has(d.nm+'::'+String((docHoraMap[d.nm]??'x')))).length}/{allDocsList.length} just.</div>
+                </div>
+              </div>
+
+              {/* Lista de médicos com input de justificativa */}
+              <div style={{display:'flex',flexDirection:'column',gap:5,maxHeight:320,overflowY:'auto'}}>
+                {allDocsList.map((doc,i)=>{
+                  const hora=docHoraMap[doc.nm]
+                  const key=doc.nm+'::'+String(hora??'x')
+                  const isJust=docsJustSet.has(key)
+                  const savedJust=justAgFiltered.find(j=>j.nm_medico===doc.nm&&(hora==null||parseInt(j.hora)===hora||j.hora===-1))
+                  const draftText=agJustDraft[key]!==undefined?agJustDraft[key]:(savedJust?.texto||'')
+                  const isExpanded=justExpanded[key]||false
+                  const cfg=getStatusCfg(doc.status)
+
+                  return(
+                    <div key={i} style={{borderRadius:8,background:isJust?`${cfg.color}08`:'rgba(255,255,255,0.02)',border:`0.5px solid ${isJust?cfg.color+'22':'rgba(255,255,255,0.06)'}`,overflow:'hidden',transition:'background .2s'}}>
+                      {/* Linha do médico */}
+                      <div style={{display:'flex',alignItems:'center',gap:7,padding:'8px 10px'}}>
+                        {hora!=null&&<span style={{fontFamily:'monospace',fontSize:9,fontWeight:700,color:C.muted,flexShrink:0,minWidth:28}}>{String(hora).padStart(2,'0')}h</span>}
+                        <div style={{width:5,height:5,borderRadius:'50%',background:cfg.color,flexShrink:0}}/>
+                        <span style={{fontSize:10.5,fontWeight:600,color:C.text,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{doc.nm}</span>
+                        <span style={{fontSize:8,fontWeight:700,padding:'1px 6px',borderRadius:10,background:`${cfg.color}15`,color:cfg.color,border:`0.5px solid ${cfg.color}28`,flexShrink:0,whiteSpace:'nowrap'}}>{cfg.label}</span>
+                        {isJust&&<span style={{fontSize:9,color:C.emerald,flexShrink:0}}>✓</span>}
+                        <button
+                          onClick={()=>setJustExpanded(prev=>({...prev,[key]:!isExpanded}))}
+                          title={isExpanded?'Fechar':'Justificar'}
+                          style={{background:isExpanded?'rgba(245,158,11,0.15)':'rgba(255,255,255,0.05)',border:`0.5px solid ${isExpanded?'rgba(245,158,11,0.4)':'rgba(255,255,255,0.1)'}`,borderRadius:5,color:isExpanded?C.amber:C.muted,fontSize:11,cursor:'pointer',flexShrink:0,padding:'2px 6px',lineHeight:1,transition:'all .15s'}}>
+                          {isExpanded?'▲':'✎'}
+                        </button>
+                      </div>
+
+                      {/* Justificativa salva (preview, sem abrir) */}
+                      {!isExpanded&&isJust&&savedJust?.texto&&(
+                        <div style={{padding:'0 10px 7px 10px',fontSize:9,color:C.muted,fontStyle:'italic',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',borderTop:`0.5px solid ${cfg.color}12`}}>
+                          ↳ {savedJust.texto}
+                        </div>
+                      )}
+
+                      {/* Input expandido */}
+                      {isExpanded&&(
+                        <div style={{padding:'8px 10px 10px',borderTop:`0.5px solid ${cfg.color}18`,background:`${cfg.color}04`}}>
+                          <textarea
+                            value={draftText}
+                            onChange={e=>setAgJustDraft(prev=>({...prev,[key]:e.target.value}))}
+                            placeholder={`Justificativa para ${doc.nm}${hora!=null?' às '+String(hora).padStart(2,'0')+'h':''}…`}
+                            rows={2}
+                            style={{width:'100%',background:'rgba(255,255,255,0.05)',border:`0.5px solid ${cfg.color}35`,borderRadius:7,color:C.text,fontSize:10.5,padding:'7px 9px',outline:'none',resize:'vertical',fontFamily:"'DM Sans','Segoe UI',sans-serif",lineHeight:1.5}}
+                          />
+                          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginTop:6}}>
+                            <span style={{fontSize:9,color:C.muted}}>{draftText.length} caracteres</span>
+                            <div style={{display:'flex',gap:5}}>
+                              {agJustDraft[key]!==undefined&&(
+                                <button onClick={()=>setAgJustDraft(prev=>{const n={...prev};delete n[key];return n})}
+                                  style={{background:'transparent',border:'0.5px solid rgba(255,255,255,0.1)',borderRadius:5,color:C.muted,fontSize:9,padding:'3px 8px',cursor:'pointer'}}>
+                                  Descartar
+                                </button>
+                              )}
+                              <button
+                                onClick={async()=>{
+                                  if(!draftText.trim())return
+                                  await saveAgJust(doc.nm,hora,draftText)
+                                  setJustExpanded(prev=>({...prev,[key]:false}))
+                                  setAgJustDraft(prev=>{const n={...prev};delete n[key];return n})
+                                }}
+                                disabled={agJustSaving||!draftText.trim()}
+                                style={{background:draftText.trim()?`${cfg.color}20`:'rgba(255,255,255,0.04)',border:`0.5px solid ${draftText.trim()?cfg.color+'45':'rgba(255,255,255,0.1)'}`,borderRadius:5,color:draftText.trim()?cfg.color:C.muted,fontSize:10,fontWeight:700,padding:'3px 12px',cursor:draftText.trim()?'pointer':'default',transition:'all .15s'}}>
+                                {agJustSaving?'Salvando…':'Salvar'}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
               </div>
             </div>
           )}
-          {unidFilt&&docsFaltaU.length===0&&docsCritU.length===0&&docsGrvU.length===0&&docsAtrU.length===0&&(
+
+          {/* Estado vazio */}
+          {unidFilt&&allDocsList.length===0&&(
             <div style={{paddingTop:12,borderTop:'0.5px solid rgba(255,255,255,0.06)',fontSize:11,color:C.muted,textAlign:'center'}}>Sem ocorrências nesta unidade.</div>
           )}
-          {!unidFilt&&faltaDocs.length===0&&critDocs.length===0&&grvDocs.length===0&&(
-            <div style={{fontSize:11,color:C.muted,textAlign:'center',padding:'16px 0'}}>Nenhum problema registrado.</div>
+          {!unidFilt&&(
+            <div style={{fontSize:11,color:C.muted,textAlign:'center',padding:'8px 0'}}>Selecione uma unidade para ver médicos e justificar.</div>
+          )}
+        </div>
+      </div>
+
+      {/* SEM PONTO | COM PONTO */}
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14,marginBottom:14}}>
+        <div style={cardBase}>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:4}}>
+            <div style={{display:'flex',alignItems:'center',gap:8}}>
+              <div style={{width:8,height:8,borderRadius:'50%',background:C.rose,boxShadow:`0 0 6px ${C.rose}`}}/>
+              <span style={{fontSize:13,fontWeight:700,color:C.text}}>Sem Ponto · Não chegaram</span>
+            </div>
+            <span style={{fontSize:11,fontWeight:800,padding:'3px 10px',borderRadius:10,background:'rgba(244,63,94,0.15)',color:C.rose,border:'0.5px solid rgba(244,63,94,0.3)'}}>{semPontoTotal} méd.</span>
+          </div>
+          <div style={{fontSize:10,color:C.muted,marginBottom:14}}>HR_ENTRADA vazia · por hora de início{horasFilt.length>0?` · ${horasFilt.map(h=>String(h).padStart(2,'0')+'h').join(', ')}`:' · todas as horas'}</div>
+          {semPontoHoras.length===0?(
+            <div style={{textAlign:'center',padding:'24px 0',color:C.muted,fontSize:12}}>
+              {horasFilt.length>0?'Sem médicos sem ponto nas horas selecionadas.':'Todos os médicos bateram ponto. ✓'}
+            </div>
+          ):(
+            <div style={{display:'flex',flexDirection:'column',gap:8,maxHeight:300,overflowY:'auto'}}>
+              {semPontoHoras.map(({hora,medicos})=>(
+                <div key={hora} style={{borderRadius:10,background:'rgba(244,63,94,0.05)',border:'0.5px solid rgba(244,63,94,0.18)',overflow:'hidden'}}>
+                  <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'7px 12px',borderBottom:'0.5px solid rgba(244,63,94,0.12)'}}>
+                    <span style={{fontFamily:'monospace',fontSize:13,fontWeight:800,color:C.rose}}>{String(hora).padStart(2,'0')}:00</span>
+                    <span style={{fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:8,background:'rgba(244,63,94,0.15)',color:C.rose}}>{medicos.length} ausente{medicos.length!==1?'s':''}</span>
+                  </div>
+                  <div style={{padding:'7px 12px',display:'flex',flexDirection:'column',gap:3}}>
+                    {medicos.map((nm,i)=>(
+                      <div key={i} style={{display:'flex',alignItems:'center',gap:6}}>
+                        <div style={{width:4,height:4,borderRadius:'50%',background:C.rose,opacity:.7,flexShrink:0}}/>
+                        <span style={{fontSize:10.5,color:C.sub,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{nm}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div style={cardBase}>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:4}}>
+            <div style={{display:'flex',alignItems:'center',gap:8}}>
+              <div style={{width:8,height:8,borderRadius:'50%',background:C.emerald,boxShadow:`0 0 6px ${C.emerald}`}}/>
+              <span style={{fontSize:13,fontWeight:700,color:C.text}}>Com Ponto · Status</span>
+            </div>
+          </div>
+          <div style={{fontSize:10,color:C.muted,marginBottom:14}}>HR_ENTRADA preenchida · coluna STATUS{horasFilt.length>0?` · ${horasFilt.map(h=>String(h).padStart(2,'0')+'h').join(', ')}`:' · todas as horas'}</div>
+          {Object.keys(comPontoByStatus).length===0?(
+            <div style={{textAlign:'center',padding:'24px 0',color:C.muted,fontSize:12}}>Nenhum médico com ponto registrado.</div>
+          ):(
+            <div style={{display:'flex',flexDirection:'column',gap:8,maxHeight:300,overflowY:'auto'}}>
+              {Object.entries(comPontoByStatus)
+                .sort(([a],[b])=>(STATUS_ORDER.indexOf(a)===-1?99:STATUS_ORDER.indexOf(a))-(STATUS_ORDER.indexOf(b)===-1?99:STATUS_ORDER.indexOf(b)))
+                .map(([status,docs])=>{
+                  const cfg=getStatusCfg(status)
+                  return(
+                    <div key={status} style={{borderRadius:10,background:`${cfg.color}08`,border:`0.5px solid ${cfg.color}22`,overflow:'hidden'}}>
+                      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'7px 12px',borderBottom:`0.5px solid ${cfg.color}15`}}>
+                        <div style={{display:'flex',alignItems:'center',gap:6}}><div style={{width:6,height:6,borderRadius:'50%',background:cfg.color}}/><span style={{fontSize:11,fontWeight:700,color:cfg.color}}>{cfg.label}</span></div>
+                        <span style={{fontSize:11,fontWeight:800,color:cfg.color}}>{docs.length}</span>
+                      </div>
+                      <div style={{padding:'7px 12px',display:'flex',flexDirection:'column',gap:3,maxHeight:100,overflowY:'auto'}}>
+                        {docs.map((d,i)=>(
+                          <div key={i} style={{display:'flex',alignItems:'center',gap:7}}>
+                            <div style={{width:4,height:4,borderRadius:'50%',background:cfg.color,opacity:.7,flexShrink:0}}/>
+                            <span style={{fontSize:10.5,color:C.sub,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{d.nm}</span>
+                            <span style={{fontSize:8,color:C.muted,fontFamily:'monospace',flexShrink:0}}>{String(d.hora).padStart(2,'0')}h</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )
+                })}
+            </div>
           )}
         </div>
       </div>
 
       {/* GRÁFICO TENDÊNCIA */}
-      <div style={{background:'rgba(255,255,255,0.025)',border:'1px solid rgba(255,255,255,0.06)',borderRadius:14,padding:'20px 24px',marginBottom:14}}>
+      <div style={{...cardBase,marginBottom:14}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:14}}>
           <div>
             <div style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.12em'}}>{'TENDÊNCIA DE AGENDAS · '+tRealCnt+' DIA'+(tRealCnt!==1?'S':'')}</div>
@@ -468,137 +686,61 @@ function TabAgendas({rows}){
             ))}
           </div>
         </div>
-
         <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:10,marginBottom:16}}>
           {(trendView==='real'?[
-            {label:'Agendadas hoje',   value:tLastReal?tLastReal.agendas.toLocaleString('pt-BR'):'—',   color:C.amber},
-            {label:'Entregues hoje',   value:tLastReal?tLastDel.toLocaleString('pt-BR'):'—',            color:C.emerald},
-            {label:'Gap acumulado',    value:tTotalGap.toLocaleString('pt-BR'),                         color:C.rose,   },
-            {label:'Média diária',     value:tAvgAg.toLocaleString('pt-BR'),                            color:C.teal},
+            {label:'Agendadas hoje',value:tLastReal?tLastReal.agendas.toLocaleString('pt-BR'):'—',color:C.amber},
+            {label:'Entregues hoje',value:tLastReal?tLastDel.toLocaleString('pt-BR'):'—',color:C.emerald},
+            {label:'Gap acumulado',value:tTotalGap.toLocaleString('pt-BR'),color:C.rose},
+            {label:'Média diária',value:tAvgAg.toLocaleString('pt-BR'),color:C.teal},
           ]:[
-            {label:'Proj. agendadas amanhã', value:projData[0]?projData[0].agendas.toLocaleString('pt-BR'):'—',   color:C.amber},
-            {label:'Proj. entregues amanhã', value:projData[0]?projData[0].delivered.toLocaleString('pt-BR'):'—', color:C.emerald},
-            {label:'Tendência diária',       value:tSlope>=0?'+'+tSlope:String(tSlope),                          color:tSlope>0?C.rose:tSlope<0?C.emerald:C.muted},
-            {label:'Gap proj. +5 dias',      value:projData[4]?projData[4].impactadas.toLocaleString('pt-BR'):'—',color:C.rose},
-          ]).map((k,i)=>(
+            {label:'Proj. agendadas amanhã',value:projData[0]?projData[0].agendas.toLocaleString('pt-BR'):'—',color:C.amber},
+            {label:'Proj. entregues amanhã',value:projData[0]?projData[0].delivered.toLocaleString('pt-BR'):'—',color:C.emerald},
+            {label:'Tendência diária',value:tSlope>=0?'+'+tSlope:String(tSlope),color:tSlope>0?C.rose:tSlope<0?C.emerald:C.muted},
+            {label:'Gap proj. +5 dias',value:projData[4]?projData[4].impactadas.toLocaleString('pt-BR'):'—',color:C.rose},
+          ]).map(k=>(
             <div key={k.label} style={{background:k.color+'12',border:'0.5px solid '+k.color+'20',borderRadius:9,padding:'10px 14px'}}>
               <div style={{fontSize:9,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.07em',marginBottom:5}}>{k.label}</div>
               <div style={{fontSize:20,fontWeight:800,color:k.color}}>{k.value}</div>
             </div>
           ))}
         </div>
-
-        {/* Tooltip */}
         {aTip&&(
           <div style={{position:'fixed',left:aTip.x+14,top:aTip.y-70,zIndex:999,pointerEvents:'none',background:'#0A0D16',border:'1px solid rgba(245,158,11,0.3)',borderRadius:10,padding:'10px 14px',boxShadow:'0 8px 32px rgba(0,0,0,0.6)',minWidth:150}}>
-            <div style={{fontSize:10,fontWeight:700,color:C.muted,marginBottom:6,textTransform:'uppercase',letterSpacing:'.08em'}}>{aTip.date?aTip.date.slice(5).replace('-','/'):'—'} {aTip.isProj?'· Projeção':''}</div>
+            <div style={{fontSize:10,fontWeight:700,color:C.muted,marginBottom:6,textTransform:'uppercase'}}>{aTip.date?aTip.date.slice(5).replace('-','/'):'—'}{aTip.isProj?' · Projeção':''}</div>
             <div style={{display:'flex',flexDirection:'column',gap:4}}>
-              <div style={{display:'flex',justifyContent:'space-between',gap:14,paddingBottom:4,borderBottom:'0.5px solid rgba(255,255,255,0.07)'}}>
-                <span style={{fontSize:11,color:C.muted}}>Total agendas</span>
-                <span style={{fontSize:13,fontWeight:800,color:C.amber}}>{(aTip.agendas||0).toLocaleString('pt-BR')}</span>
-              </div>
-              {!aTip.isProj&&(<>
-                <div style={{display:'flex',justifyContent:'space-between',gap:14}}>
-                  <span style={{fontSize:10,color:C.teal}}>Consultas</span>
-                  <span style={{fontSize:11,fontWeight:700,color:C.teal}}>{(aTip.consultas||0).toLocaleString('pt-BR')}</span>
-                </div>
-                <div style={{display:'flex',justifyContent:'space-between',gap:14}}>
-                  <span style={{fontSize:10,color:C.violet}}>Encaixe</span>
-                  <span style={{fontSize:11,fontWeight:700,color:C.violet}}>{(aTip.encaixe||0).toLocaleString('pt-BR')}</span>
-                </div>
-              </>)}
-              <div style={{display:'flex',justifyContent:'space-between',gap:14,paddingTop:4,borderTop:'0.5px solid rgba(255,255,255,0.07)'}}>
-                <span style={{fontSize:11,color:C.rose}}>Afetadas</span>
-                <span style={{fontSize:12,fontWeight:800,color:C.rose}}>{(aTip.impactadas||0).toLocaleString('pt-BR')}</span>
-              </div>
+              <div style={{display:'flex',justifyContent:'space-between',gap:14,paddingBottom:4,borderBottom:'0.5px solid rgba(255,255,255,0.07)'}}><span style={{fontSize:11,color:C.muted}}>Total agendas</span><span style={{fontSize:13,fontWeight:800,color:C.amber}}>{(aTip.agendas||0).toLocaleString('pt-BR')}</span></div>
+              {!aTip.isProj&&<><div style={{display:'flex',justifyContent:'space-between',gap:14}}><span style={{fontSize:10,color:C.teal}}>Consultas</span><span style={{fontSize:11,fontWeight:700,color:C.teal}}>{(aTip.consultas||0).toLocaleString('pt-BR')}</span></div><div style={{display:'flex',justifyContent:'space-between',gap:14}}><span style={{fontSize:10,color:C.violet}}>Encaixe</span><span style={{fontSize:11,fontWeight:700,color:C.violet}}>{(aTip.encaixe||0).toLocaleString('pt-BR')}</span></div></>}
+              <div style={{display:'flex',justifyContent:'space-between',gap:14,paddingTop:4,borderTop:'0.5px solid rgba(255,255,255,0.07)'}}><span style={{fontSize:11,color:C.rose}}>Afetadas</span><span style={{fontSize:12,fontWeight:800,color:C.rose}}>{(aTip.impactadas||0).toLocaleString('pt-BR')}</span></div>
             </div>
           </div>
         )}
-
         {trendAllData.length===0?(
           <div style={{textAlign:'center',padding:'32px 0',color:C.muted,fontSize:12}}>Sem dados suficientes.</div>
         ):(
-          <div style={{width:'100%',position:'relative'}}>
+          <div style={{width:'100%'}}>
             <div style={{display:'flex',gap:14,marginBottom:10,flexWrap:'wrap'}}>
-              {[{color:'#F59E0B',label:'Agendadas'},{color:'#10B981',label:'Entregues (agendadas − problemas)'},{color:'rgba(244,63,94,0.4)',label:'Gap — perdas por falta/atraso',box:true}].concat(trendView==='proj'?[{color:'#F59E0B',label:'Projeção agendadas',dashed:true},{color:'#10B981',label:'Projeção entregues',dashed:true}]:[]).map(l=>(
-                <div key={l.label} style={{display:'flex',alignItems:'center',gap:5}}>
-                  <div style={{width:14,height:l.box?7:3,borderRadius:l.box?2:2,background:l.dashed?'transparent':l.color,border:l.dashed?'1.5px dashed '+l.color:'none',opacity:l.dashed?0.7:1}}/>
-                  <span style={{fontSize:10,color:C.muted}}>{l.label}</span>
-                </div>
+              {[{color:'#F59E0B',label:'Agendadas'},{color:'#10B981',label:'Entregues'},{color:'rgba(244,63,94,0.4)',label:'Gap',box:true}].concat(trendView==='proj'?[{color:'#F59E0B',label:'Proj. agendadas',dashed:true},{color:'#10B981',label:'Proj. entregues',dashed:true}]:[]).map(l=>(
+                <div key={l.label} style={{display:'flex',alignItems:'center',gap:5}}><div style={{width:14,height:l.box?7:3,borderRadius:2,background:l.dashed?'transparent':l.color,border:l.dashed?'1.5px dashed '+l.color:'none',opacity:l.dashed?.7:1}}/><span style={{fontSize:10,color:C.muted}}>{l.label}</span></div>
               ))}
             </div>
             <svg width="100%" viewBox={'0 0 '+AVW+' '+AVH} style={{display:'block',overflow:'visible',cursor:'crosshair'}}
-              onMouseMove={e=>{
-                if(!trendAllData.length)return
-                const rc=e.currentTarget.getBoundingClientRect()
-                const mx=(e.clientX-rc.left)/rc.width*AVW
-                let near=null,minD=Infinity
-                trendAllData.forEach((d,i)=>{const xv=aNT<=1?APL+ACW/2:APL+i/(aNT-1)*ACW;const dist=Math.abs(mx-xv);if(dist<minD){minD=dist;near={...d,idx:i}}})
-                if(near&&minD<(ACW/Math.max(aNT-1,1))*0.8)setATip({x:e.clientX,y:e.clientY,...near})
-                else setATip(null)
-              }}
+              onMouseMove={e=>{if(!trendAllData.length)return;const rc=e.currentTarget.getBoundingClientRect();const mx=(e.clientX-rc.left)/rc.width*AVW;let near=null,minD=Infinity;trendAllData.forEach((d,i)=>{const xv=aNT<=1?APL+ACW/2:APL+i/(aNT-1)*ACW;const dist=Math.abs(mx-xv);if(dist<minD){minD=dist;near={...d,idx:i}}});if(near&&minD<(ACW/Math.max(aNT-1,1))*.8)setATip({x:e.clientX,y:e.clientY,...near});else setATip(null)}}
               onMouseLeave={()=>setATip(null)}>
-
               <defs><clipPath id="aClip"><rect x={APL} y={APT-2} width={ACW} height={ACH+4}/></clipPath></defs>
-
-              {/* Y grid */}
-              {[0,Math.round(tMaxAg*0.33),Math.round(tMaxAg*0.66),tMaxAg].map((v,ti)=>(
-                <g key={ti}>
-                  <line x1={APL} y1={atyS(v)} x2={AVW-APR} y2={atyS(v)} stroke="rgba(255,255,255,0.05)" strokeWidth="0.5"/>
-                  <text x={APL-7} y={atyS(v)+4} textAnchor="end" fontSize="9" fill="#475569">{v>=1000?(v/1000).toFixed(0)+'k':v}</text>
-                </g>
-              ))}
-
-              {/* Separator real/proj */}
-              {trendView==='proj'&&tRealCnt>0&&aNT>tRealCnt&&(
-                <line x1={atxP(tRealCnt-1)} y1={APT} x2={atxP(tRealCnt-1)} y2={APT+ACH} stroke="rgba(245,158,11,0.22)" strokeWidth="1" strokeDasharray="4,3"/>
-              )}
-
+              {[0,Math.round(tMaxAg*.33),Math.round(tMaxAg*.66),tMaxAg].map((v,ti)=>(<g key={ti}><line x1={APL} y1={atyS(v)} x2={AVW-APR} y2={atyS(v)} stroke="rgba(255,255,255,0.05)" strokeWidth=".5"/><text x={APL-7} y={atyS(v)+4} textAnchor="end" fontSize="9" fill="#475569">{v>=1000?(v/1000).toFixed(0)+'k':v}</text></g>))}
+              {trendView==='proj'&&tRealCnt>0&&aNT>tRealCnt&&<line x1={atxP(tRealCnt-1)} y1={APT} x2={atxP(tRealCnt-1)} y2={APT+ACH} stroke="rgba(245,158,11,0.22)" strokeWidth="1" strokeDasharray="4,3"/>}
               <g clipPath="url(#aClip)">
-                {/* Gap fill between agendadas and entregues */}
-                {tRealCnt>=2&&(
-                  <path d={atSmooth(byDate,'agendas',atyS,0)+' '+[...byDate].reverse().map((d,i)=>'L'+atxP(tRealCnt-1-i).toFixed(1)+','+atyS(d.delivered||0).toFixed(1)).join(' ')+' Z'} fill="rgba(244,63,94,0.13)"/>
-                )}
-
-                {/* Linha entregues — emerald */}
-                {tRealCnt>=2&&(
-                  <path d={atSmooth(byDate,'delivered',atyS,0)} fill="none" stroke="#10B981" strokeWidth="2.5"/>
-                )}
-                {/* Linha agendadas — amber */}
-                {tRealCnt>=2&&(
-                  <path d={atSmooth(byDate,'agendas',atyS,0)} fill="none" stroke="#F59E0B" strokeWidth="2.5"/>
-                )}
-
-                {/* Proj gap fill */}
-                {trendView==='proj'&&projData.length>=2&&tRealCnt>=1&&(
-                  <path d={'M'+atxP(tRealCnt-1).toFixed(1)+','+atyS(tLastReal?.agendas||0).toFixed(1)+atSmooth(projData,'agendas',atyS,tRealCnt).slice(1)+' '+[...projData].reverse().map((d,i)=>'L'+atxP(tRealCnt+projData.length-1-i).toFixed(1)+','+atyS(d.delivered||0).toFixed(1)).join(' ')+' Z'} fill="rgba(244,63,94,0.07)"/>
-                )}
-                {/* Proj agendadas dashed */}
-                {trendView==='proj'&&projData.length>=1&&tRealCnt>=1&&(
-                  <path d={'M'+atxP(tRealCnt-1).toFixed(1)+','+atyS(tLastReal?.agendas||0).toFixed(1)+atSmooth(projData,'agendas',atyS,tRealCnt).slice(1)} fill="none" stroke="#F59E0B" strokeWidth="1.5" strokeOpacity={0.45} strokeDasharray="6,4"/>
-                )}
-                {/* Proj entregues dashed */}
-                {trendView==='proj'&&projData.length>=1&&tRealCnt>=1&&(
-                  <path d={'M'+atxP(tRealCnt-1).toFixed(1)+','+atyS(tLastReal?.delivered||0).toFixed(1)+atSmooth(projData,'delivered',atyS,tRealCnt).slice(1)} fill="none" stroke="#10B981" strokeWidth="1.5" strokeOpacity={0.4} strokeDasharray="5,4"/>
-                )}
+                {tRealCnt>=2&&<path d={atSmooth(byDate,'agendas',atyS,0)+' '+[...byDate].reverse().map((d,i)=>'L'+atxP(tRealCnt-1-i).toFixed(1)+','+atyS(d.delivered||0).toFixed(1)).join(' ')+' Z'} fill="rgba(244,63,94,0.13)"/>}
+                {tRealCnt>=2&&<path d={atSmooth(byDate,'delivered',atyS,0)} fill="none" stroke="#10B981" strokeWidth="2.5"/>}
+                {tRealCnt>=2&&<path d={atSmooth(byDate,'agendas',atyS,0)} fill="none" stroke="#F59E0B" strokeWidth="2.5"/>}
+                {trendView==='proj'&&projData.length>=1&&tRealCnt>=1&&<path d={'M'+atxP(tRealCnt-1).toFixed(1)+','+atyS(tLastReal?.agendas||0).toFixed(1)+atSmooth(projData,'agendas',atyS,tRealCnt).slice(1)} fill="none" stroke="#F59E0B" strokeWidth="1.5" strokeOpacity={.45} strokeDasharray="6,4"/>}
+                {trendView==='proj'&&projData.length>=1&&tRealCnt>=1&&<path d={'M'+atxP(tRealCnt-1).toFixed(1)+','+atyS(tLastReal?.delivered||0).toFixed(1)+atSmooth(projData,'delivered',atyS,tRealCnt).slice(1)} fill="none" stroke="#10B981" strokeWidth="1.5" strokeOpacity={.4} strokeDasharray="5,4"/>}
               </g>
-
-              {/* Dots agendadas */}
-              {byDate.map((d,i)=>(<circle key={'a'+i} cx={atxP(i)} cy={atyS(d.agendas||0)} r="4" fill="#F59E0B" stroke="#06080F" strokeWidth="1.5"/>))}
-              {/* Dots entregues */}
-              {byDate.map((d,i)=>(<circle key={'e'+i} cx={atxP(i)} cy={atyS(d.delivered||0)} r="4" fill="#10B981" stroke="#06080F" strokeWidth="1.5"/>))}
-              {/* Proj triangles */}
-              {trendView==='proj'&&projData.map((d,i)=>{
-                const cx=atxP(i+tRealCnt),cy=atyS(d.agendas||0)
-                return(<polygon key={'t'+i} points={cx.toFixed(1)+','+(cy-7).toFixed(1)+' '+(cx-5).toFixed(1)+','+(cy+4).toFixed(1)+' '+(cx+5).toFixed(1)+','+(cy+4).toFixed(1)} fill="#F59E0B" fillOpacity={0.5}/>)
-              })}
-              {/* Hover highlight */}
-              {aTip&&aTip.idx!=null&&(
-                <circle cx={aNT<=1?APL+ACW/2:APL+(aTip.idx)/(aNT-1)*ACW} cy={atyS(aTip.agendas||0)} r="7" fill="none" stroke="#F59E0B" strokeWidth="2" strokeOpacity={0.8}/>
-              )}
-              {/* X labels */}
-              {trendAllData.map((d,i)=>{const show=aNT<=10||i===0||i===aNT-1||i%Math.ceil(aNT/8)===0;return show?(<text key={'x'+i} x={atxP(i)} y={AVH-3} textAnchor="middle" fontSize="9" fill={d.isProj?'rgba(245,158,11,0.4)':'#334155'}>{d.date.slice(5).replace('-','/')}</text>):null})}
-              <line x1={APL} y1={APT+ACH} x2={AVW-APR} y2={APT+ACH} stroke="rgba(255,255,255,0.07)" strokeWidth="0.5"/>
+              {byDate.map((d,i)=><circle key={'a'+i} cx={atxP(i)} cy={atyS(d.agendas||0)} r="4" fill="#F59E0B" stroke="#06080F" strokeWidth="1.5"/>)}
+              {byDate.map((d,i)=><circle key={'e'+i} cx={atxP(i)} cy={atyS(d.delivered||0)} r="4" fill="#10B981" stroke="#06080F" strokeWidth="1.5"/>)}
+              {aTip&&aTip.idx!=null&&<circle cx={aNT<=1?APL+ACW/2:APL+(aTip.idx)/(aNT-1)*ACW} cy={atyS(aTip.agendas||0)} r="7" fill="none" stroke="#F59E0B" strokeWidth="2" strokeOpacity={.8}/>}
+              {trendAllData.map((d,i)=>{const show=aNT<=10||i===0||i===aNT-1||i%Math.ceil(aNT/8)===0;return show?<text key={'x'+i} x={atxP(i)} y={AVH-3} textAnchor="middle" fontSize="9" fill={d.isProj?'rgba(245,158,11,0.4)':'#334155'}>{d.date.slice(5).replace('-','/')}</text>:null})}
+              <line x1={APL} y1={APT+ACH} x2={AVW-APR} y2={APT+ACH} stroke="rgba(255,255,255,0.07)" strokeWidth=".5"/>
             </svg>
           </div>
         )}
@@ -606,50 +748,36 @@ function TabAgendas({rows}){
 
       {/* TOP UNIDADES + TOP ESPECIALIDADES */}
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
-        <div style={{background:'rgba(255,255,255,0.025)',border:'1px solid rgba(255,255,255,0.06)',borderRadius:14,padding:'18px 20px'}}>
+        <div style={cardBase}>
           <div style={{fontSize:11,fontWeight:700,color:C.sub,textTransform:'uppercase',letterSpacing:'.1em',marginBottom:14}}>🏥 Top Unidades por Agendas</div>
           {feedList.slice(0,8).map((u,i)=>{
             const pct=maxFeed>0?(u.total/maxFeed)*100:0
-            return(
-              <div key={u.nm_local} style={{marginBottom:10}}>
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4,gap:8}}>
-                  <div style={{display:'flex',alignItems:'center',gap:6,minWidth:0}}>
-                    <span style={{fontSize:9,fontWeight:800,color:i===0?C.amber:C.muted,minWidth:20,flexShrink:0}}>#{i+1}</span>
-                    <span style={{fontSize:11,color:C.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{u.nm_local}</span>
-                  </div>
-                  <span style={{fontSize:11,fontWeight:700,color:i<3?C.amber:C.teal,flexShrink:0}}>{u.total.toLocaleString('pt-BR')}</span>
-                </div>
-                <div style={{display:'flex',gap:1,height:5,borderRadius:3,overflow:'hidden',background:'rgba(255,255,255,0.04)'}}>
-                  <div style={{width:(u.consultas/Math.max(u.total,1)*pct)+'%',background:C.teal,transition:'width .5s'}}/>
-                  <div style={{width:(u.encaixe/Math.max(u.total,1)*pct)+'%',background:C.violet,transition:'width .5s'}}/>
-                </div>
+            return(<div key={u.nm_local} style={{marginBottom:10}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4,gap:8}}>
+                <div style={{display:'flex',alignItems:'center',gap:6,minWidth:0}}><span style={{fontSize:9,fontWeight:800,color:i===0?C.amber:C.muted,minWidth:20,flexShrink:0}}>#{i+1}</span><span style={{fontSize:11,color:C.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{u.nm_local}</span></div>
+                <span style={{fontSize:11,fontWeight:700,color:i<3?C.amber:C.teal,flexShrink:0}}>{u.total.toLocaleString('pt-BR')}</span>
               </div>
-            )
+              <div style={{display:'flex',gap:1,height:5,borderRadius:3,overflow:'hidden',background:'rgba(255,255,255,0.04)'}}>
+                <div style={{width:(u.consultas/Math.max(u.total,1)*pct)+'%',background:C.teal,transition:'width .5s'}}/><div style={{width:(u.encaixe/Math.max(u.total,1)*pct)+'%',background:C.violet,transition:'width .5s'}}/>
+              </div>
+            </div>)
           })}
           <div style={{display:'flex',gap:12,marginTop:8}}>
             <div style={{display:'flex',alignItems:'center',gap:4}}><div style={{width:8,height:8,borderRadius:2,background:C.teal}}/><span style={{fontSize:9,color:C.muted}}>Consultas</span></div>
             <div style={{display:'flex',alignItems:'center',gap:4}}><div style={{width:8,height:8,borderRadius:2,background:C.violet}}/><span style={{fontSize:9,color:C.muted}}>Encaixe</span></div>
           </div>
         </div>
-
-        <div style={{background:'rgba(255,255,255,0.025)',border:'1px solid rgba(255,255,255,0.06)',borderRadius:14,padding:'18px 20px'}}>
+        <div style={cardBase}>
           <div style={{fontSize:11,fontWeight:700,color:C.sub,textTransform:'uppercase',letterSpacing:'.1em',marginBottom:14}}>🩺 Top Especialidades por Pacientes</div>
           {topSpec.map((s,i)=>{
             const pct=topSpec[0]?.total>0?(s.total/topSpec[0].total)*100:0
-            return(
-              <div key={s.name} style={{marginBottom:10}}>
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4,gap:8}}>
-                  <div style={{display:'flex',alignItems:'center',gap:6,minWidth:0}}>
-                    <span style={{fontSize:9,fontWeight:800,color:i===0?C.amber:C.muted,minWidth:20,flexShrink:0}}>#{i+1}</span>
-                    <span style={{fontSize:11,color:C.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{s.name}</span>
-                  </div>
-                  <span style={{fontSize:11,fontWeight:700,color:i<3?C.amber:C.cyan,flexShrink:0}}>{s.total.toLocaleString('pt-BR')}</span>
-                </div>
-                <div style={{background:'rgba(255,255,255,0.05)',borderRadius:3,height:4,overflow:'hidden'}}>
-                  <div style={{height:'100%',background:i<3?C.amber:C.cyan,width:pct+'%',transition:'width .6s ease',borderRadius:3}}/>
-                </div>
+            return(<div key={s.name} style={{marginBottom:10}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4,gap:8}}>
+                <div style={{display:'flex',alignItems:'center',gap:6,minWidth:0}}><span style={{fontSize:9,fontWeight:800,color:i===0?C.amber:C.muted,minWidth:20,flexShrink:0}}>#{i+1}</span><span style={{fontSize:11,color:C.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{s.name}</span></div>
+                <span style={{fontSize:11,fontWeight:700,color:i<3?C.amber:C.cyan,flexShrink:0}}>{s.total.toLocaleString('pt-BR')}</span>
               </div>
-            )
+              <div style={{background:'rgba(255,255,255,0.05)',borderRadius:3,height:4,overflow:'hidden'}}><div style={{height:'100%',background:i<3?C.amber:C.cyan,width:pct+'%',transition:'width .6s ease',borderRadius:3}}/></div>
+            </div>)
           })}
         </div>
       </div>
@@ -657,6 +785,7 @@ function TabAgendas({rows}){
   )
 }
 
+// ─── TAB ESPERA (sem justificativas) ────────────────────────────────────────
 function TabEspera({rows}){
   const[periodo,setPeriodo]=useState('MES')
   const[dateFrom,setDateFrom]=useState('')
@@ -665,46 +794,14 @@ function TabEspera({rows}){
   const[search,setSearch]=useState('')
   const[horaFilt,setHoraFilt]=useState('TODAS')
   const[horaFiltFim,setHoraFiltFim]=useState('TODAS')
-  const[sevFilt,setSevFilt]=useState(['MOD','GRV','CRIT']) // Todas selecionadas por padrão
+  const[sevFilt,setSevFilt]=useState(['MOD','GRV','CRIT'])
   const[unidFilt,setUnidFilt]=useState('')
-  const[justModal,setJustModal]=useState(false)
-  const[allJust,setAllJust]=useState([])
-  const[justLoading,setJustLoading]=useState(false)
   const[trendView,setTrendView]=useState('real')
   const[tTip,setTTip]=useState(null)
 
   const allDates=useMemo(()=>[...new Set(rows.map(r=>r.dt_registro||r.data_agenda).filter(Boolean))].sort(),[rows])
   const periodoFn=useMemo(()=>buildFilter(allDates,periodo,dateFrom,dateTo),[allDates,periodo,dateFrom,dateTo])
   const ufs=useMemo(()=>[...new Set(rows.map(r=>r.uf).filter(Boolean))].sort(),[rows])
-  const dataRef=useMemo(()=>allDates.length?allDates[allDates.length-1]:'',[allDates])
-
-  // Carrega TODAS as justificativas (todas as datas) - permite somar por período
-  useEffect(()=>{
-    fetch(`${SB_URL}/rest/v1/justificativas_espera?select=data_ref,hora,quantidade`,{headers:SBH})
-      .then(r=>r.json()).then(data=>{if(Array.isArray(data))setAllJust(data)}).catch(console.error)
-  },[rows])
-
-  // Justificativas filtradas pelo período selecionado (Hoje/Ontem/Semana/Mês/Ano)
-  const justificativas=useMemo(()=>{
-    const map={}
-    allJust.filter(j=>j.data_ref&&periodoFn(j.data_ref)).forEach(j=>{
-      map[j.hora]=(map[j.hora]||0)+(parseInt(j.quantidade)||0)
-    })
-    return map
-  },[allJust,periodoFn])
-
-  const saveJustificativa=useCallback(async(hora,qtd)=>{
-    if(!dataRef)return;setJustLoading(true)
-    const h=parseInt(hora),q=parseInt(qtd)||0
-    try{
-      await fetch(`${SB_URL}/rest/v1/justificativas_espera`,{method:'POST',headers:{...SBH,'Prefer':'resolution=merge-duplicates'},body:JSON.stringify({data_ref:dataRef,hora:h,quantidade:q})})
-      setAllJust(prev=>{
-        const semEsta=prev.filter(j=>!(j.data_ref===dataRef&&j.hora===h))
-        return[...semEsta,{data_ref:dataRef,hora:h,quantidade:q}]
-      })
-    }catch(e){console.error(e)}
-    setJustLoading(false)
-  },[dataRef])
 
   const horasDisp=useMemo(()=>{
     const set=new Set()
@@ -724,57 +821,37 @@ function TabEspera({rows}){
   const espStats=useMemo(()=>{
     const comEsp=filtered.filter(d=>d.tempo_espera_min!=null&&d.tempo_espera_min>=15)
     const totalReg=filtered.length
-    const totalPac=filtered.reduce((a,d)=>a+(d.qt_pacientes_aguardando||0),0)
-
-    // Agrupa por unidade+hora (mesma lógica do feed) — base para TODOS os counts
-// BUG FIX #1: Agrupa por unidade+hora para contar INCIDENTES ÚNICOS (não linhas brutas)
-  const grupoMap={}
-  comEsp.forEach(d=>{
-    const h=d.hr_registro_espera_min;if(h==null)return
-    const hora=Math.floor(h/60),mins=Math.floor(h%60);if(hora<0||hora>23)return
-    const horaStr=String(hora).padStart(2,'0')+':'+String(mins).padStart(2,'0')
-    const unidade=d.nm_local||'Sem Unidade',key=horaStr+'||'+unidade
-    if(!grupoMap[key])grupoMap[key]={horaStr,hora,nm_local:unidade,uf:d.uf||'',cidade:d.cidade||'',maxTempo:0,pac:0,count:0}
-    if(d.tempo_espera_min>grupoMap[key].maxTempo){grupoMap[key].maxTempo=d.tempo_espera_min;grupoMap[key].pac=d.qt_pacientes_aguardando||0}
-    grupoMap[key].count+=1
-  })
-  const incidentes=Object.values(grupoMap)
-  const feedList=incidentes.slice().sort((a,b)=>b.maxTempo-a.maxTempo)
-
-  // Counts por incidente único (usa grupoMap, não linhas brutas)
-  const modCnt =incidentes.filter(g=>g.maxTempo>=15&&g.maxTempo<=30).length
-  const grvCnt =incidentes.filter(g=>g.maxTempo>30&&g.maxTempo<=89).length
-  const critCnt=incidentes.filter(g=>g.maxTempo>=90).length
-  const totalEsp=modCnt+grvCnt+critCnt
-
-  // Top unidades por incidentes únicos
-  const uMap={}
-  incidentes.forEach(g=>{
-    const u=g.nm_local
-    if(!uMap[u])uMap[u]={n:u,total:0,crit:0,grv:0,mod:0}
-    uMap[u].total++
-    if(g.maxTempo>=90)uMap[u].crit++;else if(g.maxTempo>=31)uMap[u].grv++;else uMap[u].mod++
-  })
-  const topU=Object.values(uMap).sort((a,b)=>b.crit-a.crit||b.grv-a.grv).slice(0,6)
+    const grupoMap={}
+    comEsp.forEach(d=>{
+      const h=d.hr_registro_espera_min;if(h==null)return
+      const hora=Math.floor(h/60),mins=Math.floor(h%60);if(hora<0||hora>23)return
+      const horaStr=String(hora).padStart(2,'0')+':'+String(mins).padStart(2,'0')
+      const unidade=d.nm_local||'Sem Unidade',key=horaStr+'||'+unidade
+      if(!grupoMap[key])grupoMap[key]={horaStr,hora,nm_local:unidade,uf:d.uf||'',cidade:d.cidade||'',maxTempo:0,pac:0,count:0}
+      if(d.tempo_espera_min>grupoMap[key].maxTempo){grupoMap[key].maxTempo=d.tempo_espera_min;grupoMap[key].pac=d.qt_pacientes_aguardando||0}
+      grupoMap[key].count+=1
+    })
+    const incidentes=Object.values(grupoMap)
+    const feedList=incidentes.slice().sort((a,b)=>b.maxTempo-a.maxTempo)
+    const modCnt=incidentes.filter(g=>g.maxTempo>=15&&g.maxTempo<=30).length
+    const grvCnt=incidentes.filter(g=>g.maxTempo>30&&g.maxTempo<=89).length
+    const critCnt=incidentes.filter(g=>g.maxTempo>=90).length
     const faltasList=filtered.filter(d=>String(d.atraso||'').toUpperCase()==='FALTA')
     const atrasosList=filtered.filter(d=>{if(String(d.atraso||'').toUpperCase()!=='SIM')return false;const t=d.tempo_atraso_min;return t!=null&&Math.abs(t)>31})
     const sMap={};atrasosList.forEach(d=>{const s=d.status||'Sem Status';sMap[s]=(sMap[s]||0)+1})
     const statusAt=Object.entries(sMap).map(([k,v])=>({k,v})).sort((a,b)=>b.v-a.v)
-    // BUG FIX #2: Agrupa por data+hora+unidade (mesma chave do feed) para contar incidentes únicos por dia
-  const gMap={}
-  comEsp.forEach(d=>{
-    const dt=d.data_agenda;if(!dt)return
-    const h=d.hr_registro_espera_min;if(h==null)return
-    const hora=Math.floor(h/60)
-    const unidade=d.nm_local||'?'
-    const key=dt+'||'+String(hora).padStart(2,'0')+'||'+unidade
-    if(!gMap[key])gMap[key]={date:dt,maxTempo:0,pac:0}
-    if(d.tempo_espera_min>gMap[key].maxTempo){gMap[key].maxTempo=d.tempo_espera_min;gMap[key].pac=d.qt_pacientes_aguardando||0}
-  })
+    const gMap={}
+    comEsp.forEach(d=>{
+      const dt=d.data_agenda;if(!dt)return
+      const h=d.hr_registro_espera_min;if(h==null)return
+      const hora=Math.floor(h/60),unidade=d.nm_local||'?'
+      const key=dt+'||'+String(hora).padStart(2,'0')+'||'+unidade
+      if(!gMap[key])gMap[key]={date:dt,maxTempo:0,pac:0}
+      if(d.tempo_espera_min>gMap[key].maxTempo){gMap[key].maxTempo=d.tempo_espera_min;gMap[key].pac=d.qt_pacientes_aguardando||0}
+    })
     const dMap={}
     Object.values(gMap).forEach(g=>{
-      const dt=g.date
-      if(!dMap[dt])dMap[dt]={date:dt,mod:0,grv:0,crit:0,pac:0}
+      const dt=g.date;if(!dMap[dt])dMap[dt]={date:dt,mod:0,grv:0,crit:0,pac:0}
       const m=g.maxTempo
       if(m>=90)dMap[dt].crit++;else if(m>=31)dMap[dt].grv++;else if(m>=15)dMap[dt].mod++
       dMap[dt].pac+=g.pac
@@ -786,54 +863,40 @@ function TabEspera({rows}){
     const slopeGrv=pts.length>=2?(pts[pts.length-1].grv-pts[0].grv)/(pts.length-1):0
     const slopeCrt=pts.length>=2?(pts[pts.length-1].crit-pts[0].crit)/(pts.length-1):0
     const lastDate=byDate[byDate.length-1]?.date||''
-    const lastMod =byDate[byDate.length-1]?.mod||0
-    const lastGrv =byDate[byDate.length-1]?.grv||0
-    const lastCrt =byDate[byDate.length-1]?.crit||0
-    const projData=lastDate?Array.from({length:5},(_,i)=>({
-      date:addDay(lastDate,i+1),
-      mod: Math.max(0,Math.round(lastMod+slopeMod*(i+1))),
-      grv: Math.max(0,Math.round(lastGrv+slopeGrv*(i+1))),
-      crit:Math.max(0,Math.round(lastCrt+slopeCrt*(i+1))),
-      total:Math.max(0,Math.round((lastMod+slopeMod*(i+1))+(lastGrv+slopeGrv*(i+1))+(lastCrt+slopeCrt*(i+1)))),
-      pac:0,isProj:true,
-    })):[]
-    return{totalReg,totalPac,modCnt,grvCnt,critCnt,totalEsp,feedList,topU,faltasList,atrasosList,statusAt,byDate,projData}
-   },[filtered])
+    const lastMod=byDate[byDate.length-1]?.mod||0,lastGrv=byDate[byDate.length-1]?.grv||0,lastCrt=byDate[byDate.length-1]?.crit||0
+    const projData=lastDate?Array.from({length:5},(_,i)=>({date:addDay(lastDate,i+1),mod:Math.max(0,Math.round(lastMod+slopeMod*(i+1))),grv:Math.max(0,Math.round(lastGrv+slopeGrv*(i+1))),crit:Math.max(0,Math.round(lastCrt+slopeCrt*(i+1))),total:0,pac:0,isProj:true})):[]
+    const docsFalta=unidFilt?Object.entries(faltasList.filter(d=>d.nm_local===unidFilt).reduce((a,d)=>{const nm=d.nm_medico||'—';a[nm]=(a[nm]||0)+1;return a},{})).map(([nm,cnt])=>({nm,cnt})).sort((a,b)=>b.cnt-a.cnt):[]
+    const docsAtraso=unidFilt?Object.entries(atrasosList.filter(d=>d.nm_local===unidFilt).reduce((a,d)=>{const nm=d.nm_medico||'—';if(!a[nm])a[nm]={cnt:0,status:d.status};a[nm].cnt++;return a},{})).map(([nm,v])=>({nm,...v})).sort((a,b)=>b.cnt-a.cnt):[]
+    return{totalReg,modCnt,grvCnt,critCnt,feedList,faltasList,atrasosList,statusAt,byDate,projData,docsFalta,docsAtraso}
+  },[filtered,unidFilt])
 
-  // Aplicar filtro de severidade no feed
-  const feedListFiltered=useMemo(()=>{
-    return espStats.feedList.filter(item=>{
-      if(sevFilt.includes('CRIT')&&item.maxTempo>=90)return true
-      if(sevFilt.includes('GRV')&&item.maxTempo>=31&&item.maxTempo<90)return true
-      if(sevFilt.includes('MOD')&&item.maxTempo>=15&&item.maxTempo<=30)return true
-      return false
-    })
-  },[espStats.feedList,sevFilt])
+  const feedListFiltered=useMemo(()=>espStats.feedList.filter(item=>{
+    if(sevFilt.includes('CRIT')&&item.maxTempo>=90)return true
+    if(sevFilt.includes('GRV')&&item.maxTempo>=31&&item.maxTempo<90)return true
+    if(sevFilt.includes('MOD')&&item.maxTempo>=15&&item.maxTempo<=30)return true
+    return false
+  }),[espStats.feedList,sevFilt])
 
-  const totalJust=useMemo(()=>Object.values(justificativas).reduce((a,v)=>a+(parseInt(v)||0),0),[justificativas])
-  const metaPct=espStats.totalEsp>0?Math.min(Math.round((totalJust/espStats.totalEsp)*100),100):0
-  const metaColor=metaPct>=80?C.emerald:metaPct>=50?C.amber:C.rose
-  const{totalReg,totalPac,modCnt,grvCnt,critCnt,totalEsp,feedList,topU,faltasList,atrasosList,statusAt,byDate,projData}=espStats
+  const{totalReg,modCnt,grvCnt,critCnt,feedList,faltasList,atrasosList,statusAt,byDate,projData,docsFalta,docsAtraso}=espStats
   const medTotalProb=faltasList.length+atrasosList.length
   const medFPct=medTotalProb>0?Math.round(faltasList.length/medTotalProb*100):0
   const medAPct=medTotalProb>0?Math.round(atrasosList.length/medTotalProb*100):0
-  const trendAllData =trendView==='real'?byDate:[...byDate,...projData]
-  const trendMaxAll  =Math.max(...trendAllData.map(d=>Math.max(d.mod||0,d.grv||0,d.crit||0)),1)
-  const trendRealCnt =byDate.length
+  const trendAllData=trendView==='real'?byDate:[...byDate,...projData]
+  const trendMaxAll=Math.max(...trendAllData.map(d=>Math.max(d.mod||0,d.grv||0,d.crit||0)),1)
+  const trendRealCnt=byDate.length
   const trendLastReal=byDate[byDate.length-1]
-  const trendMaxDay  =byDate.length>0?byDate.reduce((a,d)=>(d.crit||0)>(a.crit||0)?d:a,byDate[0]):null
-  const trendSlope   =projData.length>0?((projData[0]?.crit||0)-(trendLastReal?.crit||0)):0
+  const trendMaxDay=byDate.length>0?byDate.reduce((a,d)=>(d.crit||0)>(a.crit||0)?d:a,byDate[0]):null
+  const trendSlope=projData.length>0?((projData[0]?.crit||0)-(trendLastReal?.crit||0)):0
 
-  // SVG line chart vars
   const VW=800,VH=160,PL=50,PR=20,PT=10,PB=34
   const CW=VW-PL-PR,CH=VH-PT-PB
   const nTotal=trendAllData.length
   const txP=i=>nTotal<=1?PL+CW/2:PL+i/(nTotal-1)*CW
-  const tyA=(v)=>PT+CH-(trendMaxAll>0?(v||0)/trendMaxAll*CH:0)
+  const tyA=v=>PT+CH-(trendMaxAll>0?(v||0)/trendMaxAll*CH:0)
   const tSmooth=(data,key,scFn,off)=>{
-    if(!data.length)return ''
+    if(!data.length)return''
     const pts=data.map((d,i)=>({x:parseFloat(txP(i+(off||0)).toFixed(2)),y:parseFloat(scFn(d[key]||0).toFixed(2))}))
-    if(pts.length===1)return 'M'+pts[0].x+','+pts[0].y
+    if(pts.length===1)return'M'+pts[0].x+','+pts[0].y
     let p='M'+pts[0].x+','+pts[0].y
     for(let i=1;i<pts.length;i++){
       const p0=pts[i-2]||pts[i-1],p1=pts[i-1],p2=pts[i],p3=pts[i+1]||pts[i]
@@ -844,80 +907,32 @@ function TabEspera({rows}){
     return p
   }
 
-  // BUG FIX #3: Filtrar médicos apenas quando unidade está selecionada — e por dados filtrados
-  const docsFalta  = unidFilt ? Object.entries(faltasList.filter(d=>d.nm_local===unidFilt).reduce((a,d)=>{const nm=d.nm_medico||'—';a[nm]=(a[nm]||0)+1;return a},{})).map(([nm,cnt])=>({nm,cnt})).sort((a,b)=>b.cnt-a.cnt) : []
-  const docsAtraso = unidFilt ? Object.entries(atrasosList.filter(d=>d.nm_local===unidFilt).reduce((a,d)=>{const nm=d.nm_medico||'—';if(!a[nm])a[nm]={cnt:0,status:d.status};a[nm].cnt++;return a},{})).map(([nm,v])=>({nm,...v})).sort((a,b)=>b.cnt-a.cnt) : []
   if(!rows.length)return(<div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',height:'60vh',gap:14}}><div style={{fontSize:44}}>⏱️</div><div style={{fontSize:18,fontWeight:700,color:C.text}}>Nenhum dado de espera</div><div style={{fontSize:13,color:C.muted}}>Use o botão para carregar uma planilha</div></div>)
-
   const horasDispFim=horaFilt==='TODAS'?[]:horasDisp.filter(h=>h>parseInt(horaFilt))
+  const cardE={background:'rgba(255,255,255,0.025)',border:'1px solid rgba(255,255,255,0.06)',borderRadius:14,padding:'18px 20px'}
 
   return(
     <div>
-      {justModal&&(
-        <div style={{position:'fixed',inset:0,zIndex:200,background:'rgba(0,0,0,0.75)',backdropFilter:'blur(4px)',display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setJustModal(false)}>
-          <div style={{background:'#0A0D16',border:`1px solid rgba(245,158,11,0.3)`,borderRadius:16,padding:'24px 28px',minWidth:360,maxWidth:460,boxShadow:'0 24px 80px rgba(0,0,0,0.6)'}} onClick={e=>e.stopPropagation()}>
-            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:20}}>
-              <div><div style={{fontSize:14,fontWeight:700,color:C.text}}>Registrar Justificativas</div><div style={{fontSize:10.5,color:C.muted,marginTop:3}}>Meta: 80% das esperas com retorno · {dataRef}</div></div>
-              <button onClick={()=>setJustModal(false)} style={{background:'transparent',border:'none',color:C.muted,fontSize:18,cursor:'pointer'}}>✕</button>
-            </div>
-            <div style={{background:'rgba(255,255,255,0.03)',border:'0.5px solid rgba(255,255,255,0.07)',borderRadius:10,padding:'12px 14px',marginBottom:18}}>
-              <div style={{display:'flex',justifyContent:'space-between',marginBottom:7}}><span style={{fontSize:11,color:C.muted}}>Progresso atual</span><span style={{fontSize:12,fontWeight:700,color:metaColor}}>{metaPct}% de 80%</span></div>
-              <div style={{background:'rgba(255,255,255,0.06)',borderRadius:4,height:8,overflow:'hidden'}}><div style={{height:'100%',width:`${metaPct}%`,background:metaColor,borderRadius:4,transition:'width .4s ease'}}/></div>
-              <div style={{display:'flex',justifyContent:'space-between',marginTop:6}}><span style={{fontSize:10,color:C.muted}}>{totalJust} justificativas</span><span style={{fontSize:10,color:C.muted}}>de {totalEsp} esperas</span></div>
-            </div>
-            <div style={{display:'flex',flexDirection:'column',gap:8,maxHeight:280,overflowY:'auto'}}>
-              {horasDisp.length===0&&<div style={{color:C.muted,fontSize:12,textAlign:'center',padding:'16px 0'}}>Sem horas disponíveis.</div>}
-              {horasDisp.map(h=>(
-                <div key={h} style={{display:'flex',alignItems:'center',gap:10}}>
-                  <div style={{width:44,fontSize:12,fontWeight:700,color:C.sub,fontFamily:'monospace',flexShrink:0}}>{String(h).padStart(2,'0')}:00</div>
-                  <div style={{flex:1,background:'rgba(255,255,255,0.04)',borderRadius:6,height:4,overflow:'hidden'}}><div style={{height:'100%',borderRadius:6,background:C.amber,transition:'width .3s',width:`${Math.min(((justificativas[h]||0)/Math.max(totalEsp/Math.max(horasDisp.length,1),1))*100,100)}%`}}/></div>
-                  <input type="number" min="0" value={justificativas[h]||''} placeholder="0" onChange={e=>saveJustificativa(h,e.target.value)} style={{width:60,background:'rgba(255,255,255,0.05)',border:`0.5px solid ${justificativas[h]>0?'rgba(245,158,11,0.4)':'rgba(255,255,255,0.1)'}`,borderRadius:7,color:justificativas[h]>0?C.amber:C.text,fontSize:12,fontWeight:700,padding:'5px 8px',outline:'none',textAlign:'center'}}/>
-                  <span style={{fontSize:10,color:C.muted,minWidth:24}}>just.</span>
-                </div>
-              ))}
-            </div>
-            {justLoading&&<div style={{textAlign:'center',marginTop:12,fontSize:11,color:C.amber}}>Salvando…</div>}
-          </div>
-        </div>
-      )}
-
-      <div style={{marginBottom:16}}>
-        <PeriodoBar value={periodo} onChange={p=>{setPeriodo(p);setDateFrom('');setDateTo('');setUnidFilt('');setHoraFilt('TODAS');setHoraFiltFim('TODAS')}} allDates={allDates} dateFrom={dateFrom} dateTo={dateTo} onDateFrom={setDateFrom} onDateTo={setDateTo} label={`${totalReg.toLocaleString('pt-BR')} registros`}/>
-      </div>
+      <div style={{marginBottom:16}}><PeriodoBar value={periodo} onChange={p=>{setPeriodo(p);setDateFrom('');setDateTo('');setUnidFilt('');setHoraFilt('TODAS');setHoraFiltFim('TODAS')}} allDates={allDates} dateFrom={dateFrom} dateTo={dateTo} onDateFrom={setDateFrom} onDateTo={setDateTo} label={`${totalReg.toLocaleString('pt-BR')} registros`}/></div>
       <SearchBar search={search} onSearch={setSearch} uf={ufFilt} onUf={setUfFilt} ufs={ufs} showClear={ufFilt!=='TODOS'||!!search} onClear={()=>{setUfFilt('TODOS');setSearch('')}}/>
 
-      {/* META */}
+      {/* CONTADORES */}
       <div style={{background:'rgba(255,255,255,0.025)',border:'1px solid rgba(255,255,255,0.06)',borderRadius:12,padding:'12px 18px',marginBottom:14}}>
         <div style={{display:'flex',alignItems:'center',gap:16}}>
-          <span style={{fontSize:9,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.1em',whiteSpace:'nowrap'}}>Meta 80%</span>
-          <div style={{flex:1,display:'flex',flexDirection:'column',gap:4}}>
-            <div style={{background:'rgba(255,255,255,0.06)',borderRadius:4,height:8,overflow:'hidden',position:'relative'}}>
-              <div style={{height:'100%',borderRadius:4,width:`${metaPct}%`,transition:'width .6s ease',background:metaPct>=80?'#10B981':metaPct>=50?C.amber:C.rose}}/>
-              <div style={{position:'absolute',top:0,bottom:0,left:'80%',width:2,background:'rgba(255,255,255,0.35)'}}/>
-            </div>
-            <div style={{display:'flex',justifyContent:'space-between'}}>
-              <span style={{fontSize:9,color:C.muted}}>{totalJust} just. de {totalEsp} esperas ≥ 15min</span>
-              <span style={{fontSize:9,color:C.muted}}>← 80%</span>
-            </div>
-          </div>
-          <span style={{fontSize:15,fontWeight:800,color:metaColor,whiteSpace:'nowrap',minWidth:36,textAlign:'right'}}>{metaPct}%</span>
-          <div style={{width:1,height:36,background:'rgba(255,255,255,0.07)',flexShrink:0}}/>
           {[{label:'Moderada',value:modCnt,sub:'15–30min',color:'#F59E0B'},{label:'Grave',value:grvCnt,sub:'31–1h29',color:'#F97316'},{label:'Crítica',value:critCnt,sub:'+1h30',color:'#F43F5E'}].map((k,i)=>(
-            <div key={k.label} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:2,minWidth:58,paddingLeft:i>0?14:0,borderLeft:i>0?'0.5px solid rgba(255,255,255,0.06)':'none'}}>
+            <div key={k.label} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:2,minWidth:58,paddingLeft:i>0?16:0,borderLeft:i>0?'0.5px solid rgba(255,255,255,0.07)':'none'}}>
               <span style={{fontSize:9,fontWeight:700,color:k.color,textTransform:'uppercase',letterSpacing:'.07em'}}>{k.label}</span>
-              <span style={{fontSize:20,fontWeight:800,color:k.color,lineHeight:1,letterSpacing:'-.5px'}}>{k.value.toLocaleString('pt-BR')}</span>
+              <span style={{fontSize:22,fontWeight:800,color:k.color,lineHeight:1}}>{k.value.toLocaleString('pt-BR')}</span>
               <span style={{fontSize:8,color:C.muted}}>{k.sub}</span>
             </div>
           ))}
-          <div style={{width:1,height:36,background:'rgba(255,255,255,0.07)',flexShrink:0}}/>
-          <button onClick={()=>setJustModal(true)} style={{background:'rgba(245,158,11,0.1)',border:'0.5px solid rgba(245,158,11,0.3)',borderRadius:8,color:C.amber,fontSize:11,fontWeight:700,padding:'6px 12px',cursor:'pointer',whiteSpace:'nowrap'}}>+ Registrar</button>
         </div>
       </div>
 
       {/* FEED + MÉDICOS */}
       <div style={{display:'grid',gridTemplateColumns:'1fr 320px',gap:14,marginBottom:14}}>
-        <div style={{background:'rgba(255,255,255,0.025)',border:'1px solid rgba(255,255,255,0.06)',borderRadius:14,padding:'20px 22px'}}>
-          {unidFilt&&(<div style={{display:'flex',alignItems:'center',gap:10,marginBottom:12,padding:'8px 12px',background:'rgba(245,158,11,0.08)',border:'0.5px solid rgba(245,158,11,0.25)',borderRadius:9}}><div style={{width:6,height:6,borderRadius:'50%',background:C.amber,flexShrink:0}}/><span style={{fontSize:11,color:C.amber,flex:1,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>Filtrando: {unidFilt}</span><button onClick={()=>setUnidFilt('')} style={{background:'transparent',border:'none',color:C.muted,cursor:'pointer',fontSize:12}}>✕</button></div>)}
+        <div style={cardE}>
+          {unidFilt&&<div style={{display:'flex',alignItems:'center',gap:10,marginBottom:12,padding:'8px 12px',background:'rgba(245,158,11,0.08)',border:'0.5px solid rgba(245,158,11,0.25)',borderRadius:9}}><div style={{width:6,height:6,borderRadius:'50%',background:C.amber,flexShrink:0}}/><span style={{fontSize:11,color:C.amber,flex:1,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>Filtrando: {unidFilt}</span><button onClick={()=>setUnidFilt('')} style={{background:'transparent',border:'none',color:C.muted,cursor:'pointer',fontSize:12}}>✕</button></div>}
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:16}}>
             <div>
               <div style={{display:'flex',alignItems:'center',gap:8}}>
@@ -926,75 +941,54 @@ function TabEspera({rows}){
               </div>
               <div style={{fontSize:10.5,color:C.muted,marginTop:3}}>TEMPO_DE_ESPERA · hora via HR_REGISTRO_ESPERA · {unidFilt?'clique ✕ para limpar':'clique na unidade para filtrar'}</div>
               <div style={{display:'flex',gap:12,marginTop:8}}>
-                {[{label:'Moderada 15–30min',color:'#F59E0B'},{label:'Grave 31–89min',color:'#F97316'},{label:'Crítica ≥90min',color:'#F43F5E'}].map(k=>(
-                  <div key={k.label} style={{display:'flex',alignItems:'center',gap:5}}>
-                    <div style={{width:8,height:8,borderRadius:'50%',background:k.color}}/>
-                    <span style={{fontSize:9,color:C.muted}}>{k.label}</span>
-                  </div>
-                ))}
+                {[{label:'Moderada 15–30min',color:'#F59E0B'},{label:'Grave 31–89min',color:'#F97316'},{label:'Crítica ≥90min',color:'#F43F5E'}].map(k=><div key={k.label} style={{display:'flex',alignItems:'center',gap:5}}><div style={{width:8,height:8,borderRadius:'50%',background:k.color}}/><span style={{fontSize:9,color:C.muted}}>{k.label}</span></div>)}
               </div>
             </div>
             <div style={{display:'flex',alignItems:'center',gap:8,flexShrink:0,flexWrap:'wrap'}}>
-              {/* Filtro de Severidade */}
               <div style={{display:'flex',alignItems:'center',gap:6,background:'rgba(255,255,255,0.03)',border:'0.5px solid rgba(255,255,255,0.08)',borderRadius:8,padding:'4px 10px'}}>
                 <span style={{fontSize:10,color:C.muted,fontWeight:600}}>Exibir:</span>
                 {[{key:'MOD',label:'Mod',color:'#F59E0B'},{key:'GRV',label:'Grv',color:'#F97316'},{key:'CRIT',label:'Crt',color:'#F43F5E'}].map(s=>{
                   const sel=sevFilt.includes(s.key)
-                  return(
-                    <button key={s.key} onClick={()=>setSevFilt(prev=>prev.includes(s.key)?prev.filter(x=>x!==s.key):[...prev,s.key])} style={{
-                      display:'flex',alignItems:'center',gap:4,padding:'3px 8px',borderRadius:6,border:'none',
-                      background:sel?s.color+'20':'transparent',cursor:'pointer',transition:'all .15s'
-                    }}>
-                      <div style={{width:12,height:12,borderRadius:3,border:`1.5px solid ${s.color}`,background:sel?s.color:'transparent',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
-                        {sel&&<span style={{color:'#0A0D16',fontSize:9,fontWeight:900}}>✓</span>}
-                      </div>
-                      <span style={{fontSize:10,fontWeight:600,color:sel?s.color:C.muted}}>{s.label}</span>
-                    </button>
-                  )
+                  return<button key={s.key} onClick={()=>setSevFilt(prev=>prev.includes(s.key)?prev.filter(x=>x!==s.key):[...prev,s.key])} style={{display:'flex',alignItems:'center',gap:4,padding:'3px 8px',borderRadius:6,border:'none',background:sel?s.color+'20':'transparent',cursor:'pointer'}}>
+                    <div style={{width:12,height:12,borderRadius:3,border:`1.5px solid ${s.color}`,background:sel?s.color:'transparent',display:'flex',alignItems:'center',justifyContent:'center'}}>{sel&&<span style={{color:'#0A0D16',fontSize:9,fontWeight:900}}>✓</span>}</div>
+                    <span style={{fontSize:10,fontWeight:600,color:sel?s.color:C.muted}}>{s.label}</span>
+                  </button>
                 })}
               </div>
-              {/* Filtro de Hora */}
               <select value={horaFilt} onChange={e=>{setHoraFilt(e.target.value);setHoraFiltFim('TODAS');setUnidFilt('')}} style={{background:'rgba(255,255,255,0.05)',border:'0.5px solid rgba(245,158,11,0.2)',borderRadius:8,color:C.text,fontSize:11,padding:'5px 8px',outline:'none',cursor:'pointer'}}>
                 <option value="TODAS">Todas</option>
                 {horasDisp.map(h=><option key={h} value={h}>{String(h).padStart(2,'0')}:00</option>)}
               </select>
-              {horaFilt!=='TODAS'&&(<><span style={{fontSize:11,color:C.muted}}>→</span><select value={horaFiltFim} onChange={e=>setHoraFiltFim(e.target.value)} style={{background:'rgba(255,255,255,0.05)',border:'0.5px solid rgba(245,158,11,0.2)',borderRadius:8,color:C.text,fontSize:11,padding:'5px 8px',outline:'none',cursor:'pointer'}}><option value="TODAS">{String(horaFilt).padStart(2,'0')}:00 só</option>{horasDispFim.map(h=><option key={h} value={h}>{String(h).padStart(2,'0')}:00</option>)}</select></>)}
+              {horaFilt!=='TODAS'&&<><span style={{fontSize:11,color:C.muted}}>→</span><select value={horaFiltFim} onChange={e=>setHoraFiltFim(e.target.value)} style={{background:'rgba(255,255,255,0.05)',border:'0.5px solid rgba(245,158,11,0.2)',borderRadius:8,color:C.text,fontSize:11,padding:'5px 8px',outline:'none',cursor:'pointer'}}><option value="TODAS">{String(horaFilt).padStart(2,'0')}:00 só</option>{horasDispFim.map(h=><option key={h} value={h}>{String(h).padStart(2,'0')}:00</option>)}</select></>}
             </div>
           </div>
-          {feedListFiltered.length===0?(<div style={{textAlign:'center',padding:'32px 0',color:C.muted,fontSize:12}}>Sem esperas ≥ 15min no período/filtro selecionado.</div>):(
+          {feedListFiltered.length===0?<div style={{textAlign:'center',padding:'32px 0',color:C.muted,fontSize:12}}>Sem esperas ≥ 15min no período/filtro selecionado.</div>:(
             <div style={{display:'flex',flexDirection:'column',gap:5,maxHeight:600,overflowY:'auto'}}>
               {feedListFiltered.map((item,i)=>{
                 const cls=clsEspera(item.maxTempo),isCrit=item.maxTempo>=90,isGrv=item.maxTempo>=31&&item.maxTempo<90,isMod=item.maxTempo>=15&&item.maxTempo<=30,isSel=unidFilt===item.nm_local
-                return(<div key={i} onClick={()=>setUnidFilt(isSel?'':item.nm_local)} style={{display:'flex',alignItems:'center',gap:12,padding:'10px 14px',borderRadius:10,cursor:'pointer',background:isSel?`${cls.color}18`:isCrit?'rgba(244,63,94,0.06)':isGrv?'rgba(249,115,22,0.04)':isMod?'rgba(245,158,11,0.03)':'rgba(255,255,255,0.02)',border:isSel?`1px solid ${cls.color}55`:`0.5px solid ${i<3?cls.border:'rgba(255,255,255,0.05)'}`,transition:'all .15s'}} onMouseEnter={e=>{if(!isSel)e.currentTarget.style.background=cls.bg}} onMouseLeave={e=>{if(!isSel)e.currentTarget.style.background=isCrit?'rgba(244,63,94,0.06)':isGrv?'rgba(249,115,22,0.04)':isMod?'rgba(245,158,11,0.03)':'rgba(255,255,255,0.02)'}}>
+                return<div key={i} onClick={()=>setUnidFilt(isSel?'':item.nm_local)} style={{display:'flex',alignItems:'center',gap:12,padding:'10px 14px',borderRadius:10,cursor:'pointer',background:isSel?`${cls.color}18`:isCrit?'rgba(244,63,94,0.06)':isGrv?'rgba(249,115,22,0.04)':isMod?'rgba(245,158,11,0.03)':'rgba(255,255,255,0.02)',border:isSel?`1px solid ${cls.color}55`:`0.5px solid ${i<3?cls.border:'rgba(255,255,255,0.05)'}`,transition:'all .15s'}} onMouseEnter={e=>{if(!isSel)e.currentTarget.style.background=cls.bg}} onMouseLeave={e=>{if(!isSel)e.currentTarget.style.background=isCrit?'rgba(244,63,94,0.06)':isGrv?'rgba(249,115,22,0.04)':isMod?'rgba(245,158,11,0.03)':'rgba(255,255,255,0.02)'}}>
                   <div style={{width:8,height:8,borderRadius:'50%',background:cls.color,flexShrink:0,boxShadow:isCrit?`0 0 8px ${cls.color}`:'none'}}/>
                   <div style={{fontFamily:'monospace',fontSize:13,fontWeight:700,color:C.sub,flexShrink:0,minWidth:44}}>{item.horaStr}</div>
                   <div style={{flex:1,minWidth:0}}><div style={{fontSize:12,fontWeight:600,color:C.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.nm_local}</div><div style={{fontSize:10,color:C.muted,marginTop:2}}>{[item.cidade,item.uf].filter(Boolean).join(' · ')}</div></div>
                   <div style={{textAlign:'center',flexShrink:0,minWidth:42}}><div style={{fontSize:12,fontWeight:700,color:'#0EA5E9'}}>{item.pac>0?item.pac:'—'}</div><div style={{fontSize:9,color:C.muted}}>pac.</div></div>
                   <div style={{fontSize:15,fontWeight:900,color:cls.color,flexShrink:0,minWidth:52,textAlign:'right'}}>{fmtMin(item.maxTempo)}</div>
                   <span style={{fontSize:9.5,fontWeight:700,padding:'3px 9px',borderRadius:20,background:cls.bg,color:cls.color,border:`0.5px solid ${cls.border}`,whiteSpace:'nowrap',flexShrink:0}}>{cls.label}</span>
-                </div>)
+                </div>
               })}
             </div>
           )}
         </div>
-
-        <div style={{background:'rgba(255,255,255,0.025)',border:'1px solid rgba(255,255,255,0.06)',borderRadius:14,padding:'18px 20px'}}>
+        <div style={cardE}>
           <div style={{fontSize:13,fontWeight:700,color:C.text,marginBottom:14}}>Médicos — Falta e Atraso</div>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1px 1fr',gap:0,alignItems:'stretch'}}>
             <div style={{paddingRight:16,display:'flex',flexDirection:'column',gap:10}}>
               {[{label:'Faltas',value:faltasList.length,color:C.rose,pct:medFPct},{label:'Atrasos >31min',value:atrasosList.length,color:C.amber,pct:medAPct}].map(k=>(
                 <div key={k.label}>
-                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:5}}>
-                    <div style={{display:'flex',alignItems:'center',gap:5}}><div style={{width:6,height:6,borderRadius:'50%',background:k.color}}/><span style={{fontSize:11,color:C.sub}}>{k.label}</span></div>
-                    <span style={{fontSize:13,fontWeight:700,color:k.color}}>{k.value} <span style={{fontSize:9,color:C.muted,fontWeight:400}}>{k.pct}%</span></span>
-                  </div>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:5}}><div style={{display:'flex',alignItems:'center',gap:5}}><div style={{width:6,height:6,borderRadius:'50%',background:k.color}}/><span style={{fontSize:11,color:C.sub}}>{k.label}</span></div><span style={{fontSize:13,fontWeight:700,color:k.color}}>{k.value} <span style={{fontSize:9,color:C.muted,fontWeight:400}}>{k.pct}%</span></span></div>
                   <div style={{background:'rgba(255,255,255,0.05)',borderRadius:3,height:4,overflow:'hidden'}}><div style={{height:'100%',background:k.color,width:`${k.pct}%`,borderRadius:3,transition:'width .6s'}}/></div>
                 </div>
               ))}
-              <div style={{display:'flex',alignItems:'center',gap:6,paddingTop:8,borderTop:'0.5px solid rgba(255,255,255,0.06)',marginTop:2}}>
-                <span style={{fontSize:22,fontWeight:800,color:C.orange,lineHeight:1}}>{medTotalProb}</span>
-                <span style={{fontSize:10,color:C.muted}}>total de ocorrências</span>
-              </div>
+              <div style={{display:'flex',alignItems:'center',gap:6,paddingTop:8,borderTop:'0.5px solid rgba(255,255,255,0.06)',marginTop:2}}><span style={{fontSize:22,fontWeight:800,color:C.orange,lineHeight:1}}>{medTotalProb}</span><span style={{fontSize:10,color:C.muted}}>total de ocorrências</span></div>
             </div>
             <div style={{background:'rgba(255,255,255,0.07)',margin:'0 16px'}}/>
             <div style={{paddingLeft:16,display:'flex',flexDirection:'column',gap:8}}>
@@ -1002,42 +996,16 @@ function TabEspera({rows}){
               {statusAt.length===0&&<div style={{color:C.muted,fontSize:11}}>Nenhuma ocorrência.</div>}
               {statusAt.map(({k,v})=>{
                 const cfg=getStatusCfg(k),pctAt=statusAt[0]?.v>0?Math.round(v/statusAt[0].v*100):0
-                return(
-                  <div key={k}>
-                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:3}}>
-                      <span style={{fontSize:10,color:C.sub}}>{cfg.label}</span>
-                      <div style={{display:'flex',alignItems:'center',gap:8}}><span style={{fontSize:12,fontWeight:700,color:cfg.color}}>{v}</span><span style={{fontSize:9,color:C.muted,fontWeight:400}}>{pctAt}%</span></div>
-                    </div>
-                    <div style={{background:'rgba(255,255,255,0.05)',borderRadius:3,height:5,overflow:'hidden'}}><div style={{height:'100%',background:`linear-gradient(90deg,${cfg.color},${cfg.color}88)`,width:`${pctAt}%`,borderRadius:3,transition:'width .6s'}}/></div>
-                  </div>
-                )
+                return<div key={k}><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:3}}><span style={{fontSize:10,color:C.sub}}>{cfg.label}</span><div style={{display:'flex',alignItems:'center',gap:8}}><span style={{fontSize:12,fontWeight:700,color:cfg.color}}>{v}</span><span style={{fontSize:9,color:C.muted}}>{pctAt}%</span></div></div><div style={{background:'rgba(255,255,255,0.05)',borderRadius:3,height:5,overflow:'hidden'}}><div style={{height:'100%',background:`linear-gradient(90deg,${cfg.color},${cfg.color}88)`,width:`${pctAt}%`,borderRadius:3,transition:'width .6s'}}/></div></div>
               })}
             </div>
           </div>
-          {medTotalProb===0&&!unidFilt&&<div style={{color:C.muted,fontSize:11,textAlign:'center',padding:'8px 0',marginTop:10}}>Nenhuma ocorrência no período.</div>}
-
-          {/* Lista de médicos quando unidade filtrada */}
           {unidFilt&&(docsFalta.length>0||docsAtraso.length>0)&&(
             <div style={{marginTop:12,paddingTop:12,borderTop:'0.5px solid rgba(255,255,255,0.06)'}}>
               <div style={{fontSize:9,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.09em',marginBottom:8}}>Médicos · {unidFilt}</div>
               <div style={{display:'flex',flexDirection:'column',gap:5,maxHeight:140,overflowY:'auto'}}>
-                {docsFalta.map(d=>(
-                  <div key={'f'+d.nm} style={{display:'flex',alignItems:'center',gap:8,padding:'4px 0'}}>
-                    <div style={{width:6,height:6,borderRadius:'50%',background:C.rose,flexShrink:0}}/>
-                    <span style={{fontSize:10.5,color:C.text,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{d.nm}</span>
-                    <span style={{fontSize:9,fontWeight:700,padding:'1px 7px',borderRadius:20,background:'rgba(244,63,94,0.12)',color:C.rose,border:'0.5px solid rgba(244,63,94,0.3)',flexShrink:0}}>Falta</span>
-                  </div>
-                ))}
-                {docsAtraso.map(d=>{
-                  const cfg=getStatusCfg(d.status)
-                  return(
-                    <div key={'a'+d.nm} style={{display:'flex',alignItems:'center',gap:8,padding:'4px 0'}}>
-                      <div style={{width:6,height:6,borderRadius:'50%',background:C.amber,flexShrink:0}}/>
-                      <span style={{fontSize:10.5,color:C.text,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{d.nm}</span>
-                      <span style={{fontSize:9,fontWeight:700,padding:'1px 7px',borderRadius:20,background:`${cfg.color}18`,color:cfg.color,border:`0.5px solid ${cfg.color}30`,flexShrink:0,whiteSpace:'nowrap'}}>{cfg.label}</span>
-                    </div>
-                  )
-                })}
+                {docsFalta.map(d=><div key={'f'+d.nm} style={{display:'flex',alignItems:'center',gap:8,padding:'4px 0'}}><div style={{width:6,height:6,borderRadius:'50%',background:C.rose,flexShrink:0}}/><span style={{fontSize:10.5,color:C.text,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{d.nm}</span><span style={{fontSize:9,fontWeight:700,padding:'1px 7px',borderRadius:20,background:'rgba(244,63,94,0.12)',color:C.rose,border:'0.5px solid rgba(244,63,94,0.3)',flexShrink:0}}>Falta</span></div>)}
+                {docsAtraso.map(d=>{const cfg=getStatusCfg(d.status);return<div key={'a'+d.nm} style={{display:'flex',alignItems:'center',gap:8,padding:'4px 0'}}><div style={{width:6,height:6,borderRadius:'50%',background:C.amber,flexShrink:0}}/><span style={{fontSize:10.5,color:C.text,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{d.nm}</span><span style={{fontSize:9,fontWeight:700,padding:'1px 7px',borderRadius:20,background:`${cfg.color}18`,color:cfg.color,border:`0.5px solid ${cfg.color}30`,flexShrink:0,whiteSpace:'nowrap'}}>{cfg.label}</span></div>})}
               </div>
             </div>
           )}
@@ -1046,175 +1014,52 @@ function TabEspera({rows}){
       </div>
 
       {/* TENDÊNCIA */}
-      <div style={{background:'rgba(255,255,255,0.025)',border:'1px solid rgba(255,255,255,0.06)',borderRadius:14,padding:'20px 24px',marginBottom:14}}>
+      <div style={{...cardE,marginBottom:14}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:16}}>
-          <div>
-            <div style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.13em'}}>{'TENDÊNCIA DE ESPERAS · '+trendRealCnt+' DIA'+(trendRealCnt!==1?'S':'')+' · TODOS OS ESTADOS'}</div>
-            <div style={{fontSize:10.5,color:C.muted,marginTop:4}}>Esperas críticas ao longo do tempo</div>
-          </div>
+          <div><div style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.13em'}}>{'TENDÊNCIA DE ESPERAS · '+trendRealCnt+' DIA'+(trendRealCnt!==1?'S':'')}</div><div style={{fontSize:10.5,color:C.muted,marginTop:4}}>Esperas críticas ao longo do tempo</div></div>
           <div style={{display:'flex',background:'rgba(255,255,255,0.04)',border:'0.5px solid rgba(255,255,255,0.08)',borderRadius:9,padding:3,gap:2}}>
-            {[{key:'real',label:'Real'},{key:'proj',label:'Projeção'}].map(v=>(
-              <button key={v.key} onClick={()=>setTrendView(v.key)} style={{padding:'5px 16px',borderRadius:6,border:'none',cursor:'pointer',fontSize:11,fontWeight:700,transition:'all .15s',background:trendView===v.key?C.amber:'transparent',color:trendView===v.key?'#1a0800':C.muted}}>{v.label}</button>
-            ))}
+            {[{key:'real',label:'Real'},{key:'proj',label:'Projeção'}].map(v=><button key={v.key} onClick={()=>setTrendView(v.key)} style={{padding:'5px 16px',borderRadius:6,border:'none',cursor:'pointer',fontSize:11,fontWeight:700,transition:'all .15s',background:trendView===v.key?C.amber:'transparent',color:trendView===v.key?'#1a0800':C.muted}}>{v.label}</button>)}
           </div>
         </div>
-
         <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:10,marginBottom:20}}>
           {(trendView==='real'?[
-            {label:'Crítica hoje ≥90min',  value:String(trendLastReal?.crit||'—'),  color:C.rose},
-            {label:'Grave hoje 31–89min',  value:String(trendLastReal?.grv||'—'),   color:C.orange},
-            {label:'Moderada hoje 15–30min',value:String(trendLastReal?.mod||'—'),  color:C.amber},
-            {label:'Pior dia (crítica)',   value:trendMaxDay?(trendMaxDay.crit+' em '+trendMaxDay.date.slice(5).replace('-','/')):'—',color:C.rose},
+            {label:'Crítica hoje ≥90min',value:String(trendLastReal?.crit||'—'),color:C.rose},
+            {label:'Grave hoje 31–89min',value:String(trendLastReal?.grv||'—'),color:C.orange},
+            {label:'Moderada hoje 15–30min',value:String(trendLastReal?.mod||'—'),color:C.amber},
+            {label:'Pior dia (crítica)',value:trendMaxDay?(trendMaxDay.crit+' em '+trendMaxDay.date.slice(5).replace('-','/')):'—',color:C.rose},
           ]:[
-            {label:'Proj. crítica amanhã', value:String(projData[0]?.crit||'—'),    color:C.rose},
-            {label:'Proj. grave amanhã',   value:String(projData[0]?.grv||'—'),     color:C.orange},
-            {label:'Proj. moderada amanhã',value:String(projData[0]?.mod||'—'),     color:C.amber},
-            {label:'Tendência crítica',    value:trendSlope>=0?'+'+trendSlope:String(trendSlope),color:trendSlope>0?C.rose:trendSlope<0?C.emerald:C.muted},
-          ]).map((k,i)=>(
-            <div key={k.label} style={{background:k.color+'14',border:'0.5px solid '+k.color+'22',borderRadius:10,padding:'11px 14px'}}>
-              <div style={{fontSize:9,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.08em',marginBottom:7}}>{k.label}</div>
-              <div style={{fontSize:22,fontWeight:800,color:k.color,letterSpacing:'-.5px'}}>{k.value}</div>
-            </div>
-          ))}
+            {label:'Proj. crítica amanhã',value:String(projData[0]?.crit||'—'),color:C.rose},
+            {label:'Proj. grave amanhã',value:String(projData[0]?.grv||'—'),color:C.orange},
+            {label:'Proj. moderada amanhã',value:String(projData[0]?.mod||'—'),color:C.amber},
+            {label:'Tendência crítica',value:trendSlope>=0?'+'+trendSlope:String(trendSlope),color:trendSlope>0?C.rose:trendSlope<0?C.emerald:C.muted},
+          ]).map(k=><div key={k.label} style={{background:k.color+'14',border:'0.5px solid '+k.color+'22',borderRadius:10,padding:'11px 14px'}}><div style={{fontSize:9,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.08em',marginBottom:7}}>{k.label}</div><div style={{fontSize:22,fontWeight:800,color:k.color,letterSpacing:'-.5px'}}>{k.value}</div></div>)}
         </div>
-
-        {trendAllData.length===0?(
-          <div style={{textAlign:'center',padding:'40px 0',color:C.muted,fontSize:12}}>Sem dados suficientes. Carregue uma planilha com múltiplos dias.</div>
-        ):(
+        {trendAllData.length===0?<div style={{textAlign:'center',padding:'40px 0',color:C.muted,fontSize:12}}>Sem dados suficientes.</div>:(
           <div>
             <div style={{display:'flex',gap:16,marginBottom:12,flexWrap:'wrap'}}>
-              {[{color:C.rose,label:'Espera Crítica (real)',dashed:false},{color:C.orange,label:'Espera Grave (real)',dashed:false}].concat(trendView==='proj'?[{color:C.rose,label:'Projeção crítica',dashed:true}]:[]).map(l=>(
-                <div key={l.label} style={{display:'flex',alignItems:'center',gap:5}}>
-                  <div style={{width:16,height:3,borderRadius:2,background:l.dashed?'transparent':l.color,border:l.dashed?('1.5px dashed '+l.color):'none',opacity:l.dashed?0.7:1}}/>
-                  <span style={{fontSize:10,color:C.muted}}>{l.label}</span>
-                </div>
-              ))}
+              {[{color:C.rose,label:'Espera Crítica'},{color:C.orange,label:'Espera Grave'},{color:C.amber,label:'Espera Moderada'}].concat(trendView==='proj'?[{color:C.rose,label:'Projeção crítica',dashed:true}]:[]).map(l=><div key={l.label} style={{display:'flex',alignItems:'center',gap:5}}><div style={{width:16,height:3,borderRadius:2,background:l.dashed?'transparent':l.color,border:l.dashed?('1.5px dashed '+l.color):'none',opacity:l.dashed?.7:1}}/><span style={{fontSize:10,color:C.muted}}>{l.label}</span></div>)}
             </div>
-            {/* Tooltip */}
-            {tTip&&(
-              <div style={{position:'fixed',left:tTip.x+14,top:tTip.y-60,zIndex:999,pointerEvents:'none',
-                background:'#0A0D16',border:'1px solid rgba(244,63,94,0.35)',borderRadius:10,
-                padding:'10px 14px',boxShadow:'0 8px 32px rgba(0,0,0,0.6)',minWidth:140}}>
-                <div style={{fontSize:10,fontWeight:700,color:C.muted,marginBottom:6,textTransform:'uppercase',letterSpacing:'.08em'}}>
-                  {tTip.date?tTip.date.slice(5).replace('-','/'):'—'} {tTip.isProj?'· Projeção':''}
-                </div>
-                <div style={{display:'flex',flexDirection:'column',gap:5}}>
-                  <div style={{display:'flex',justifyContent:'space-between',gap:16}}>
-                    <span style={{fontSize:11,color:'#F43F5E'}}>● Crítica ≥90min</span>
-                    <span style={{fontSize:13,fontWeight:800,color:'#F43F5E'}}>{tTip.crit||0}</span>
-                  </div>
-                  <div style={{display:'flex',justifyContent:'space-between',gap:16}}>
-                    <span style={{fontSize:11,color:'#F97316'}}>● Grave 31–89min</span>
-                    <span style={{fontSize:12,fontWeight:700,color:'#F97316'}}>{tTip.grv||0}</span>
-                  </div>
-                  <div style={{display:'flex',justifyContent:'space-between',gap:16}}>
-                    <span style={{fontSize:11,color:'#F59E0B'}}>● Moderada 15–30min</span>
-                    <span style={{fontSize:12,fontWeight:700,color:'#F59E0B'}}>{tTip.mod||0}</span>
-                  </div>
-                  <div style={{display:'flex',justifyContent:'space-between',gap:16,paddingTop:5,borderTop:'0.5px solid rgba(255,255,255,0.07)'}}>
-                    <span style={{fontSize:10,color:C.muted}}>Total incidentes</span>
-                    <span style={{fontSize:11,fontWeight:700,color:C.muted}}>{((tTip.crit||0)+(tTip.grv||0)+(tTip.mod||0))}</span>
-                  </div>
-                  {tTip.isProj&&<div style={{fontSize:9,color:C.amber,paddingTop:4,borderTop:'0.5px solid rgba(255,255,255,0.06)'}}>📊 Valor projetado</div>}
-                </div>
-              </div>
-            )}
-            <div style={{width:'100%',position:'relative'}}>
-              <svg width="100%" viewBox={'0 0 '+VW+' '+VH} style={{display:'block',overflow:'visible',cursor:'crosshair'}}
-                onMouseMove={e=>{
-                  if(!trendAllData.length)return
-                  const rc=e.currentTarget.getBoundingClientRect()
-                  const mx=(e.clientX-rc.left)/rc.width*VW
-                  let near=null,minD=Infinity
-                  trendAllData.forEach((d,i)=>{
-                    const xv=nTotal<=1?PL+CW/2:PL+i/(nTotal-1)*CW
-                    const dist=Math.abs(mx-xv)
-                    if(dist<minD){minD=dist;near={...d,idx:i}}
-                  })
-                  if(near&&minD<(CW/Math.max(nTotal-1,1))*0.8)setTTip({x:e.clientX,y:e.clientY,...near})
-                  else setTTip(null)
-                }}
-                onMouseLeave={()=>setTTip(null)}>
-                <defs>
-                  <clipPath id="tClip">
-                    <rect x={PL} y={PT-2} width={CW} height={CH+4}/>
-                  </clipPath>
-                </defs>
-
-                {/* Y grid — single axis */}
-                {[0,Math.round(trendMaxAll*0.33),Math.round(trendMaxAll*0.66),trendMaxAll].map((v,ti)=>(
-                  <g key={ti}>
-                    <line x1={PL} y1={tyA(v)} x2={VW-PR} y2={tyA(v)} stroke="rgba(255,255,255,0.05)" strokeWidth="0.5"/>
-                    <text x={PL-7} y={tyA(v)+4} textAnchor="end" fontSize="9" fill="#475569">{v}</text>
-                  </g>
-                ))}
-
-                {/* Separator real/proj */}
-                {trendView==='proj'&&trendRealCnt>0&&nTotal>trendRealCnt&&(
-                  <line x1={txP(trendRealCnt-1)} y1={PT} x2={txP(trendRealCnt-1)} y2={PT+CH} stroke="rgba(245,158,11,0.25)" strokeWidth="1" strokeDasharray="4,3"/>
-                )}
-
-                <g clipPath="url(#tClip)">
-                  {/* Area fill crítica */}
-                  {trendRealCnt>=2&&(
-                    <path d={tSmooth(byDate,'crit',tyA,0)+' L'+txP(trendRealCnt-1).toFixed(1)+','+(PT+CH).toFixed(1)+' L'+txP(0).toFixed(1)+','+(PT+CH).toFixed(1)+' Z'} fill="rgba(244,63,94,0.10)"/>
-                  )}
-                  {/* Linha moderada — amber */}
-                  {trendRealCnt>=2&&(
-                    <path d={tSmooth(byDate,'mod',tyA,0)} fill="none" stroke="#F59E0B" strokeWidth="2" strokeOpacity={0.8}/>
-                  )}
-                  {/* Linha grave — orange */}
-                  {trendRealCnt>=2&&(
-                    <path d={tSmooth(byDate,'grv',tyA,0)} fill="none" stroke="#F97316" strokeWidth="2.5" strokeOpacity={0.9}/>
-                  )}
-                  {/* Linha crítica — rose, destaque */}
-                  {trendRealCnt>=2&&(
-                    <path d={tSmooth(byDate,'crit',tyA,0)} fill="none" stroke="#F43F5E" strokeWidth="3"/>
-                  )}
-                  {/* Proj moderada dashed */}
-                  {trendView==='proj'&&projData.length>=1&&trendRealCnt>=1&&(
-                    <path d={'M'+txP(trendRealCnt-1).toFixed(1)+','+tyA(trendLastReal?.mod||0).toFixed(1)+tSmooth(projData,'mod',tyA,trendRealCnt).slice(1)} fill="none" stroke="#F59E0B" strokeWidth="1.5" strokeOpacity={0.4} strokeDasharray="5,4"/>
-                  )}
-                  {/* Proj grave dashed */}
-                  {trendView==='proj'&&projData.length>=1&&trendRealCnt>=1&&(
-                    <path d={'M'+txP(trendRealCnt-1).toFixed(1)+','+tyA(trendLastReal?.grv||0).toFixed(1)+tSmooth(projData,'grv',tyA,trendRealCnt).slice(1)} fill="none" stroke="#F97316" strokeWidth="1.5" strokeOpacity={0.4} strokeDasharray="5,4"/>
-                  )}
-                  {/* Proj crítica dashed */}
-                  {trendView==='proj'&&projData.length>=1&&trendRealCnt>=1&&(
-                    <path d={'M'+txP(trendRealCnt-1).toFixed(1)+','+tyA(trendLastReal?.crit||0).toFixed(1)+tSmooth(projData,'crit',tyA,trendRealCnt).slice(1)} fill="none" stroke="#F43F5E" strokeWidth="2" strokeOpacity={0.45} strokeDasharray="6,4"/>
-                  )}
-                </g>
-
-                {/* Dots moderada */}
-                {byDate.map((d,i)=>(<circle key={'m'+i} cx={txP(i)} cy={tyA(d.mod||0)} r="3" fill="#F59E0B" stroke="#06080F" strokeWidth="1.5"/>))}
-                {/* Dots grave */}
-                {byDate.map((d,i)=>(<circle key={'g'+i} cx={txP(i)} cy={tyA(d.grv||0)} r="3.5" fill="#F97316" stroke="#06080F" strokeWidth="1.5"/>))}
-                {/* Dots crítica — maiores */}
-                {byDate.map((d,i)=>(<circle key={'c'+i} cx={txP(i)} cy={tyA(d.crit||0)} r="4" fill="#F43F5E" stroke="#06080F" strokeWidth="1.5"/>))}
-                {/* Proj triangles crítica */}
-                {trendView==='proj'&&projData.map((d,i)=>{
-                  const cx=txP(i+trendRealCnt),cy=tyA(d.crit||0)
-                  return(<polygon key={'t'+i} points={cx.toFixed(1)+','+(cy-7).toFixed(1)+' '+(cx-5).toFixed(1)+','+(cy+4).toFixed(1)+' '+(cx+5).toFixed(1)+','+(cy+4).toFixed(1)} fill="#F43F5E" fillOpacity={0.5}/>)
-                })}
-                {/* Hover highlight */}
-                {tTip&&tTip.idx!=null&&(
-                  <circle cx={nTotal<=1?PL+CW/2:PL+(tTip.idx)/(nTotal-1)*CW} cy={tyA(tTip.crit||0)} r="7" fill="none" stroke="#F43F5E" strokeWidth="2" strokeOpacity={0.8}/>
-                )}
-                {/* X labels */}
-                {trendAllData.map((d,i)=>{
-                  const show=nTotal<=10||i===0||i===nTotal-1||i%Math.ceil(nTotal/8)===0
-                  return show?(<text key={'x'+i} x={txP(i)} y={VH-3} textAnchor="middle" fontSize="9" fill={d.isProj?'rgba(245,158,11,0.4)':'#334155'}>{d.date.slice(5).replace('-','/')}</text>):null
-                })}
-                <line x1={PL} y1={PT+CH} x2={VW-PR} y2={PT+CH} stroke="rgba(255,255,255,0.07)" strokeWidth="0.5"/>
+            {tTip&&<div style={{position:'fixed',left:tTip.x+14,top:tTip.y-60,zIndex:999,pointerEvents:'none',background:'#0A0D16',border:'1px solid rgba(244,63,94,0.35)',borderRadius:10,padding:'10px 14px',boxShadow:'0 8px 32px rgba(0,0,0,0.6)',minWidth:140}}><div style={{fontSize:10,fontWeight:700,color:C.muted,marginBottom:6,textTransform:'uppercase'}}>{tTip.date?tTip.date.slice(5).replace('-','/'):'—'}{tTip.isProj?' · Projeção':''}</div><div style={{display:'flex',flexDirection:'column',gap:5}}><div style={{display:'flex',justifyContent:'space-between',gap:16}}><span style={{fontSize:11,color:'#F43F5E'}}>● Crítica</span><span style={{fontSize:13,fontWeight:800,color:'#F43F5E'}}>{tTip.crit||0}</span></div><div style={{display:'flex',justifyContent:'space-between',gap:16}}><span style={{fontSize:11,color:'#F97316'}}>● Grave</span><span style={{fontSize:12,fontWeight:700,color:'#F97316'}}>{tTip.grv||0}</span></div><div style={{display:'flex',justifyContent:'space-between',gap:16}}><span style={{fontSize:11,color:'#F59E0B'}}>● Moderada</span><span style={{fontSize:12,fontWeight:700,color:'#F59E0B'}}>{tTip.mod||0}</span></div><div style={{display:'flex',justifyContent:'space-between',gap:16,paddingTop:5,borderTop:'0.5px solid rgba(255,255,255,0.07)'}}><span style={{fontSize:10,color:C.muted}}>Total</span><span style={{fontSize:11,fontWeight:700,color:C.muted}}>{(tTip.crit||0)+(tTip.grv||0)+(tTip.mod||0)}</span></div></div></div>}
+            <svg width="100%" viewBox={'0 0 '+VW+' '+VH} style={{display:'block',overflow:'visible',cursor:'crosshair'}}
+              onMouseMove={e=>{if(!trendAllData.length)return;const rc=e.currentTarget.getBoundingClientRect();const mx=(e.clientX-rc.left)/rc.width*VW;let near=null,minD=Infinity;trendAllData.forEach((d,i)=>{const xv=nTotal<=1?PL+CW/2:PL+i/(nTotal-1)*CW;const dist=Math.abs(mx-xv);if(dist<minD){minD=dist;near={...d,idx:i}}});if(near&&minD<(CW/Math.max(nTotal-1,1))*.8)setTTip({x:e.clientX,y:e.clientY,...near});else setTTip(null)}}
+              onMouseLeave={()=>setTTip(null)}>
+              <defs><clipPath id="tClip"><rect x={PL} y={PT-2} width={CW} height={CH+4}/></clipPath></defs>
+              {[0,Math.round(trendMaxAll*.33),Math.round(trendMaxAll*.66),trendMaxAll].map((v,ti)=><g key={ti}><line x1={PL} y1={tyA(v)} x2={VW-PR} y2={tyA(v)} stroke="rgba(255,255,255,0.05)" strokeWidth=".5"/><text x={PL-7} y={tyA(v)+4} textAnchor="end" fontSize="9" fill="#475569">{v}</text></g>)}
+              {trendView==='proj'&&trendRealCnt>0&&nTotal>trendRealCnt&&<line x1={txP(trendRealCnt-1)} y1={PT} x2={txP(trendRealCnt-1)} y2={PT+CH} stroke="rgba(245,158,11,0.25)" strokeWidth="1" strokeDasharray="4,3"/>}
+              <g clipPath="url(#tClip)">
+                {trendRealCnt>=2&&<path d={tSmooth(byDate,'crit',tyA,0)+' L'+txP(trendRealCnt-1).toFixed(1)+','+(PT+CH).toFixed(1)+' L'+txP(0).toFixed(1)+','+(PT+CH).toFixed(1)+' Z'} fill="rgba(244,63,94,0.10)"/>}
+                {trendRealCnt>=2&&<path d={tSmooth(byDate,'mod',tyA,0)} fill="none" stroke="#F59E0B" strokeWidth="2" strokeOpacity={.8}/>}
+                {trendRealCnt>=2&&<path d={tSmooth(byDate,'grv',tyA,0)} fill="none" stroke="#F97316" strokeWidth="2.5" strokeOpacity={.9}/>}
+                {trendRealCnt>=2&&<path d={tSmooth(byDate,'crit',tyA,0)} fill="none" stroke="#F43F5E" strokeWidth="3"/>}
+                {trendView==='proj'&&projData.length>=1&&trendRealCnt>=1&&<path d={'M'+txP(trendRealCnt-1).toFixed(1)+','+tyA(trendLastReal?.crit||0).toFixed(1)+tSmooth(projData,'crit',tyA,trendRealCnt).slice(1)} fill="none" stroke="#F43F5E" strokeWidth="2" strokeOpacity={.45} strokeDasharray="6,4"/>}
+              </g>
+              {byDate.map((d,i)=><circle key={'m'+i} cx={txP(i)} cy={tyA(d.mod||0)} r="3" fill="#F59E0B" stroke="#06080F" strokeWidth="1.5"/>)}
+              {byDate.map((d,i)=><circle key={'g'+i} cx={txP(i)} cy={tyA(d.grv||0)} r="3.5" fill="#F97316" stroke="#06080F" strokeWidth="1.5"/>)}
+              {byDate.map((d,i)=><circle key={'c'+i} cx={txP(i)} cy={tyA(d.crit||0)} r="4" fill="#F43F5E" stroke="#06080F" strokeWidth="1.5"/>)}
+              {tTip&&tTip.idx!=null&&<circle cx={nTotal<=1?PL+CW/2:PL+(tTip.idx)/(nTotal-1)*CW} cy={tyA(tTip.crit||0)} r="7" fill="none" stroke="#F43F5E" strokeWidth="2" strokeOpacity={.8}/>}
+              {trendAllData.map((d,i)=>{const show=nTotal<=10||i===0||i===nTotal-1||i%Math.ceil(nTotal/8)===0;return show?<text key={'x'+i} x={txP(i)} y={VH-3} textAnchor="middle" fontSize="9" fill={d.isProj?'rgba(245,158,11,0.4)':'#334155'}>{d.date.slice(5).replace('-','/')}</text>:null})}
+              <line x1={PL} y1={PT+CH} x2={VW-PR} y2={PT+CH} stroke="rgba(255,255,255,0.07)" strokeWidth=".5"/>
             </svg>
-            </div>
-            {trendView==='proj'&&(
-              <div style={{marginTop:12,padding:'9px 14px',background:'rgba(245,158,11,0.05)',border:'0.5px solid rgba(245,158,11,0.18)',borderRadius:8,fontSize:10.5,color:C.muted}}>
-                <span style={{color:C.amber,fontWeight:700}}>Como a projeção é calculada — </span>
-                {'Média dos últimos '+Math.min(byDate.length,3)+' dia'+(byDate.length!==1?'s':'')+' + tendência linear para os próximos 5 dias.'}
-                {byDate.length<3&&<span style={{color:C.amber}}> Precisão aumenta com mais dias na base.</span>}
-              </div>
-            )}
           </div>
         )}
       </div>
@@ -1222,6 +1067,7 @@ function TabEspera({rows}){
   )
 }
 
+// ─── HOME ────────────────────────────────────────────────────────────────────
 export default function Home(){
   const[tab,setTab]=useState('espera')
   const[agendas,setAgendas]=useState([])
@@ -1270,10 +1116,8 @@ export default function Home(){
       const wb=XLSX.read(buf,{type:'buffer'})
       const ws=wb.Sheets['PONTOS']||wb.Sheets[wb.SheetNames[0]]
       const json=XLSX.utils.sheet_to_json(ws,{range:3,defval:''})
-      
-      setStoreMsg(`${json.length.toLocaleString('pt-BR')} linhas — salvando (sem duplicatas)…`)
+      setStoreMsg(`${json.length.toLocaleString('pt-BR')} linhas — salvando…`)
       const CHUNK=500
-      // Salva via API (a API fará a conversão de datas)
       for(let i=0;i<json.length;i+=CHUNK){setStoreMsg(`Agendas… ${Math.min(i+CHUNK,json.length).toLocaleString('pt-BR')}/${json.length.toLocaleString('pt-BR')}`);await fetch('/api/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows:json.slice(i,i+CHUNK),ts,table:'agendas'})})}
       for(let i=0;i<json.length;i+=CHUNK){setStoreMsg(`Espera… ${Math.min(i+CHUNK,json.length).toLocaleString('pt-BR')}/${json.length.toLocaleString('pt-BR')}`);await fetch('/api/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows:json.slice(i,i+CHUNK),ts,table:'espera'})})}
       setStoreMsg('Recarregando…')
@@ -1297,13 +1141,14 @@ export default function Home(){
 
   return(
     <div style={{minHeight:'100vh',background:C.bg,fontFamily:"'DM Sans','Segoe UI',sans-serif",color:C.text}}>
-      <style>{`
+      <style suppressHydrationWarning>{`
         @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800;900&family=DM+Sans:wght@300;400;500;600;700;800&display=swap');
         *{box-sizing:border-box;margin:0;padding:0}
         ::-webkit-scrollbar{width:4px;background:transparent}
         ::-webkit-scrollbar-thumb{background:rgba(245,158,11,0.2);border-radius:4px}
         select option{background:#0A0D16;color:#F1F5F9}
         input::placeholder{color:#475569}
+        textarea::placeholder{color:#475569}
         select{appearance:auto}
       `}</style>
       <div style={{background:'#070910',borderBottom:'1px solid rgba(245,158,11,0.1)',display:'flex',alignItems:'center',padding:'0 32px',height:52,position:'sticky',top:0,zIndex:100,backdropFilter:'blur(12px)'}}>
@@ -1326,7 +1171,7 @@ export default function Home(){
           <div style={{display:'flex',alignItems:'center',gap:5}}><div style={{width:6,height:6,borderRadius:'50%',background:C.emerald,boxShadow:`0 0 6px ${C.emerald}`}}/><span style={{fontSize:10,color:C.muted}}>Banco conectado</span></div>
           {timestamp&&<span style={{fontSize:10,color:C.muted}}>{timestamp}</span>}
           {storeMsg&&<span style={{fontSize:10,color:storeMsg.startsWith('☁')||storeMsg.startsWith('✓')?C.emerald:C.amber,fontWeight:600,maxWidth:220,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{storeMsg}</span>}
-          {(storageInfo.agendas>0||storageInfo.espera>0)&&!storing&&(<button onClick={handleClear} style={{background:'transparent',border:'0.5px solid rgba(244,63,94,0.3)',borderRadius:8,color:C.rose,fontSize:11,padding:'5px 10px',cursor:'pointer'}}>🗑</button>)}
+          {(storageInfo.agendas>0||storageInfo.espera>0)&&!storing&&<button onClick={handleClear} style={{background:'transparent',border:'0.5px solid rgba(244,63,94,0.3)',borderRadius:8,color:C.rose,fontSize:11,padding:'5px 10px',cursor:'pointer'}}>🗑</button>}
           <label style={{background:storing?'rgba(255,255,255,0.06)':'linear-gradient(135deg,#F59E0B,#F97316)',color:storing?C.muted:'#1a0800',fontWeight:800,fontSize:12,padding:'7px 16px',borderRadius:9,cursor:storing?'default':'pointer',transition:'all .2s',whiteSpace:'nowrap',fontFamily:"'Syne',sans-serif"}}>
             {storing?'Salvando…':'+ Carregar Planilha'}
             <input type="file" accept=".xlsx,.xls" style={{display:'none'}} onChange={handleUpload} disabled={storing||loadingDB}/>
