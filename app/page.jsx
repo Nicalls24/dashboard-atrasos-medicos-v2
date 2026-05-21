@@ -168,9 +168,9 @@ function TabAgendas({rows}){
 
   // % global: total de (médico+hora+unidade) com problema vs com justificativa no período
   const globalJustStats=useMemo(()=>{
-    const statusU=d=>String(d.status||'').toUpperCase()
-    const atrasoU=d=>String(d.atraso||'').toUpperCase()
-    const isFn=d=>atrasoU(d)==='FALTA'||statusU(d).includes('FALTA')||atrasoU(d)==='SIM'
+    const _statusUP=d=>String(d.status||'').toUpperCase()
+    const _atrasoU=d=>String(d.atraso||'').toUpperCase().trim()
+    const isFn=d=>_atrasoU(d)==='FALTA'||_atrasoU(d)==='SIM'
     const totalSet=new Set()
     filteredGlobal.forEach(d=>{
       if(!isFn(d))return
@@ -236,26 +236,45 @@ function TabAgendas({rows}){
     const totalEnc =filtered.reduce((a,d)=>a+(d.qt_encaixe ||0),0)
     const totalAg  =totalCons+totalEnc
 
-    // Classificação por status e atraso
-    const statusU=d=>String(d.status||'').toUpperCase()
-    const atrasoU=d=>String(d.atraso||'').toUpperCase()
-    const isFaltaFn =d=>atrasoU(d)==='FALTA'||statusU(d).includes('FALTA')
-    const isCritFn  =d=>atrasoU(d)==='SIM'&&(statusU(d).includes('CRÍTICO')||statusU(d).includes('CRITICO'))
-    const isGrvFn   =d=>atrasoU(d)==='SIM'&&statusU(d).includes('GRAVE')
-    const isAtrSoFn =d=>atrasoU(d)==='SIM'&&!isCritFn(d)&&!isGrvFn(d)&&!statusU(d).includes('SEM PONTO')
+    // ── Classificação por coluna ATRASO (S) + STATUS (U) ────────────────────────
+    // ATRASO='FALTA' → sem ponto + falta ou remarcação
+    // ATRASO='SIM'   → atrasado (grave, crítico ou simples)
+    // HR_ENTRADA null → sem ponto  |  preenchida → com ponto
+    const statusU=d=>String(d.status||'').trim()
+    const statusUP=d=>statusU(d).toUpperCase()
+    const atrasoU=d=>String(d.atraso||'').toUpperCase().trim()
 
-    const faltaRows=filtered.filter(isFaltaFn)
-    const critRows =filtered.filter(isCritFn)
-    const grvRows  =filtered.filter(isGrvFn)
-    const atrRows  =filtered.filter(isAtrSoFn)
-    const faltaDocs=[...new Set(faltaRows.map(d=>d.nm_medico).filter(Boolean))]
-    const critDocs =[...new Set(critRows .map(d=>d.nm_medico).filter(Boolean))]
-    const grvDocs  =[...new Set(grvRows  .map(d=>d.nm_medico).filter(Boolean))]
-    const atrDocs  =[...new Set(atrRows  .map(d=>d.nm_medico).filter(Boolean))]
+    // ── Regras exatas por valor de STATUS ─────────────────────────────────────
+    // Falta Médica   : ATRASO=FALTA  e STATUS='Falta Médica'
+    // Remarcação Adm : ATRASO=FALTA  e STATUS='Remarcação Adm' ou 'Remarcação médico'
+    // Atraso         : ATRASO=SIM    e STATUS='ATRASO'
+    // Atraso Grave   : ATRASO=SIM    e STATUS='ATRASO GRAVE'
+    // Atraso Crítico : ATRASO=SIM    e STATUS='ATRASO CRÍTICO'
+    const isFaltaMedFn =d=>atrasoU(d)==='FALTA'&&!statusUP(d).includes('REMARCA')
+    const isRemarcaFn  =d=>atrasoU(d)==='FALTA'&&statusUP(d).includes('REMARCA')
+    const isCritFn     =d=>atrasoU(d)==='SIM'&&(statusUP(d).includes('CRÍTICO')||statusUP(d).includes('CRITICO'))
+    const isGrvFn      =d=>atrasoU(d)==='SIM'&&statusUP(d).includes('GRAVE')
+    const isAtrSoFn    =d=>atrasoU(d)==='SIM'&&!isCritFn(d)&&!isGrvFn(d)
+
+    const faltaRows  =filtered.filter(isFaltaMedFn)
+    const remarcaRows=filtered.filter(isRemarcaFn)
+    const critRows   =filtered.filter(isCritFn)
+    const grvRows    =filtered.filter(isGrvFn)
+    const atrRows    =filtered.filter(isAtrSoFn)
+
+    // unique doctors per category
+    const uniqDocs=rows=>([...new Set(rows.map(d=>d.nm_medico).filter(Boolean))])
+    const faltaDocs  =uniqDocs(faltaRows)
+    const remarcaDocs=uniqDocs(remarcaRows)
+    const critDocs   =uniqDocs(critRows)
+    const grvDocs    =uniqDocs(grvRows)
+    const atrDocs    =uniqDocs(atrRows)
+
     const faltaAg=faltaRows.reduce((a,d)=>a+(d.qt_consulta||0)+(d.qt_encaixe||0),0)
-    const critAg =critRows .reduce((a,d)=>a+(d.qt_consulta||0)+(d.qt_encaixe||0),0)
-    const grvAg  =grvRows  .reduce((a,d)=>a+(d.qt_consulta||0)+(d.qt_encaixe||0),0)
-    const atrAg  =atrRows  .reduce((a,d)=>a+(d.qt_consulta||0)+(d.qt_encaixe||0),0)
+    const remarcaAg=remarcaRows.reduce((a,d)=>a+(d.qt_consulta||0)+(d.qt_encaixe||0),0)
+    const critAg   =critRows   .reduce((a,d)=>a+(d.qt_consulta||0)+(d.qt_encaixe||0),0)
+    const grvAg    =grvRows    .reduce((a,d)=>a+(d.qt_consulta||0)+(d.qt_encaixe||0),0)
+    const atrAg    =atrRows    .reduce((a,d)=>a+(d.qt_consulta||0)+(d.qt_encaixe||0),0)
 
     const uMap={}
     filtered.forEach(d=>{
@@ -374,14 +393,14 @@ function TabAgendas({rows}){
     const comPontoAtrasoTotal=[...new Set(comPontoAtrasoList.map(d=>d.nm))].length
 
         return{totalRows,totalCons,totalEnc,totalAg,
-      faltaDocs,critDocs,grvDocs,atrDocs,faltaAg,critAg,grvAg,atrAg,
+      faltaDocs,remarcaDocs,critDocs,grvDocs,atrDocs,faltaAg,remarcaAg,critAg,grvAg,atrAg,
       feedList,topSpec,byDate,projData,
       docsFaltaU,docsCritU,docsGrvU,docsAtrU,
       situacaoPontoHoras,semPontoAtrasoTotal,semPontoFaltaTotal,comPontoAtrasoTotal}
   },[filtered,unidFilt,rows,periodoFn,ufFilt,search,horasFilt])
 
   const{totalRows,totalCons,totalEnc,totalAg,
-    faltaDocs,critDocs,grvDocs,atrDocs,faltaAg,critAg,grvAg,atrAg,
+    faltaDocs,remarcaDocs,critDocs,grvDocs,atrDocs,faltaAg,remarcaAg,critAg,grvAg,atrAg,
     feedList,topSpec,byDate,projData,
     docsFaltaU,docsCritU,docsGrvU,docsAtrU,
     situacaoPontoHoras,semPontoAtrasoTotal,semPontoFaltaTotal,comPontoAtrasoTotal}=agStats
@@ -462,10 +481,11 @@ function TabAgendas({rows}){
         <div style={{flex:'1.8',padding:'16px 24px',position:'relative',overflow:'hidden'}}>
           <div style={{position:'absolute',top:-20,right:-20,width:120,height:120,borderRadius:'50%',background:'radial-gradient(circle,rgba(16,185,129,0.06),transparent 70%)',pointerEvents:'none'}}/>
           <div style={{fontSize:9,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.12em',marginBottom:6}}>Médicos com Ocorrências</div>
-          <div style={{fontSize:42,fontWeight:900,color:C.emerald,lineHeight:1,letterSpacing:'-2px'}}>{faltaDocs.length+atrDocs.length+critDocs.length+grvDocs.length}</div>
+          <div style={{fontSize:42,fontWeight:900,color:C.emerald,lineHeight:1,letterSpacing:'-2px'}}>{faltaDocs.length+remarcaDocs.length+atrDocs.length+critDocs.length+grvDocs.length}</div>
           <div style={{fontSize:9,color:C.muted,marginTop:8}}>médicos afetados no período</div>
-          <div style={{marginTop:10,display:'flex',gap:10}}>
+          <div style={{marginTop:10,display:'flex',gap:10,flexWrap:'wrap'}}>
             <div style={{display:'flex',alignItems:'center',gap:4}}><div style={{width:6,height:6,borderRadius:'50%',background:C.blue}}/><span style={{fontSize:9,color:C.muted}}>{faltaDocs.length} falta{faltaDocs.length!==1?'s':''}</span></div>
+            <div style={{display:'flex',alignItems:'center',gap:4}}><div style={{width:6,height:6,borderRadius:'50%',background:'#8B5CF6'}}/><span style={{fontSize:9,color:C.muted}}>{remarcaDocs.length} remarca{remarcaDocs.length!==1?'ções':'ção'}</span></div>
             <div style={{display:'flex',alignItems:'center',gap:4}}><div style={{width:6,height:6,borderRadius:'50%',background:C.rose}}/><span style={{fontSize:9,color:C.muted}}>{critDocs.length+grvDocs.length+atrDocs.length} atraso{(critDocs.length+grvDocs.length+atrDocs.length)!==1?'s':''}</span></div>
           </div>
         </div>
@@ -520,23 +540,41 @@ function TabAgendas({rows}){
             <div style={{position:'absolute',top:-40,right:-40,width:180,height:180,borderRadius:'50%',background:'radial-gradient(circle,rgba(244,63,94,0.06),transparent 70%)',pointerEvents:'none'}}/>
             <div style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.14em',marginBottom:16}}>⚡ Médicos — Impacto nas Agendas</div>
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
-              {[
-                {label:'Falta Médica',docs:faltaDocs.length,ag:faltaAg,color:C.blue,icon:'🔵'},
-                {label:'Atraso',docs:atrDocs.length,ag:atrAg,color:C.amber,icon:'🟡'},
-                {label:'Atraso Grave',docs:grvDocs.length,ag:grvAg,color:C.orange,icon:'🟠'},
-                {label:'Atraso Crítico',docs:critDocs.length,ag:critAg,color:C.rose,icon:'🔴'},
-              ].map(k=>(
-                <div key={k.label} style={{borderRadius:12,padding:'14px 16px',background:`linear-gradient(145deg,${k.color}14,${k.color}06)`,border:`1px solid ${k.color}30`,position:'relative',overflow:'hidden'}}>
-                  <div style={{fontSize:8,fontWeight:700,color:k.color,textTransform:'uppercase',letterSpacing:'.1em',marginBottom:10}}>{k.label}</div>
-                  <div style={{fontSize:44,fontWeight:900,color:k.color,lineHeight:1,letterSpacing:'-2px'}}>{k.docs}</div>
-                  <div style={{fontSize:9,color:C.muted,marginTop:6}}>médico{k.docs!==1?'s':''}</div>
-                  <div style={{marginTop:10,paddingTop:8,borderTop:`0.5px solid ${k.color}20`,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                    <span style={{fontSize:8,color:C.muted}}>agendas</span>
-                    <span style={{fontSize:13,fontWeight:800,color:k.color}}>{k.ag.toLocaleString('pt-BR')}</span>
+              {/* Linha 1: Faltas + Remarcação */}
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:10}}>
+                {[
+                  {label:'Falta Médica',docs:faltaDocs.length,ag:faltaAg,color:C.blue},
+                  {label:'Remarcação Adm',docs:remarcaDocs.length,ag:remarcaAg,color:'#8B5CF6'},
+                ].map(k=>(
+                  <div key={k.label} style={{borderRadius:12,padding:'14px 16px',background:`linear-gradient(145deg,${k.color}14,${k.color}06)`,border:`1px solid ${k.color}30`,position:'relative',overflow:'hidden'}}>
+                    <div style={{fontSize:8,fontWeight:700,color:k.color,textTransform:'uppercase',letterSpacing:'.1em',marginBottom:8}}>{k.label}</div>
+                    <div style={{fontSize:40,fontWeight:900,color:k.color,lineHeight:1,letterSpacing:'-2px'}}>{k.docs}</div>
+                    <div style={{fontSize:9,color:C.muted,marginTop:4}}>médico{k.docs!==1?'s':''}</div>
+                    <div style={{marginTop:8,paddingTop:6,borderTop:`0.5px solid ${k.color}20`,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                      <span style={{fontSize:8,color:C.muted}}>agendas</span>
+                      <span style={{fontSize:12,fontWeight:800,color:k.color}}>{k.ag.toLocaleString('pt-BR')}</span>
+                    </div>
                   </div>
-                  <div style={{position:'absolute',bottom:-8,right:4,fontSize:48,opacity:0.05,fontWeight:900,color:k.color,lineHeight:1}}>{k.docs}</div>
-                </div>
-              ))}
+                ))}
+              </div>
+              {/* Linha 2: Atrasos */}
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10}}>
+                {[
+                  {label:'Atraso',docs:atrDocs.length,ag:atrAg,color:C.amber},
+                  {label:'Atraso Grave',docs:grvDocs.length,ag:grvAg,color:C.orange},
+                  {label:'Atraso Crítico',docs:critDocs.length,ag:critAg,color:C.rose},
+                ].map(k=>(
+                  <div key={k.label} style={{borderRadius:12,padding:'14px 16px',background:`linear-gradient(145deg,${k.color}14,${k.color}06)`,border:`1px solid ${k.color}30`,position:'relative',overflow:'hidden'}}>
+                    <div style={{fontSize:8,fontWeight:700,color:k.color,textTransform:'uppercase',letterSpacing:'.1em',marginBottom:8}}>{k.label}</div>
+                    <div style={{fontSize:40,fontWeight:900,color:k.color,lineHeight:1,letterSpacing:'-2px'}}>{k.docs}</div>
+                    <div style={{fontSize:9,color:C.muted,marginTop:4}}>médico{k.docs!==1?'s':''}</div>
+                    <div style={{marginTop:8,paddingTop:6,borderTop:`0.5px solid ${k.color}20`,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                      <span style={{fontSize:8,color:C.muted}}>agendas</span>
+                      <span style={{fontSize:12,fontWeight:800,color:k.color}}>{k.ag.toLocaleString('pt-BR')}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
 
