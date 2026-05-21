@@ -1228,12 +1228,10 @@ export default function Home(){
         if(v instanceof Date)return v.toISOString().slice(0,10)
         return String(v).slice(0,10)
       }
+      // Apenas colunas que existem na tabela Supabase 'agendas'
       const mapAgRow=r=>({
         uf:String(r['UF']||''),
         nm_local:String(r['NM_LOCAL']||''),
-        cd_local:String(r['CD_LOCAL']||''),
-        nm_filial:String(r['NM_FILIAL']||''),
-        cd_medico:String(r['CD_MEDICO']||''),
         nm_medico:String(r['NM_MEDICO']||''),
         ds_especialidade:String(r['DS_ESPECIALIDADE']||''),
         cidade:String(r['CIDADE']||''),
