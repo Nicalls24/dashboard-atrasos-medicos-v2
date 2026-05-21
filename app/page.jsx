@@ -150,7 +150,41 @@ function TabAgendas({rows}){
     return r
   },[rows,periodoFn,ufFilt,search,horasFilt,unidFilt])
 
-  const docHoraMap=useMemo(()=>{
+  // filteredGlobal: igual a filtered mas SEM unidFilt → para % global do período
+  const filteredGlobal=useMemo(()=>{
+    let r=rows.filter(d=>periodoFn(d.dt_registro||d.data_agenda))
+    if(ufFilt!=='TODOS')r=r.filter(d=>d.uf===ufFilt)
+    if(search){const q=search.toLowerCase();r=r.filter(d=>[d.nm_local,d.nm_medico,d.ds_especialidade,d.cidade].some(v=>String(v||'').toLowerCase().includes(q)))}
+    if(horasFilt.length>0)r=r.filter(d=>{const h=d.hr_inicio_min;if(h==null)return false;return horasFilt.includes(Math.floor(h/60))})
+    // SEM unidFilt — para calcular % global
+    return r
+  },[rows,periodoFn,ufFilt,search,horasFilt])
+
+  // justAgGlobal: todas as justificativas do período (sem filtro de unidade)
+  const justAgGlobal=useMemo(()=>allAgJust.filter(x=>periodoFn(x.data_ref)),[allAgJust,periodoFn])
+
+  // % global: total de (médico+hora+unidade) com problema vs com justificativa no período
+  const globalJustStats=useMemo(()=>{
+    const statusU=d=>String(d.status||'').toUpperCase()
+    const atrasoU=d=>String(d.atraso||'').toUpperCase()
+    const isFn=d=>atrasoU(d)==='FALTA'||statusU(d).includes('FALTA')||atrasoU(d)==='SIM'
+    const totalSet=new Set()
+    filteredGlobal.forEach(d=>{
+      if(!isFn(d))return
+      const nm=d.nm_medico;if(!nm)return
+      const h=d.hr_inicio_min!=null?Math.floor(d.hr_inicio_min/60):-1
+      totalSet.add(`${nm}::${h}::${d.nm_local||''}`)
+    })
+    const justSet=new Set(justAgGlobal.map(j=>`${j.nm_medico}::${j.hora!=null?j.hora:-1}::${j.nm_local||''}`))
+    const justified=[...totalSet].filter(k=>justSet.has(k)).length
+    const total=totalSet.size
+    const pct=total>0?Math.min(Math.round(justified/total*100),100):0
+    return{pct,justified,total}
+  },[filteredGlobal,justAgGlobal])
+
+  const globalJustColor=globalJustStats.pct>=80?C.emerald:globalJustStats.pct>=50?C.amber:C.rose
+
+    const docHoraMap=useMemo(()=>{
     const map={}
     filtered.forEach(d=>{
       if(!d.nm_medico)return
@@ -348,13 +382,7 @@ function TabAgendas({rows}){
     situacaoPontoHoras,semPontoAtrasoTotal,semPontoFaltaTotal,comPontoAtrasoTotal}=agStats
 
   const allDocsList=useMemo(()=>[...docsFaltaU,...docsAtrU,...docsGrvU,...docsCritU],[docsFaltaU,docsAtrU,docsGrvU,docsCritU])
-  const justPct=useMemo(()=>{
-    if(!allDocsList.length)return 0
-    const just=allDocsList.filter(d=>docsJustSet.has(d.nm+'::'+String((docHoraMap[d.nm]??'x')))).length
-    return Math.min(Math.round(just/allDocsList.length*100),100)
-  },[allDocsList,docsJustSet,docHoraMap])
-  const justColor=justPct>=80?C.emerald:justPct>=50?C.amber:C.rose
-  const justifiedCount=allDocsList.filter(d=>docsJustSet.has(d.nm+'::'+String((docHoraMap[d.nm]??'x')))).length
+  // justPct, justColor, justifiedCount removidos → usar globalJustStats e globalJustColor
 
   const trendAllData=trendView==='real'?byDate:[...byDate,...projData]
   const tMaxAg=Math.max(...trendAllData.map(d=>d.agendas||0),1)
@@ -513,33 +541,30 @@ function TabAgendas({rows}){
             </div>
           </div>
 
-          {/* BLOCO 2: % Justificativas — destaque visual */}
-          <div style={{borderRadius:14,padding:'20px',background:unidFilt&&allDocsList.length>0?`linear-gradient(135deg,${justColor}12,${justColor}05)`:'rgba(255,255,255,0.025)',border:`1px solid ${unidFilt&&allDocsList.length>0?justColor+'30':'rgba(255,255,255,0.07)'}`,transition:'all .4s',position:'relative',overflow:'hidden'}}>
-            {unidFilt&&allDocsList.length>0&&<div style={{position:'absolute',top:-30,left:-30,width:150,height:150,borderRadius:'50%',background:`radial-gradient(circle,${justColor}08,transparent 70%)`}}/>}
+          {/* BLOCO 2: % Justificativas GLOBAL — destaque visual */}
+          <div style={{borderRadius:14,padding:'20px',background:`linear-gradient(135deg,${globalJustColor}12,${globalJustColor}05)`,border:`1px solid ${globalJustColor}30`,transition:'all .4s',position:'relative',overflow:'hidden'}}>
+            <div style={{position:'absolute',top:-30,left:-30,width:150,height:150,borderRadius:'50%',background:`radial-gradient(circle,${globalJustColor}08,transparent 70%)`,pointerEvents:'none'}}/>
             <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:14}}>
               <div>
                 <div style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.12em',marginBottom:4}}>Justificativas · Meta 80%</div>
-                {unidFilt&&<div style={{fontSize:10.5,color:C.sub,fontWeight:600}}>{unidFilt}</div>}
+                <div style={{fontSize:9,color:C.muted,marginTop:2}}>
+                  {periodo==='HOJE'?'Hoje':periodo==='ONTEM'?'Ontem':periodo==='SEMANA'?'Semana':periodo==='MES'?'Mês':periodo==='ANO'?'Ano':'Período'} · todas as unidades
+                </div>
+                {unidFilt&&<div style={{fontSize:9,color:C.amber,marginTop:4,fontStyle:'italic'}}>↳ justificando: {unidFilt}</div>}
               </div>
               <div style={{textAlign:'right'}}>
-                <div style={{fontSize:52,fontWeight:900,color:unidFilt&&allDocsList.length>0?justColor:'rgba(255,255,255,0.15)',lineHeight:1,letterSpacing:'-2px'}}>{unidFilt&&allDocsList.length>0?justPct:'—'}<span style={{fontSize:unidFilt&&allDocsList.length>0?26:0}}>%</span></div>
-                {unidFilt&&allDocsList.length>0&&<div style={{fontSize:9,color:C.muted,marginTop:2}}>{justifiedCount}/{allDocsList.length} médicos</div>}
+                <div style={{fontSize:52,fontWeight:900,color:globalJustColor,lineHeight:1,letterSpacing:'-2px'}}>{globalJustStats.pct}<span style={{fontSize:26}}>%</span></div>
+                <div style={{fontSize:9,color:C.muted,marginTop:2}}>{globalJustStats.justified}/{globalJustStats.total} méd. just.</div>
               </div>
             </div>
-            {unidFilt&&allDocsList.length>0?(
-              <>
-                <div style={{position:'relative',height:12,background:'rgba(255,255,255,0.06)',borderRadius:6,overflow:'hidden',marginBottom:6}}>
-                  <div style={{position:'absolute',top:0,left:0,height:'100%',width:`${justPct}%`,background:`linear-gradient(90deg,${justColor},${justColor}bb)`,borderRadius:6,transition:'width .7s ease',boxShadow:`0 0 12px ${justColor}40`}}/>
-                  <div style={{position:'absolute',top:0,left:'80%',width:2.5,height:'100%',background:'rgba(255,255,255,0.5)'}}/>
-                </div>
-                <div style={{display:'flex',justifyContent:'space-between',fontSize:9,color:C.muted}}>
-                  <span>{justifiedCount} justificados de {allDocsList.length} total</span>
-                  <span style={{fontWeight:700,color:justColor}}>← meta 80%</span>
-                </div>
-              </>
-            ):(
-              <div style={{fontSize:11,color:C.muted}}>Selecione uma unidade para ver e registrar justificativas</div>
-            )}
+            <div style={{position:'relative',height:12,background:'rgba(255,255,255,0.06)',borderRadius:6,overflow:'hidden',marginBottom:6}}>
+              <div style={{position:'absolute',top:0,left:0,height:'100%',width:`${globalJustStats.pct}%`,background:`linear-gradient(90deg,${globalJustColor},${globalJustColor}bb)`,borderRadius:6,transition:'width .7s ease',boxShadow:`0 0 12px ${globalJustColor}40`}}/>
+              <div style={{position:'absolute',top:0,left:'80%',width:2.5,height:'100%',background:'rgba(255,255,255,0.5)'}}/>
+            </div>
+            <div style={{display:'flex',justifyContent:'space-between',fontSize:9,color:C.muted}}>
+              <span>{globalJustStats.justified} justificado{globalJustStats.justified!==1?'s':''} de {globalJustStats.total} total de ocorrências</span>
+              <span style={{fontWeight:700,color:globalJustColor}}>← meta 80%</span>
+            </div>
           </div>
 
           {/* BLOCO 3: Lista médicos + justificativas */}
