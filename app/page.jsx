@@ -14,17 +14,18 @@ const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZ
 const SBH={'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json'}
 
 const fmtMin=m=>{if(m==null)return'—';const abs=Math.round(Math.abs(m)),s=m<0?'-':'';if(abs<60)return`${s}${abs}min`;return`${s}${Math.floor(abs/60)}h${abs%60>0?` ${abs%60}m`:''}`}
+const norm10=d=>d?String(d).slice(0,10):''
 const buildFilter=(allDates,periodo,df,dt)=>{
   if(!allDates.length)return()=>true
   const s=[...allDates].sort(),max=s[s.length-1]
   const sysToday=()=>{const n=new Date();return n.getUTCFullYear()+'-'+String(n.getUTCMonth()+1).padStart(2,'0')+'-'+String(n.getUTCDate()).padStart(2,'0')}
   const sysYest=()=>{const n=new Date();n.setUTCDate(n.getUTCDate()-1);return n.toISOString().slice(0,10)}
-  if(periodo==='HOJE')return d=>d===sysToday()
-  if(periodo==='ONTEM')return d=>d===sysYest()
-  if(periodo==='SEMANA'){const r=new Date(max+'T00:00:00Z');r.setUTCDate(r.getUTCDate()-6);const c=r.toISOString().slice(0,10);return d=>d>=c&&d<=max}
-  if(periodo==='MES')return d=>d.slice(0,7)===max.slice(0,7)
-  if(periodo==='ANO')return d=>d.slice(0,4)===max.slice(0,4)
-  if(periodo==='PERIODO'){const from=df||s[0],to=dt||max;return d=>d>=from&&d<=to}
+  if(periodo==='HOJE')return d=>norm10(d)===sysToday()
+  if(periodo==='ONTEM')return d=>norm10(d)===sysYest()
+  if(periodo==='SEMANA'){const r=new Date(max+'T00:00:00Z');r.setUTCDate(r.getUTCDate()-6);const c=r.toISOString().slice(0,10);return d=>norm10(d)>=c&&norm10(d)<=max}
+  if(periodo==='MES')return d=>norm10(d).slice(0,7)===max.slice(0,7)
+  if(periodo==='ANO')return d=>norm10(d).slice(0,4)===max.slice(0,4)
+  if(periodo==='PERIODO'){const from=df||s[0],to=dt||max;return d=>norm10(d)>=from&&norm10(d)<=to}
   return()=>true
 }
 const getStatusCfg=s=>{
@@ -88,6 +89,8 @@ function SearchBar({search,onSearch,uf,onUf,ufs,showClear,onClear}){
 // ══════════════════════════════════════════════════════════════════════════════
 // TAB AGENDAS
 // ══════════════════════════════════════════════════════════════════════════════
+const fmtHHMM=m=>{if(m==null)return'—';const h=Math.floor(m/60),min=m%60;return String(h).padStart(2,'0')+':'+String(min).padStart(2,'0')}
+
 function TabAgendas({rows}){
   const[periodo,setPeriodo]=useState('MES')
   const[dateFrom,setDateFrom]=useState('')
@@ -104,7 +107,7 @@ function TabAgendas({rows}){
   const[justExpanded,setJustExpanded]=useState({})
   const[expandedHoras,setExpandedHoras]=useState({}) // accordion: {hora: bool}
 
-  const allDates=useMemo(()=>[...new Set(rows.map(r=>r.dt_registro||r.data_agenda).filter(Boolean))].sort(),[rows])
+  const allDates=useMemo(()=>[...new Set(rows.map(r=>norm10(r.dt_registro||r.data_agenda)).filter(Boolean))].sort(),[rows])
   const periodoFn=useMemo(()=>buildFilter(allDates,periodo,dateFrom,dateTo),[allDates,periodo,dateFrom,dateTo])
   const ufs=useMemo(()=>[...new Set(rows.map(r=>r.uf).filter(Boolean))].sort(),[rows])
   const dataRefAg=useMemo(()=>allDates.length?allDates[allDates.length-1]:'',[allDates])
@@ -156,8 +159,7 @@ function TabAgendas({rows}){
     let r=rows.filter(d=>periodoFn(d.dt_registro||d.data_agenda))
     if(ufFilt!=='TODOS')r=r.filter(d=>d.uf===ufFilt)
     if(search){const q=search.toLowerCase();r=r.filter(d=>[d.nm_local,d.nm_medico,d.ds_especialidade,d.cidade].some(v=>String(v||'').toLowerCase().includes(q)))}
-    if(horasFilt.length>0)r=r.filter(d=>{const h=d.hr_inicio_min;if(h==null)return false;return horasFilt.includes(Math.floor(h/60))})
-    // SEM unidFilt — para calcular % global
+    // SEM unidFilt e SEM horasFilt — % global do período
     return r
   },[rows,periodoFn,ufFilt,search,horasFilt])
 
@@ -274,7 +276,7 @@ function TabAgendas({rows}){
 
     const dMap={}
     filtered.forEach(d=>{
-      const dt=d.data_agenda;if(!dt)return
+      const dt=norm10(d.data_agenda);if(!dt)return
       if(!dMap[dt])dMap[dt]={date:dt,agendas:0,consultas:0,encaixe:0,impactadas:0}
       dMap[dt].agendas+=(d.qt_consulta||0)+(d.qt_encaixe||0)
       dMap[dt].consultas+=(d.qt_consulta||0);dMap[dt].encaixe+=(d.qt_encaixe||0)
@@ -337,19 +339,21 @@ function TabAgendas({rows}){
 
       if(!temPonto){
         // SEM PONTO
+        const hr_ini_min=d.hr_inicio_min??null
+        const hr_fim_min=d.hr_fim_min??d.hr_fim??null
         if(isFalta){
           if(!semPontoFaltaMap[h])semPontoFaltaMap[h]=[]
           if(!semPontoFaltaMap[h].find(x=>x.nm===nm&&x.nm_local===(d.nm_local||'')))
-            semPontoFaltaMap[h].push({nm,status,nm_local:d.nm_local||''})
+            semPontoFaltaMap[h].push({nm,status,nm_local:d.nm_local||'',hr_ini_min,hr_fim_min})
         }else if(isSIM){
           if(!semPontoAtrasoMap[h])semPontoAtrasoMap[h]=[]
           if(!semPontoAtrasoMap[h].find(x=>x.nm===nm&&x.nm_local===(d.nm_local||'')))
-            semPontoAtrasoMap[h].push({nm,tempo_min,status,nm_local:d.nm_local||''})
+            semPontoAtrasoMap[h].push({nm,tempo_min,status,nm_local:d.nm_local||'',hr_ini_min,hr_fim_min})
         }
       }else{
         // COM PONTO + ATRASO
         if(isSIM&&!comPontoAtrasoList.find(x=>x.nm===nm&&x.hora===h&&x.nm_local===(d.nm_local||'')))
-          comPontoAtrasoList.push({nm,tempo_min,status,hora:h,nm_local:d.nm_local||''})
+          comPontoAtrasoList.push({nm,tempo_min,status,hora:h,nm_local:d.nm_local||'',hr_ini_min,hr_fim_min:d.hr_fim_min??d.hr_fim??null})
       }
     })
 
@@ -429,16 +433,10 @@ function TabAgendas({rows}){
           label={totalRows.toLocaleString('pt-BR')+' registros'}/>
       </div>
       <SearchBar search={search} onSearch={setSearch} uf={ufFilt} onUf={setUfFilt} ufs={ufs}
-        showClear={ufFilt!=='TODOS'||!!search||horasFilt.length>0||!!unidFilt}
-        onClear={()=>{setUfFilt('TODOS');setSearch('');setHorasFilt([]);setUnidFilt('')}}/>
+        showClear={ufFilt!=='TODOS'||!!search||!!unidFilt}
+        onClear={()=>{setUfFilt('TODOS');setSearch('');setUnidFilt('')}}/>
 
-      {horasDisp.length>0&&(
-        <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',marginBottom:14,padding:'10px 14px',background:'rgba(255,255,255,0.02)',border:'0.5px solid rgba(255,255,255,0.06)',borderRadius:10}}>
-          <span style={{fontSize:9,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.09em',flexShrink:0}}>Hora início</span>
-          {horasDisp.map(h=>{const sel=horasFilt.includes(h);return <button key={h} onClick={()=>toggleHora(h)} style={{padding:'4px 10px',borderRadius:6,border:sel?'none':'0.5px solid rgba(255,255,255,0.08)',background:sel?C.amber:'rgba(255,255,255,0.03)',color:sel?'#1a0800':C.muted,fontSize:10,fontWeight:sel?700:400,cursor:'pointer',transition:'all .15s'}}>{String(h).padStart(2,'0')}h</button>})}
-          {horasFilt.length>0&&<button onClick={()=>setHorasFilt([])} style={{padding:'4px 10px',borderRadius:6,border:'0.5px solid rgba(244,63,94,0.3)',background:'rgba(244,63,94,0.07)',color:C.rose,fontSize:10,cursor:'pointer'}}>✕ Limpar</button>}
-        </div>
-      )}
+      {/* Filtro de hora início removido */}
 
       {/* KPI BAR */}
       <div style={{display:'flex',background:'rgba(255,255,255,0.025)',border:'0.5px solid rgba(255,255,255,0.07)',borderRadius:12,overflow:'hidden',marginBottom:14}}>
@@ -718,11 +716,10 @@ function TabAgendas({rows}){
                                   <div style={{padding:'8px 14px',background:motivo.bg,display:'flex',alignItems:'center',gap:10,flex:1,minWidth:0}}>
                                     <div style={{width:5,height:5,borderRadius:'50%',background:motivo.color,flexShrink:0}}/>
                                     <span style={{fontSize:11,color:motivo.color,fontWeight:500}}>{doc.nm}</span>
-                                    {doc.nm_local&&(
-                                      <span style={{fontSize:10,color:motivo.color,opacity:.65,whiteSpace:'nowrap'}}>· {doc.nm_local}</span>
-                                    )}
+                                    {doc.nm_local&&<span style={{fontSize:10,color:motivo.color,opacity:.65,whiteSpace:'nowrap'}}>· {doc.nm_local}</span>}
                                   </div>
-                                  <div style={{padding:'8px 14px',background:`${motivo.bg}`,borderLeft:`0.5px solid ${motivo.border}`,flexShrink:0}}>
+                                  <div style={{padding:'8px 14px',background:`${motivo.bg}`,borderLeft:`0.5px solid ${motivo.border}`,display:'flex',alignItems:'center',gap:12,flexShrink:0}}>
+                                    {doc.hr_ini_min!=null&&<span style={{fontSize:10,color:motivo.color,fontFamily:'monospace',whiteSpace:'nowrap'}}>{fmtHHMM(doc.hr_ini_min)} → {fmtHHMM(doc.hr_fim_min)}</span>}
                                     <span style={{fontSize:10,fontWeight:500,color:motivo.color,whiteSpace:'nowrap'}}>{motivo.label}</span>
                                   </div>
                                 </div>
@@ -756,11 +753,10 @@ function TabAgendas({rows}){
                                   <div style={{padding:'8px 14px',background:atrCfg.bg,display:'flex',alignItems:'center',gap:10,flex:1,minWidth:0}}>
                                     <div style={{width:5,height:5,borderRadius:'50%',background:atrCfg.color,flexShrink:0}}/>
                                     <span style={{fontSize:11,color:atrCfg.color,fontWeight:500}}>{doc.nm}</span>
-                                    {doc.nm_local&&(
-                                      <span style={{fontSize:10,color:atrCfg.color,opacity:.65,whiteSpace:'nowrap'}}>· {doc.nm_local}</span>
-                                    )}
+                                    {doc.nm_local&&<span style={{fontSize:10,color:atrCfg.color,opacity:.65,whiteSpace:'nowrap'}}>· {doc.nm_local}</span>}
                                   </div>
                                   <div style={{padding:'8px 14px',background:atrCfg.bg,borderLeft:`0.5px solid ${atrCfg.border}`,display:'flex',alignItems:'center',gap:10,flexShrink:0}}>
+                                    {doc.hr_ini_min!=null&&<span style={{fontSize:10,color:atrCfg.color,fontFamily:'monospace',whiteSpace:'nowrap'}}>{fmtHHMM(doc.hr_ini_min)}→{fmtHHMM(doc.hr_fim_min)}</span>}
                                     {tempoStr&&<span style={{fontSize:12,fontWeight:500,color:atrCfg.color,whiteSpace:'nowrap'}}>{tempoStr} em atraso</span>}
                                     <span style={{fontSize:10,padding:'2px 8px',borderRadius:8,background:atrCfg.badge,color:atrCfg.color,whiteSpace:'nowrap',fontWeight:500}}>{cfg.label}</span>
                                   </div>
@@ -789,11 +785,10 @@ function TabAgendas({rows}){
                                   <div style={{padding:'8px 14px',background:'#E1F5EE',display:'flex',alignItems:'center',gap:10,flex:1,minWidth:0}}>
                                     <div style={{width:5,height:5,borderRadius:'50%',background:'#0F6E56',flexShrink:0}}/>
                                     <span style={{fontSize:11,color:'#0F6E56',fontWeight:500}}>{doc.nm}</span>
-                                    {doc.nm_local&&(
-                                      <span style={{fontSize:10,color:'#0F6E56',opacity:.65,whiteSpace:'nowrap'}}>· {doc.nm_local}</span>
-                                    )}
+                                    {doc.nm_local&&<span style={{fontSize:10,color:'#0F6E56',opacity:.65,whiteSpace:'nowrap'}}>· {doc.nm_local}</span>}
                                   </div>
                                   <div style={{padding:'8px 14px',background:'#E1F5EE',borderLeft:'0.5px solid #9FE1CB',display:'flex',alignItems:'center',gap:10,flexShrink:0}}>
+                                    {doc.hr_ini_min!=null&&<span style={{fontSize:10,color:'#0F6E56',fontFamily:'monospace',whiteSpace:'nowrap'}}>{fmtHHMM(doc.hr_ini_min)}→{fmtHHMM(doc.hr_fim_min)}</span>}
                                     {tempoStr&&<span style={{fontSize:12,fontWeight:500,color:'#0F6E56',whiteSpace:'nowrap'}}>{tempoStr} em atraso</span>}
                                     <span style={{fontSize:10,padding:'2px 8px',borderRadius:8,background:'#9FE1CB',color:'#085041',whiteSpace:'nowrap',fontWeight:500}}>{cfg.label}</span>
                                   </div>
@@ -912,7 +907,7 @@ function TabEspera({rows}){
   const[trendView,setTrendView]=useState('real')
   const[tTip,setTTip]=useState(null)
 
-  const allDates=useMemo(()=>[...new Set(rows.map(r=>r.dt_registro||r.data_agenda).filter(Boolean))].sort(),[rows])
+  const allDates=useMemo(()=>[...new Set(rows.map(r=>norm10(r.dt_registro||r.data_agenda)).filter(Boolean))].sort(),[rows])
   const periodoFn=useMemo(()=>buildFilter(allDates,periodo,dateFrom,dateTo),[allDates,periodo,dateFrom,dateTo])
   const ufs=useMemo(()=>[...new Set(rows.map(r=>r.uf).filter(Boolean))].sort(),[rows])
   const horasDisp=useMemo(()=>{
