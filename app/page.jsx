@@ -432,15 +432,14 @@ function TabAgendas({rows}){
             <div style={{width:(totalAg>0?((faltaAg+atrAg+critAg+grvAg)/totalAg*100).toFixed(1):0)+'%',height:'100%',background:C.rose,opacity:.7,borderRadius:2}}/>
           </div>
         </div>
-        <div style={{flex:'2.4',padding:'16px 20px'}}>
-          <div style={{fontSize:9,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.1em',marginBottom:10}}>{(faltaDocs.length+atrDocs.length+critDocs.length+grvDocs.length)} médicos com ocorrências</div>
-          <div style={{display:'flex',gap:8}}>
-            {[{label:'Falta',docs:faltaDocs.length,color:C.blue},{label:'Atraso',docs:atrDocs.length,color:C.amber},{label:'Grave',docs:grvDocs.length,color:C.orange},{label:'Crítico',docs:critDocs.length,color:C.rose}].map(k=>(
-              <div key={k.label} style={{flex:1,background:k.color+'10',border:'0.5px solid '+k.color+'28',borderRadius:8,padding:'8px 10px'}}>
-                <div style={{fontSize:8,color:k.color,opacity:.8,marginBottom:4,fontWeight:700}}>{k.label}</div>
-                <div style={{fontSize:20,fontWeight:800,color:k.color}}>{k.docs}</div>
-              </div>
-            ))}
+        <div style={{flex:'1.8',padding:'16px 24px',position:'relative',overflow:'hidden'}}>
+          <div style={{position:'absolute',top:-20,right:-20,width:120,height:120,borderRadius:'50%',background:'radial-gradient(circle,rgba(16,185,129,0.06),transparent 70%)',pointerEvents:'none'}}/>
+          <div style={{fontSize:9,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.12em',marginBottom:6}}>Médicos com Ocorrências</div>
+          <div style={{fontSize:42,fontWeight:900,color:C.emerald,lineHeight:1,letterSpacing:'-2px'}}>{faltaDocs.length+atrDocs.length+critDocs.length+grvDocs.length}</div>
+          <div style={{fontSize:9,color:C.muted,marginTop:8}}>médicos afetados no período</div>
+          <div style={{marginTop:10,display:'flex',gap:10}}>
+            <div style={{display:'flex',alignItems:'center',gap:4}}><div style={{width:6,height:6,borderRadius:'50%',background:C.blue}}/><span style={{fontSize:9,color:C.muted}}>{faltaDocs.length} falta{faltaDocs.length!==1?'s':''}</span></div>
+            <div style={{display:'flex',alignItems:'center',gap:4}}><div style={{width:6,height:6,borderRadius:'50%',background:C.rose}}/><span style={{fontSize:9,color:C.muted}}>{critDocs.length+grvDocs.length+atrDocs.length} atraso{(critDocs.length+grvDocs.length+atrDocs.length)!==1?'s':''}</span></div>
           </div>
         </div>
       </div>
@@ -674,23 +673,23 @@ function TabAgendas({rows}){
 
                   {semPontoAtraso.length>0&&(
                     <div>
-                      <div style={{fontSize:8,fontWeight:700,color:C.amber,textTransform:'uppercase',letterSpacing:'.1em',marginBottom:6,display:'flex',alignItems:'center',gap:6}}>
+                      <div style={{fontSize:8,fontWeight:700,color:C.amber,textTransform:'uppercase',letterSpacing:'.1em',marginBottom:8,display:'flex',alignItems:'center',gap:6}}>
                         <div style={{width:16,height:1.5,background:C.amber,borderRadius:1}}/>
                         Visão 2 · Sem Ponto em Atraso (HR_ENTRADA vazia + ATRASO=SIM)
                       </div>
-                      <div style={{display:'flex',flexWrap:'wrap',gap:5}}>
+                      <div style={{display:'flex',flexDirection:'column',gap:4}}>
                         {semPontoAtraso.map((doc,i)=>{
                           const tempoStr=fmtTempoMinFn(doc.tempo_min)
                           const cfg=getStatusCfg(doc.status)
                           return(
-                            <div key={i} style={{display:'flex',alignItems:'center',borderRadius:8,overflow:'hidden',border:`0.5px solid ${cfg.color}35`}}>
-                              <div style={{padding:'5px 10px',background:`${cfg.color}08`,display:'flex',alignItems:'center',gap:6}}>
+                            <div key={i} style={{display:'flex',alignItems:'center',gap:0,borderRadius:8,overflow:'hidden',border:`0.5px solid ${cfg.color}35`,alignSelf:'flex-start',maxWidth:'100%'}}>
+                              <div style={{padding:'6px 12px',background:`${cfg.color}08`,display:'flex',alignItems:'center',gap:7,flex:1,minWidth:0}}>
                                 <div style={{width:5,height:5,borderRadius:'50%',background:cfg.color,flexShrink:0}}/>
-                                <span style={{fontSize:10,color:C.text,fontWeight:500}}>{doc.nm}</span>
+                                <span style={{fontSize:10.5,color:C.text,fontWeight:500,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{doc.nm}</span>
                               </div>
-                              <div style={{padding:'5px 8px',background:`${cfg.color}18`,borderLeft:`0.5px solid ${cfg.color}30`,display:'flex',flexDirection:'column',alignItems:'center',gap:1}}>
-                                {tempoStr&&<span style={{fontSize:10,fontWeight:800,color:cfg.color,lineHeight:1}}>{tempoStr}</span>}
-                                <span style={{fontSize:7,color:cfg.color,opacity:.85,whiteSpace:'nowrap'}}>{cfg.label}</span>
+                              <div style={{padding:'6px 12px',background:`${cfg.color}18`,borderLeft:`0.5px solid ${cfg.color}30`,display:'flex',alignItems:'center',gap:8,flexShrink:0}}>
+                                {tempoStr&&<span style={{fontSize:11,fontWeight:800,color:cfg.color,lineHeight:1,whiteSpace:'nowrap'}}>{tempoStr} em atraso</span>}
+                                <span style={{fontSize:8,fontWeight:700,padding:'2px 7px',borderRadius:10,background:`${cfg.color}25`,color:cfg.color,whiteSpace:'nowrap'}}>{cfg.label}</span>
                               </div>
                             </div>
                           )
@@ -701,23 +700,23 @@ function TabAgendas({rows}){
 
                   {comPontoAtraso.length>0&&(
                     <div>
-                      <div style={{fontSize:8,fontWeight:700,color:C.orange,textTransform:'uppercase',letterSpacing:'.1em',marginBottom:6,display:'flex',alignItems:'center',gap:6}}>
+                      <div style={{fontSize:8,fontWeight:700,color:C.orange,textTransform:'uppercase',letterSpacing:'.1em',marginBottom:8,display:'flex',alignItems:'center',gap:6}}>
                         <div style={{width:16,height:1.5,background:C.orange,borderRadius:1}}/>
                         Com Ponto · Chegou Atrasado (HR_ENTRADA preenchida + ATRASO=SIM)
                       </div>
-                      <div style={{display:'flex',flexWrap:'wrap',gap:5}}>
+                      <div style={{display:'flex',flexDirection:'column',gap:4}}>
                         {comPontoAtraso.map((doc,i)=>{
                           const tempoStr=fmtTempoMinFn(doc.tempo_min)
                           const cfg=getStatusCfg(doc.status)
                           return(
-                            <div key={i} style={{display:'flex',alignItems:'center',borderRadius:8,overflow:'hidden',border:`0.5px solid ${cfg.color}30`}}>
-                              <div style={{padding:'5px 10px',background:`${cfg.color}07`,display:'flex',alignItems:'center',gap:6}}>
+                            <div key={i} style={{display:'flex',alignItems:'center',gap:0,borderRadius:8,overflow:'hidden',border:`0.5px solid ${cfg.color}30`,alignSelf:'flex-start',maxWidth:'100%'}}>
+                              <div style={{padding:'6px 12px',background:`${cfg.color}07`,display:'flex',alignItems:'center',gap:7,flex:1,minWidth:0}}>
                                 <div style={{width:5,height:5,borderRadius:'50%',background:cfg.color,flexShrink:0}}/>
-                                <span style={{fontSize:10,color:C.text,fontWeight:500}}>{doc.nm}</span>
+                                <span style={{fontSize:10.5,color:C.text,fontWeight:500,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{doc.nm}</span>
                               </div>
-                              <div style={{padding:'5px 8px',background:`${cfg.color}15`,borderLeft:`0.5px solid ${cfg.color}25`,display:'flex',flexDirection:'column',alignItems:'center',gap:1}}>
-                                {tempoStr&&<span style={{fontSize:10,fontWeight:800,color:cfg.color,lineHeight:1}}>{tempoStr}</span>}
-                                <span style={{fontSize:7,color:cfg.color,opacity:.85,whiteSpace:'nowrap'}}>{cfg.label}</span>
+                              <div style={{padding:'6px 12px',background:`${cfg.color}15`,borderLeft:`0.5px solid ${cfg.color}25`,display:'flex',alignItems:'center',gap:8,flexShrink:0}}>
+                                {tempoStr&&<span style={{fontSize:11,fontWeight:800,color:cfg.color,lineHeight:1,whiteSpace:'nowrap'}}>{tempoStr} em atraso</span>}
+                                <span style={{fontSize:8,fontWeight:700,padding:'2px 7px',borderRadius:10,background:`${cfg.color}25`,color:cfg.color,whiteSpace:'nowrap'}}>{cfg.label}</span>
                               </div>
                             </div>
                           )
