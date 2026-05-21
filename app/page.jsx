@@ -1228,7 +1228,8 @@ export default function Home(){
         if(v instanceof Date)return v.toISOString().slice(0,10)
         return String(v).slice(0,10)
       }
-      // Apenas colunas que existem na tabela Supabase 'agendas'
+      // Colunas mínimas confirmadas no schema do Supabase
+      // hr_fim_min e dt_registro removidos — podem não existir na tabela
       const mapAgRow=r=>({
         uf:String(r['UF']||''),
         nm_local:String(r['NM_LOCAL']||''),
@@ -1236,7 +1237,6 @@ export default function Home(){
         ds_especialidade:String(r['DS_ESPECIALIDADE']||''),
         cidade:String(r['CIDADE']||''),
         hr_inicio_min:xlsTimeToMin(r['HR_INICIO']),
-        hr_fim_min:xlsTimeToMin(r['HR_FIM']),
         hr_entrada:(r['HR_ENTRADA']===''||r['HR_ENTRADA']==null)?null:xlsTimeToMin(r['HR_ENTRADA']),
         data_agenda:xlsDateStr(r['DATA_AGENDA']),
         qt_consulta:+r['QT_CONSULTA']||0,
@@ -1244,21 +1244,36 @@ export default function Home(){
         atraso:String(r['ATRASO']||''),
         tempo_de_atraso:String(r['TEMPO DE ATRASO']||''),
         status:String(r['STATUS']||''),
-        dt_registro:xlsDateStr(r['DT_REGISTRO']),
       })
 
-      // Upload agendas direto ao Supabase — chunk 500, sem retry needed
+      // Upload agendas direto ao Supabase — INSERT simples, chunk 500
       const CHUNK=500
+      let uploadErrors=[]
       for(let i=0;i<json.length;i+=CHUNK){
         const batch=json.slice(i,i+CHUNK).map(mapAgRow)
         setStoreMsg(`Agendas ${Math.min(i+CHUNK,json.length)}/${json.length}…`)
-        const res=await fetch(`${SB_URL}/rest/v1/agendas`,{
-          method:'POST',
-          headers:{...SBH,'Prefer':'resolution=ignore-duplicates,return=minimal'},
-          body:JSON.stringify(batch)
-        })
-        if(!res.ok){const err=await res.text();console.error(`Agendas batch ${i} falhou:`,err)}
+        try{
+          const res=await fetch(`${SB_URL}/rest/v1/agendas`,{
+            method:'POST',
+            headers:{...SBH,'Prefer':'return=minimal'},
+            body:JSON.stringify(batch)
+          })
+          if(!res.ok){
+            const errText=await res.text()
+            let parsed={}
+            try{parsed=JSON.parse(errText)}catch{}
+            const msg=parsed.message||parsed.hint||errText
+            uploadErrors.push(`batch ${i}: ${msg}`)
+            setStoreMsg(`⚠ Erro no batch ${i}: ${msg}`)
+            await new Promise(r=>setTimeout(r,2000)) // mostra o erro por 2s
+          }
+        }catch(e){
+          uploadErrors.push(`batch ${i}: ${e.message}`)
+          setStoreMsg(`⚠ Erro de rede batch ${i}: ${e.message}`)
+          await new Promise(r=>setTimeout(r,2000))
+        }
       }
+      if(uploadErrors.length>0)console.error('Upload errors:',uploadErrors)
 
       setStoreMsg('Recarregando…')
       const[ag,esp]=await Promise.all([loadTable('agendas'),loadTable('espera')])
