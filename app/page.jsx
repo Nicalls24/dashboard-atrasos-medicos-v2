@@ -255,6 +255,7 @@ function TabAgendas({rows}){
     const isCritFn     =d=>atrasoU(d)==='SIM'&&(statusUP(d).includes('CRÍTICO')||statusUP(d).includes('CRITICO'))
     const isGrvFn      =d=>atrasoU(d)==='SIM'&&statusUP(d).includes('GRAVE')
     const isAtrSoFn    =d=>atrasoU(d)==='SIM'&&!isCritFn(d)&&!isGrvFn(d)
+    const isFaltaFn    =d=>atrasoU(d)==='FALTA' // alias para feedList/byDate — todo ATRASO=FALTA
 
     const faltaRows  =filtered.filter(isFaltaMedFn)
     const remarcaRows=filtered.filter(isRemarcaFn)
