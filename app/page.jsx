@@ -102,6 +102,7 @@ function TabAgendas({rows}){
   const[agJustDraft,setAgJustDraft]=useState({})
   const[agJustSaving,setAgJustSaving]=useState(false)
   const[justExpanded,setJustExpanded]=useState({})
+  const[expandedHoras,setExpandedHoras]=useState({}) // accordion: {hora: bool}
 
   const allDates=useMemo(()=>[...new Set(rows.map(r=>r.dt_registro||r.data_agenda).filter(Boolean))].sort(),[rows])
   const periodoFn=useMemo(()=>buildFilter(allDates,periodo,dateFrom,dateTo),[allDates,periodo,dateFrom,dateTo])
@@ -338,17 +339,17 @@ function TabAgendas({rows}){
         // SEM PONTO
         if(isFalta){
           if(!semPontoFaltaMap[h])semPontoFaltaMap[h]=[]
-          if(!semPontoFaltaMap[h].find(x=>x.nm===nm))
-            semPontoFaltaMap[h].push({nm,status})
+          if(!semPontoFaltaMap[h].find(x=>x.nm===nm&&x.nm_local===(d.nm_local||'')))
+            semPontoFaltaMap[h].push({nm,status,nm_local:d.nm_local||''})
         }else if(isSIM){
           if(!semPontoAtrasoMap[h])semPontoAtrasoMap[h]=[]
-          if(!semPontoAtrasoMap[h].find(x=>x.nm===nm))
-            semPontoAtrasoMap[h].push({nm,tempo_min,status})
+          if(!semPontoAtrasoMap[h].find(x=>x.nm===nm&&x.nm_local===(d.nm_local||'')))
+            semPontoAtrasoMap[h].push({nm,tempo_min,status,nm_local:d.nm_local||''})
         }
       }else{
         // COM PONTO + ATRASO
-        if(isSIM&&!comPontoAtrasoList.find(x=>x.nm===nm&&x.hora===h))
-          comPontoAtrasoList.push({nm,tempo_min,status,hora:h})
+        if(isSIM&&!comPontoAtrasoList.find(x=>x.nm===nm&&x.hora===h&&x.nm_local===(d.nm_local||'')))
+          comPontoAtrasoList.push({nm,tempo_min,status,hora:h,nm_local:d.nm_local||''})
       }
     })
 
@@ -625,8 +626,9 @@ function TabAgendas({rows}){
         </div>
       </div>
 
-      {/* ── SITUAÇÃO DE PONTO ── */}
+      {/* ── SITUAÇÃO DE PONTO — Accordion ── */}
       <div style={{...card,marginBottom:14}}>
+        {/* Header + resumo */}
         <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:18}}>
           <div>
             <div style={{fontSize:13,fontWeight:700,color:C.text,marginBottom:4}}>Situação de Ponto · por Hora de Agenda</div>
@@ -637,14 +639,14 @@ function TabAgendas({rows}){
           </div>
           <div style={{display:'flex',gap:10,flexShrink:0}}>
             {[
-              {label:'Visão 1',sub:'Faltou',value:semPontoFaltaTotal,color:C.blue},
-              {label:'Visão 2',sub:'Sem Ponto · Atraso',value:semPontoAtrasoTotal,color:C.amber},
-              {label:'Com Ponto',sub:'Chegou · Atrasado',value:comPontoAtrasoTotal,color:C.orange},
+              {label:'Visão 1',sub:'Faltou',value:semPontoFaltaTotal,color:'#185FA5',bg:'#E6F1FB',border:'#B5D4F4'},
+              {label:'Visão 2',sub:'Sem Ponto · Atraso',value:semPontoAtrasoTotal,color:'#854F0B',bg:'#FAEEDA',border:'#FAC775'},
+              {label:'Com Ponto',sub:'Chegou · Atrasado',value:comPontoAtrasoTotal,color:'#0F6E56',bg:'#E1F5EE',border:'#9FE1CB'},
             ].map(k=>(
-              <div key={k.label} style={{textAlign:'center',padding:'12px 18px',borderRadius:12,background:k.color+'10',border:`1px solid ${k.color}28`,minWidth:110}}>
-                <div style={{fontSize:9,fontWeight:700,color:k.color,textTransform:'uppercase',letterSpacing:'.1em',marginBottom:2}}>{k.label}</div>
-                <div style={{fontSize:32,fontWeight:900,color:k.color,lineHeight:1,letterSpacing:'-1px'}}>{k.value}</div>
-                <div style={{fontSize:8,color:C.muted,marginTop:4,lineHeight:1.3}}>{k.sub}</div>
+              <div key={k.label} style={{textAlign:'center',padding:'12px 18px',borderRadius:12,background:k.bg,border:`1px solid ${k.border}`,minWidth:110}}>
+                <div style={{fontSize:9,fontWeight:500,color:k.color,textTransform:'uppercase',letterSpacing:'.1em',marginBottom:2}}>{k.label}</div>
+                <div style={{fontSize:32,fontWeight:500,color:k.color,lineHeight:1,letterSpacing:'-1px'}}>{k.value}</div>
+                <div style={{fontSize:8,color:k.color,opacity:.7,marginTop:4,lineHeight:1.3}}>{k.sub}</div>
               </div>
             ))}
           </div>
@@ -657,101 +659,155 @@ function TabAgendas({rows}){
               :'Nenhuma ocorrência de ponto no período.'}
           </div>
         ):(
-          <div style={{display:'flex',flexDirection:'column',gap:10,maxHeight:640,overflowY:'auto',paddingRight:4}}>
-            {situacaoPontoHoras.map(({hora,semPontoFalta,semPontoAtraso,comPontoAtraso})=>(
-              <div key={hora} style={{borderRadius:12,border:'0.5px solid rgba(255,255,255,0.08)',overflow:'hidden'}}>
-                <div style={{display:'flex',alignItems:'center',gap:14,padding:'10px 18px',background:'rgba(255,255,255,0.03)',borderBottom:'0.5px solid rgba(255,255,255,0.06)'}}>
-                  <span style={{fontFamily:'monospace',fontSize:16,fontWeight:900,color:C.sub,minWidth:52}}>{String(hora).padStart(2,'0')}:00</span>
-                  <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
-                    {semPontoFalta.length>0&&<span style={{fontSize:9,padding:'2px 10px',borderRadius:20,background:'rgba(59,130,246,0.18)',color:C.blue,border:'0.5px solid rgba(59,130,246,0.4)',fontWeight:700}}>{semPontoFalta.length} faltou</span>}
-                    {semPontoAtraso.length>0&&<span style={{fontSize:9,padding:'2px 10px',borderRadius:20,background:'rgba(245,158,11,0.18)',color:C.amber,border:'0.5px solid rgba(245,158,11,0.4)',fontWeight:700}}>{semPontoAtraso.length} sem ponto · em atraso</span>}
-                    {comPontoAtraso.length>0&&<span style={{fontSize:9,padding:'2px 10px',borderRadius:20,background:'rgba(249,115,22,0.18)',color:C.orange,border:'0.5px solid rgba(249,115,22,0.4)',fontWeight:700}}>{comPontoAtraso.length} com ponto · atrasado</span>}
+          <div style={{display:'flex',flexDirection:'column',gap:6}}>
+            {situacaoPontoHoras.map(({hora,semPontoFalta,semPontoAtraso,comPontoAtraso})=>{
+              const isOpen=expandedHoras[hora]||false
+              const totalHora=semPontoFalta.length+semPontoAtraso.length+comPontoAtraso.length
+              return(
+                <div key={hora} style={{borderRadius:10,border:'0.5px solid rgba(255,255,255,0.1)',overflow:'hidden'}}>
+                  {/* Hora header — clicável */}
+                  <div onClick={()=>setExpandedHoras(prev=>({...prev,[hora]:!isOpen}))}
+                    style={{display:'flex',alignItems:'center',gap:14,padding:'11px 18px',background:isOpen?'rgba(255,255,255,0.05)':'rgba(255,255,255,0.02)',cursor:'pointer',userSelect:'none',transition:'background .15s'}}
+                    onMouseEnter={e=>e.currentTarget.style.background='rgba(255,255,255,0.05)'}
+                    onMouseLeave={e=>e.currentTarget.style.background=isOpen?'rgba(255,255,255,0.05)':'rgba(255,255,255,0.02)'}>
+                    <span style={{fontFamily:'monospace',fontSize:16,fontWeight:500,color:C.text,minWidth:52}}>{String(hora).padStart(2,'0')}:00</span>
+                    <div style={{display:'flex',gap:6,flexWrap:'wrap',flex:1}}>
+                      {semPontoFalta.length>0&&(
+                        <span style={{fontSize:11,padding:'2px 10px',borderRadius:20,background:'#E6F1FB',color:'#185FA5',border:'0.5px solid #B5D4F4',fontWeight:500}}>
+                          {semPontoFalta.length} faltou
+                        </span>
+                      )}
+                      {semPontoAtraso.length>0&&(
+                        <span style={{fontSize:11,padding:'2px 10px',borderRadius:20,background:'#FAEEDA',color:'#854F0B',border:'0.5px solid #FAC775',fontWeight:500}}>
+                          {semPontoAtraso.length} sem ponto · atraso
+                        </span>
+                      )}
+                      {comPontoAtraso.length>0&&(
+                        <span style={{fontSize:11,padding:'2px 10px',borderRadius:20,background:'#E1F5EE',color:'#0F6E56',border:'0.5px solid #9FE1CB',fontWeight:500}}>
+                          {comPontoAtraso.length} com ponto · atrasado
+                        </span>
+                      )}
+                    </div>
+                    <span style={{fontSize:12,color:C.muted,flexShrink:0}}>{isOpen?'▾ recolher':'▸ expandir'}</span>
                   </div>
+
+                  {/* Conteúdo expandido */}
+                  {isOpen&&(
+                    <div style={{padding:'14px 18px',borderTop:'0.5px solid rgba(255,255,255,0.07)',display:'flex',flexDirection:'column',gap:14}}>
+
+                      {/* VISÃO 1: FALTOU */}
+                      {semPontoFalta.length>0&&(
+                        <div>
+                          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
+                            <div style={{width:18,height:1.5,background:'#B5D4F4',borderRadius:1}}/>
+                            <span style={{fontSize:10,fontWeight:500,color:'#185FA5',textTransform:'uppercase',letterSpacing:'.1em'}}>
+                              Visão 1 · Faltou (HR_ENTRADA vazia + ATRASO=FALTA)
+                            </span>
+                          </div>
+                          <div style={{display:'flex',flexDirection:'column',gap:5}}>
+                            {semPontoFalta.map((doc,i)=>{
+                              const motivoMap={
+                                'Falta Médica':{label:'Falta Médica',color:'#185FA5',bg:'#E6F1FB',border:'#B5D4F4'},
+                                'Remarcação Adm':{label:'Remarcação Adm',color:'#534AB7',bg:'#EEEDFE',border:'#CECBF6'},
+                                'Remarcação Médico':{label:'Remarcação Médico',color:'#185FA5',bg:'#E6F1FB',border:'#B5D4F4'},
+                                'Remarcação médico':{label:'Remarcação Médico',color:'#185FA5',bg:'#E6F1FB',border:'#B5D4F4'},
+                              }
+                              const motivo=motivoMap[doc.status]||{label:doc.status||'Falta',color:'#185FA5',bg:'#E6F1FB',border:'#B5D4F4'}
+                              return(
+                                <div key={i} style={{display:'flex',alignItems:'center',borderRadius:8,border:`0.5px solid ${motivo.border}`,width:'100%'}}>
+                                  <div style={{padding:'8px 14px',background:motivo.bg,display:'flex',alignItems:'center',gap:10,flex:1,minWidth:0}}>
+                                    <div style={{width:5,height:5,borderRadius:'50%',background:motivo.color,flexShrink:0}}/>
+                                    <span style={{fontSize:11,color:motivo.color,fontWeight:500}}>{doc.nm}</span>
+                                    {doc.nm_local&&(
+                                      <span style={{fontSize:10,color:motivo.color,opacity:.65,whiteSpace:'nowrap'}}>· {doc.nm_local}</span>
+                                    )}
+                                  </div>
+                                  <div style={{padding:'8px 14px',background:`${motivo.bg}`,borderLeft:`0.5px solid ${motivo.border}`,flexShrink:0}}>
+                                    <span style={{fontSize:10,fontWeight:500,color:motivo.color,whiteSpace:'nowrap'}}>{motivo.label}</span>
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* VISÃO 2: SEM PONTO EM ATRASO */}
+                      {semPontoAtraso.length>0&&(
+                        <div>
+                          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
+                            <div style={{width:18,height:1.5,background:'#FAC775',borderRadius:1}}/>
+                            <span style={{fontSize:10,fontWeight:500,color:'#854F0B',textTransform:'uppercase',letterSpacing:'.1em'}}>
+                              Visão 2 · Sem Ponto em Atraso (HR_ENTRADA vazia + ATRASO=SIM)
+                            </span>
+                          </div>
+                          <div style={{display:'flex',flexDirection:'column',gap:5}}>
+                            {semPontoAtraso.map((doc,i)=>{
+                              const tempoStr=fmtTempoMinFn(doc.tempo_min)
+                              const cfg=getStatusCfg(doc.status)
+                              const atrColors={
+                                'ATRASO':{color:'#854F0B',bg:'#FAEEDA',border:'#FAC775',badge:'#FAC775'},
+                                'ATRASO GRAVE':{color:'#993C1D',bg:'#FAECE7',border:'#F5C4B3',badge:'#F5C4B3'},
+                                'ATRASO CRÍTICO':{color:'#A32D2D',bg:'#FCEBEB',border:'#F7C1C1',badge:'#F7C1C1'},
+                              }
+                              const atrCfg=atrColors[doc.status]||atrColors['ATRASO']
+                              return(
+                                <div key={i} style={{display:'flex',alignItems:'center',borderRadius:8,border:`0.5px solid ${atrCfg.border}`,width:'100%'}}>
+                                  <div style={{padding:'8px 14px',background:atrCfg.bg,display:'flex',alignItems:'center',gap:10,flex:1,minWidth:0}}>
+                                    <div style={{width:5,height:5,borderRadius:'50%',background:atrCfg.color,flexShrink:0}}/>
+                                    <span style={{fontSize:11,color:atrCfg.color,fontWeight:500}}>{doc.nm}</span>
+                                    {doc.nm_local&&(
+                                      <span style={{fontSize:10,color:atrCfg.color,opacity:.65,whiteSpace:'nowrap'}}>· {doc.nm_local}</span>
+                                    )}
+                                  </div>
+                                  <div style={{padding:'8px 14px',background:atrCfg.bg,borderLeft:`0.5px solid ${atrCfg.border}`,display:'flex',alignItems:'center',gap:10,flexShrink:0}}>
+                                    {tempoStr&&<span style={{fontSize:12,fontWeight:500,color:atrCfg.color,whiteSpace:'nowrap'}}>{tempoStr} em atraso</span>}
+                                    <span style={{fontSize:10,padding:'2px 8px',borderRadius:8,background:atrCfg.badge,color:atrCfg.color,whiteSpace:'nowrap',fontWeight:500}}>{cfg.label}</span>
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* COM PONTO ATRASADO */}
+                      {comPontoAtraso.length>0&&(
+                        <div>
+                          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
+                            <div style={{width:18,height:1.5,background:'#9FE1CB',borderRadius:1}}/>
+                            <span style={{fontSize:10,fontWeight:500,color:'#0F6E56',textTransform:'uppercase',letterSpacing:'.1em'}}>
+                              Com Ponto · Chegou Atrasado (HR_ENTRADA preenchida + ATRASO=SIM)
+                            </span>
+                          </div>
+                          <div style={{display:'flex',flexDirection:'column',gap:5}}>
+                            {comPontoAtraso.map((doc,i)=>{
+                              const tempoStr=fmtTempoMinFn(doc.tempo_min)
+                              const cfg=getStatusCfg(doc.status)
+                              return(
+                                <div key={i} style={{display:'flex',alignItems:'center',borderRadius:8,border:'0.5px solid #9FE1CB',width:'100%'}}>
+                                  <div style={{padding:'8px 14px',background:'#E1F5EE',display:'flex',alignItems:'center',gap:10,flex:1,minWidth:0}}>
+                                    <div style={{width:5,height:5,borderRadius:'50%',background:'#0F6E56',flexShrink:0}}/>
+                                    <span style={{fontSize:11,color:'#0F6E56',fontWeight:500}}>{doc.nm}</span>
+                                    {doc.nm_local&&(
+                                      <span style={{fontSize:10,color:'#0F6E56',opacity:.65,whiteSpace:'nowrap'}}>· {doc.nm_local}</span>
+                                    )}
+                                  </div>
+                                  <div style={{padding:'8px 14px',background:'#E1F5EE',borderLeft:'0.5px solid #9FE1CB',display:'flex',alignItems:'center',gap:10,flexShrink:0}}>
+                                    {tempoStr&&<span style={{fontSize:12,fontWeight:500,color:'#0F6E56',whiteSpace:'nowrap'}}>{tempoStr} em atraso</span>}
+                                    <span style={{fontSize:10,padding:'2px 8px',borderRadius:8,background:'#9FE1CB',color:'#085041',whiteSpace:'nowrap',fontWeight:500}}>{cfg.label}</span>
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
-                <div style={{padding:'12px 18px',display:'flex',flexDirection:'column',gap:8}}>
-
-                  {semPontoFalta.length>0&&(
-                    <div>
-                      <div style={{fontSize:8,fontWeight:700,color:C.blue,textTransform:'uppercase',letterSpacing:'.1em',marginBottom:6,display:'flex',alignItems:'center',gap:6}}>
-                        <div style={{width:16,height:1.5,background:C.blue,borderRadius:1}}/>
-                        Visão 1 · Faltou (HR_ENTRADA vazia + ATRASO=FALTA)
-                      </div>
-                      <div style={{display:'flex',flexWrap:'wrap',gap:5}}>
-                        {semPontoFalta.map((doc,i)=>{
-                          const motivoMap={'Falta Médica':{label:'Falta Médica',color:'#3B82F6'},'Remarcação Adm':{label:'Remarcação Adm',color:'#8B5CF6'},'Remarcação Médico':{label:'Remarcação Médico',color:'#06B6D4'},'Remarcação médico':{label:'Remarcação Médico',color:'#06B6D4'}}
-                          const motivo=motivoMap[doc.status]||{label:doc.status||'Falta',color:C.blue}
-                          return(
-                            <div key={i} style={{display:'flex',alignItems:'center',borderRadius:8,border:`0.5px solid ${motivo.color}35`,width:'100%'}}>
-                              <div style={{padding:'7px 14px',background:`${motivo.color}08`,display:'flex',alignItems:'center',gap:8,flex:1,minWidth:0}}>
-                                <div style={{width:5,height:5,borderRadius:'50%',background:motivo.color,flexShrink:0}}/>
-                                <span style={{fontSize:10.5,color:C.text,fontWeight:500}}>{doc.nm}</span>
-                              </div>
-                              <div style={{padding:'7px 12px',background:`${motivo.color}20`,borderLeft:`0.5px solid ${motivo.color}30`,flexShrink:0}}>
-                                <span style={{fontSize:8,fontWeight:700,color:motivo.color,whiteSpace:'nowrap'}}>{motivo.label}</span>
-                              </div>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  )}
-
-                  {semPontoAtraso.length>0&&(
-                    <div>
-                      <div style={{fontSize:8,fontWeight:700,color:C.amber,textTransform:'uppercase',letterSpacing:'.1em',marginBottom:8,display:'flex',alignItems:'center',gap:6}}>
-                        <div style={{width:16,height:1.5,background:C.amber,borderRadius:1}}/>
-                        Visão 2 · Sem Ponto em Atraso (HR_ENTRADA vazia + ATRASO=SIM)
-                      </div>
-                      <div style={{display:'flex',flexDirection:'column',gap:4}}>
-                        {semPontoAtraso.map((doc,i)=>{
-                          const tempoStr=fmtTempoMinFn(doc.tempo_min)
-                          const cfg=getStatusCfg(doc.status)
-                          return(
-                            <div key={i} style={{display:'flex',alignItems:'center',gap:0,borderRadius:8,border:`0.5px solid ${cfg.color}35`,width:'100%'}}>
-                              <div style={{padding:'7px 14px',background:`${cfg.color}08`,display:'flex',alignItems:'center',gap:8,flex:1,minWidth:0}}>
-                                <div style={{width:5,height:5,borderRadius:'50%',background:cfg.color,flexShrink:0}}/>
-                                <span style={{fontSize:10.5,color:C.text,fontWeight:500}}>{doc.nm}</span>
-                              </div>
-                              <div style={{padding:'7px 14px',background:`${cfg.color}18`,borderLeft:`0.5px solid ${cfg.color}30`,display:'flex',alignItems:'center',gap:8,flexShrink:0}}>
-                                {tempoStr&&<span style={{fontSize:11,fontWeight:800,color:cfg.color,lineHeight:1,whiteSpace:'nowrap'}}>{tempoStr} em atraso</span>}
-                                <span style={{fontSize:8,fontWeight:700,padding:'2px 7px',borderRadius:10,background:`${cfg.color}25`,color:cfg.color,whiteSpace:'nowrap'}}>{cfg.label}</span>
-                              </div>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  )}
-
-                  {comPontoAtraso.length>0&&(
-                    <div>
-                      <div style={{fontSize:8,fontWeight:700,color:C.orange,textTransform:'uppercase',letterSpacing:'.1em',marginBottom:8,display:'flex',alignItems:'center',gap:6}}>
-                        <div style={{width:16,height:1.5,background:C.orange,borderRadius:1}}/>
-                        Com Ponto · Chegou Atrasado (HR_ENTRADA preenchida + ATRASO=SIM)
-                      </div>
-                      <div style={{display:'flex',flexDirection:'column',gap:4}}>
-                        {comPontoAtraso.map((doc,i)=>{
-                          const tempoStr=fmtTempoMinFn(doc.tempo_min)
-                          const cfg=getStatusCfg(doc.status)
-                          return(
-                            <div key={i} style={{display:'flex',alignItems:'center',gap:0,borderRadius:8,border:`0.5px solid ${cfg.color}30`,width:'100%'}}>
-                              <div style={{padding:'7px 14px',background:`${cfg.color}07`,display:'flex',alignItems:'center',gap:8,flex:1,minWidth:0}}>
-                                <div style={{width:5,height:5,borderRadius:'50%',background:cfg.color,flexShrink:0}}/>
-                                <span style={{fontSize:10.5,color:C.text,fontWeight:500}}>{doc.nm}</span>
-                              </div>
-                              <div style={{padding:'7px 14px',background:`${cfg.color}15`,borderLeft:`0.5px solid ${cfg.color}25`,display:'flex',alignItems:'center',gap:8,flexShrink:0}}>
-                                {tempoStr&&<span style={{fontSize:11,fontWeight:800,color:cfg.color,lineHeight:1,whiteSpace:'nowrap'}}>{tempoStr} em atraso</span>}
-                                <span style={{fontSize:8,fontWeight:700,padding:'2px 7px',borderRadius:10,background:`${cfg.color}25`,color:cfg.color,whiteSpace:'nowrap'}}>{cfg.label}</span>
-                              </div>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         )}
       </div>
