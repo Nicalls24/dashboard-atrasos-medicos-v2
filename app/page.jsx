@@ -343,7 +343,7 @@ function TabAgendas({rows}){
     const comPontoAtrasoList= [] // [{nm, tempo_min, status, hora}]
 
     rowsPonto.forEach(d=>{
-      const hrRaw=d.hr_entrada??d.HR_ENTRADA??null
+      const hrRaw=d.hr_entrada_min??d.HR_ENTRADA_MIN??null
       const temPonto=hrRaw!==null&&hrRaw!==undefined&&String(hrRaw).trim()!==''&&String(hrRaw).trim()!=='0'&&hrRaw!==0
       const atrasoU=String(d.atraso||'').toUpperCase().trim()
       const isFalta=atrasoU==='FALTA'
@@ -354,7 +354,7 @@ function TabAgendas({rows}){
       if(h==null||h<0||h>23)return
 
       const nm=d.nm_medico||'—'
-      const tempo_min=parseTempoMinFn(d.tempo_de_atraso??d['tempo_de_atraso']??d['TEMPO DE ATRASO']??null)
+      const tempo_min=parseTempoMinFn(d.tempo_atraso??d['TEMPO DE ATRASO']??null)
       const status=d.status||''
 
       if(!temPonto){
@@ -1228,22 +1228,25 @@ export default function Home(){
         if(v instanceof Date)return v.toISOString().slice(0,10)
         return String(v).slice(0,10)
       }
-      // Colunas mínimas confirmadas no schema do Supabase
-      // hr_fim_min e dt_registro removidos — podem não existir na tabela
+      // mapAgRow — colunas idênticas ao mapAgenda do route.js
       const mapAgRow=r=>({
-        uf:String(r['UF']||''),
-        nm_local:String(r['NM_LOCAL']||''),
-        nm_medico:String(r['NM_MEDICO']||''),
-        ds_especialidade:String(r['DS_ESPECIALIDADE']||''),
-        cidade:String(r['CIDADE']||''),
-        hr_inicio_min:xlsTimeToMin(r['HR_INICIO']),
-        hr_entrada:(r['HR_ENTRADA']===''||r['HR_ENTRADA']==null)?null:xlsTimeToMin(r['HR_ENTRADA']),
-        data_agenda:xlsDateStr(r['DATA_AGENDA']),
-        qt_consulta:+r['QT_CONSULTA']||0,
-        qt_encaixe:+r['QT_ENCAIXE']||0,
-        atraso:String(r['ATRASO']||''),
-        tempo_de_atraso:String(r['TEMPO DE ATRASO']||''),
-        status:String(r['STATUS']||''),
+        data_agenda:    xlsDateStr(r['DATA_AGENDA']),
+        dt_registro:    xlsDateStr(r['DT_REGISTRO']||''),
+        uf:             r['UF']||null,
+        nm_filial:      r['NM_FILIAL']||null,
+        nm_local:       r['NM_LOCAL']||null,
+        nm_medico:      r['NM_MEDICO']||null,
+        ds_especialidade: r['DS_ESPECIALIDADE']||null,
+        cidade:         r['CIDADE']||null,
+        base_sigo:      r['BASE_DE_DADOS_SIGO']||null,
+        hr_inicio_min:  xlsTimeToMin(r['HR_INICIO']),
+        hr_fim_min:     xlsTimeToMin(r['HR_FIM']),
+        hr_entrada_min: (r['HR_ENTRADA']===''||r['HR_ENTRADA']==null)?null:xlsTimeToMin(r['HR_ENTRADA']),
+        status:         r['STATUS']||null,
+        atraso:         r['ATRASO']||null,
+        tempo_atraso:   String(r['TEMPO DE ATRASO']||''),
+        qt_consulta:    Number(r['QT_CONSULTA'])||0,
+        qt_encaixe:     Number(r['QT_ENCAIXE'])||0,
       })
 
       // Upload agendas direto ao Supabase — INSERT simples, chunk 500
@@ -1255,7 +1258,7 @@ export default function Home(){
         try{
           const res=await fetch(`${SB_URL}/rest/v1/agendas`,{
             method:'POST',
-            headers:{...SBH,'Prefer':'return=minimal'},
+            headers:{...SBH,'Prefer':'resolution=merge-duplicates,return=minimal'},
             body:JSON.stringify(batch)
           })
           if(!res.ok){
