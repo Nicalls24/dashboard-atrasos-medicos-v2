@@ -275,6 +275,12 @@ function TabAgendas({rows}){
 
     // parseTempoMin e fmtTempoMin definidos como parseTempoMinFn/fmtTempoMinFn no escopo do componente
 
+    const rowsPonto=rows
+      .filter(d=>periodoFn(d.dt_registro||d.data_agenda))
+      .filter(d=>ufFilt==='TODOS'||d.uf===ufFilt)
+      .filter(d=>{if(!search)return true;const q=search.toLowerCase();return[d.nm_local,d.nm_medico,d.ds_especialidade,d.cidade].some(v=>String(v||'').toLowerCase().includes(q))})
+      .filter(d=>{if(horasFilt.length===0)return true;const h=d.hr_inicio_min;if(h==null)return false;return horasFilt.includes(Math.floor(h/60))})
+
     const semPontoFaltaMap  = {} // hora → [{nm, status}]
     const semPontoAtrasoMap = {} // hora → [{nm, tempo_min, status}]
     const comPontoAtrasoList= [] // [{nm, tempo_min, status, hora}]
