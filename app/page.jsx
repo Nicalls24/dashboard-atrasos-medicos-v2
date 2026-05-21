@@ -1172,15 +1172,62 @@ export default function Home(){
       const wb=XLSX.read(buf,{type:'buffer'})
       const ws=wb.Sheets['PONTOS']||wb.Sheets[wb.SheetNames[0]]
       const json=XLSX.utils.sheet_to_json(ws,{range:3,defval:''})
-      setStoreMsg(`${json.length.toLocaleString('pt-BR')} linhas — salvando…`)
+      const total=json.length
+      setStoreMsg(`${total.toLocaleString('pt-BR')} linhas — iniciando upload…`)
+
+      // ── Upload direto ao Supabase (bypass Vercel — sem timeout) ──────────────
+      // Transformação de tipos Excel→DB feita no browser
+      const xlsTimeToMin=v=>{
+        if(v===''||v==null)return null
+        if(typeof v==='number'&&v>=0&&v<1)return Math.round(v*1440)
+        if(typeof v==='string'&&v){const m=v.match(/^(\d+):(\d+)/);if(m)return+m[1]*60+ +m[2]}
+        return null
+      }
+      const xlsDateStr=v=>{
+        if(!v&&v!==0)return null
+        if(typeof v==='number'&&v>1)return new Date(Math.round((v-25569)*86400000)).toISOString().slice(0,10)
+        if(v instanceof Date)return v.toISOString().slice(0,10)
+        return String(v).slice(0,10)
+      }
+      const mapAgRow=r=>({
+        uf:String(r['UF']||''),
+        nm_local:String(r['NM_LOCAL']||''),
+        cd_local:String(r['CD_LOCAL']||''),
+        nm_filial:String(r['NM_FILIAL']||''),
+        cd_medico:String(r['CD_MEDICO']||''),
+        nm_medico:String(r['NM_MEDICO']||''),
+        ds_especialidade:String(r['DS_ESPECIALIDADE']||''),
+        cidade:String(r['CIDADE']||''),
+        hr_inicio_min:xlsTimeToMin(r['HR_INICIO']),
+        hr_fim_min:xlsTimeToMin(r['HR_FIM']),
+        hr_entrada:(r['HR_ENTRADA']===''||r['HR_ENTRADA']==null)?null:xlsTimeToMin(r['HR_ENTRADA']),
+        data_agenda:xlsDateStr(r['DATA_AGENDA']),
+        qt_consulta:+r['QT_CONSULTA']||0,
+        qt_encaixe:+r['QT_ENCAIXE']||0,
+        atraso:String(r['ATRASO']||''),
+        tempo_de_atraso:String(r['TEMPO DE ATRASO']||''),
+        status:String(r['STATUS']||''),
+        dt_registro:xlsDateStr(r['DT_REGISTRO']),
+      })
+
+      // Upload agendas direto ao Supabase — chunk 500, sem retry needed
       const CHUNK=500
-      for(let i=0;i<json.length;i+=CHUNK){setStoreMsg(`Agendas… ${Math.min(i+CHUNK,json.length).toLocaleString('pt-BR')}/${json.length.toLocaleString('pt-BR')}`);await fetch('/api/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows:json.slice(i,i+CHUNK),ts,table:'agendas'})})}
-      for(let i=0;i<json.length;i+=CHUNK){setStoreMsg(`Espera… ${Math.min(i+CHUNK,json.length).toLocaleString('pt-BR')}/${json.length.toLocaleString('pt-BR')}`);await fetch('/api/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows:json.slice(i,i+CHUNK),ts,table:'espera'})})}
+      for(let i=0;i<json.length;i+=CHUNK){
+        const batch=json.slice(i,i+CHUNK).map(mapAgRow)
+        setStoreMsg(`Agendas ${Math.min(i+CHUNK,json.length)}/${json.length}…`)
+        const res=await fetch(`${SB_URL}/rest/v1/agendas`,{
+          method:'POST',
+          headers:{...SBH,'Prefer':'resolution=ignore-duplicates,return=minimal'},
+          body:JSON.stringify(batch)
+        })
+        if(!res.ok){const err=await res.text();console.error(`Agendas batch ${i} falhou:`,err)}
+      }
+
       setStoreMsg('Recarregando…')
       const[ag,esp]=await Promise.all([loadTable('agendas'),loadTable('espera')])
       setAgendas(ag);setEspera(esp);setStorageInfo({agendas:ag.length,espera:esp.length})
-      setStoreMsg(`✓ ${ag.length.toLocaleString('pt-BR')} agendas · ${esp.length.toLocaleString('pt-BR')} esperas`)
-      setTimeout(()=>setStoreMsg(''),4000)
+      setStoreMsg(`✓ ${ag.length.toLocaleString('pt-BR')} agendas · ${esp.length.toLocaleString('pt-BR')} esperas (${total} linhas da planilha)`)
+      setTimeout(()=>setStoreMsg(''),6000)
     }catch(e){setStoreMsg(`⚠ Erro: ${e.message}`)}
     setStoring(false)
   },[loadTable])
