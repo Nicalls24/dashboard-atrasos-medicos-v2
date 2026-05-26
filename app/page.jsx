@@ -231,6 +231,7 @@ function TabAgendas({rows}){
   }
 
     const agStats=useMemo(()=>{
+    try{
     const totalRows=filtered.length
     const totalCons=filtered.reduce((a,d)=>a+(d.qt_consulta||0),0)
     const totalEnc =filtered.reduce((a,d)=>a+(d.qt_encaixe ||0),0)
@@ -398,13 +399,16 @@ function TabAgendas({rows}){
       feedList,topSpec,byDate,projData,
       docsFaltaU,docsCritU,docsGrvU,docsAtrU,
       situacaoPontoHoras,semPontoAtrasoTotal,semPontoFaltaTotal,comPontoAtrasoTotal}
+    }catch(e){console.error('agStats error:',e);return null}
   },[filtered,unidFilt,rows,periodoFn,ufFilt,search,horasFilt])
 
-  const{totalRows,totalCons,totalEnc,totalAg,
-    faltaDocs,remarcaDocs,critDocs,grvDocs,atrDocs,faltaAg,remarcaAg,critAg,grvAg,atrAg,
-    feedList,topSpec,byDate,projData,
-    docsFaltaU,docsCritU,docsGrvU,docsAtrU,
-    situacaoPontoHoras,semPontoAtrasoTotal,semPontoFaltaTotal,comPontoAtrasoTotal}=agStats
+  const agStatsResult=agStats||{}
+  const{totalRows=0,totalCons=0,totalEnc=0,totalAg=0,
+    faltaDocs=[],remarcaDocs=[],critDocs=[],grvDocs=[],atrDocs=[],
+    faltaAg=0,remarcaAg=0,critAg=0,grvAg=0,atrAg=0,
+    feedList=[],topSpec=[],byDate=[],projData=[],
+    docsFaltaU=[],docsCritU=[],docsGrvU=[],docsAtrU=[],
+    situacaoPontoHoras=[],semPontoAtrasoTotal=0,semPontoFaltaTotal=0,comPontoAtrasoTotal=0}=agStatsResult
 
   const allDocsList=useMemo(()=>[...docsFaltaU,...docsAtrU,...docsGrvU,...docsCritU],[docsFaltaU,docsAtrU,docsGrvU,docsCritU])
   // justPct, justColor, justifiedCount removidos → usar globalJustStats e globalJustColor
