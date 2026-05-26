@@ -231,7 +231,6 @@ function TabAgendas({rows}){
   }
 
     const agStats=useMemo(()=>{
-    try{
     const totalRows=filtered.length
     const totalCons=filtered.reduce((a,d)=>a+(d.qt_consulta||0),0)
     const totalEnc =filtered.reduce((a,d)=>a+(d.qt_encaixe ||0),0)
@@ -358,10 +357,12 @@ function TabAgendas({rows}){
       const tempo_min=parseTempoMinFn(d.tempo_atraso??d['TEMPO DE ATRASO']??null)
       const status=d.status||''
 
+      // hr_ini_min/hr_fim_min fora do if/else — acessíveis em ambos os blocos
+      const hr_ini_min=d.hr_inicio_min??null
+      const hr_fim_min=d.hr_fim_min??d.hr_fim??null
+
       if(!temPonto){
         // SEM PONTO
-        const hr_ini_min=d.hr_inicio_min??null
-        const hr_fim_min=d.hr_fim_min??d.hr_fim??null
         if(isFalta){
           if(!semPontoFaltaMap[h])semPontoFaltaMap[h]=[]
           if(!semPontoFaltaMap[h].find(x=>x.nm===nm&&x.nm_local===(d.nm_local||'')))
@@ -374,7 +375,7 @@ function TabAgendas({rows}){
       }else{
         // COM PONTO + ATRASO
         if(isSIM&&!comPontoAtrasoList.find(x=>x.nm===nm&&x.hora===h&&x.nm_local===(d.nm_local||'')))
-          comPontoAtrasoList.push({nm,tempo_min,status,hora:h,nm_local:d.nm_local||'',hr_ini_min,hr_fim_min:d.hr_fim_min??d.hr_fim??null})
+          comPontoAtrasoList.push({nm,tempo_min,status,hora:h,nm_local:d.nm_local||'',hr_ini_min,hr_fim_min})
       }
     })
 
@@ -399,7 +400,6 @@ function TabAgendas({rows}){
       feedList,topSpec,byDate,projData,
       docsFaltaU,docsCritU,docsGrvU,docsAtrU,
       situacaoPontoHoras,semPontoAtrasoTotal,semPontoFaltaTotal,comPontoAtrasoTotal}
-    }catch(e){console.error('agStats error:',e);return null}
   },[filtered,unidFilt,rows,periodoFn,ufFilt,search,horasFilt])
 
   const agStatsResult=agStats||{}
