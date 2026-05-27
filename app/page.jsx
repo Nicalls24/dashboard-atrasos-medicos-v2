@@ -1014,7 +1014,16 @@ function TabEspera({rows}){
     const projData=lastDate?Array.from({length:5},(_,i)=>({date:addDay(lastDate,i+1),mod:Math.max(0,Math.round(lM+slopeMod*(i+1))),grv:Math.max(0,Math.round(lG+slopeGrv*(i+1))),crit:Math.max(0,Math.round(lC+slopeCrt*(i+1))),total:0,pac:0,isProj:true})):[]
     const docsFalta=unidFilt?Object.entries(faltasList.filter(d=>d.nm_local===unidFilt).reduce((a,d)=>{const nm=d.nm_medico||'—';a[nm]=(a[nm]||0)+1;return a},{})).map(([nm,cnt])=>({nm,cnt})).sort((a,b)=>b.cnt-a.cnt):[]
     const docsAtraso=unidFilt?Object.entries(atrasosList.filter(d=>d.nm_local===unidFilt).reduce((a,d)=>{const nm=d.nm_medico||'—';if(!a[nm])a[nm]={cnt:0,status:d.status};a[nm].cnt++;return a},{})).map(([nm,v])=>({nm,...v})).sort((a,b)=>b.cnt-a.cnt):[]
-    return{totalReg,modCnt,grvCnt,critCnt,feedList,faltasList,atrasosList,statusAt,byDate,projData,docsFalta,docsAtraso}
+
+    // ── SLA: Tempo de Espera Clínicas (≤30min = dentro do SLA) ──────────────
+    const SLA_MAX=30 // minutos
+    const slaRows=filtered.filter(d=>d.tempo_espera_min!=null)
+    const slaDentro=slaRows.filter(d=>d.tempo_espera_min<=SLA_MAX).length
+    const slaFora  =slaRows.length-slaDentro
+    const slaPct   =slaRows.length>0?Math.round(slaDentro/slaRows.length*100):null
+    const slaTotal =slaRows.length
+
+    return{totalReg,modCnt,grvCnt,critCnt,feedList,faltasList,atrasosList,statusAt,byDate,projData,docsFalta,docsAtraso,slaDentro,slaFora,slaPct,slaTotal}
   },[filtered,unidFilt])
   const feedListFiltered=useMemo(()=>espStats.feedList.filter(item=>{
     if(sevFilt.includes('CRIT')&&item.maxTempo>=90)return true
@@ -1022,7 +1031,7 @@ function TabEspera({rows}){
     if(sevFilt.includes('MOD')&&item.maxTempo>=15&&item.maxTempo<=30)return true
     return false
   }),[espStats.feedList,sevFilt])
-  const{totalReg,modCnt,grvCnt,critCnt,feedList,faltasList,atrasosList,statusAt,byDate,projData,docsFalta,docsAtraso}=espStats
+  const{totalReg,modCnt,grvCnt,critCnt,feedList,faltasList,atrasosList,statusAt,byDate,projData,docsFalta,docsAtraso,slaDentro=0,slaFora=0,slaPct=null,slaTotal=0}=espStats||{}
   const medTotalProb=faltasList.length+atrasosList.length
   const medFPct=medTotalProb>0?Math.round(faltasList.length/medTotalProb*100):0
   const medAPct=medTotalProb>0?Math.round(atrasosList.length/medTotalProb*100):0
@@ -1057,6 +1066,38 @@ function TabEspera({rows}){
     <div>
       <div style={{marginBottom:16}}><PeriodoBar value={periodo} onChange={p=>{setPeriodo(p);setDateFrom('');setDateTo('');setUnidFilt('');setHoraFilt('TODAS');setHoraFiltFim('TODAS')}} allDates={allDates} dateFrom={dateFrom} dateTo={dateTo} onDateFrom={setDateFrom} onDateTo={setDateTo} label={`${totalReg.toLocaleString('pt-BR')} registros`}/></div>
       <SearchBar search={search} onSearch={setSearch} uf={ufFilt} onUf={setUfFilt} ufs={ufs} showClear={ufFilt!=='TODOS'||!!search} onClear={()=>{setUfFilt('TODOS');setSearch('')}}/>
+
+      {/* ── SLA CARD: Tempo de Espera Clínicas ≤30min ≥85% ── */}
+      <div style={{borderRadius:14,padding:'18px 22px',marginBottom:14,background:'rgba(255,255,255,0.025)',border:`1px solid ${slaPct!=null?(slaPct>=85?'rgba(16,185,129,.35)':slaPct>=60?'rgba(245,158,11,.35)':'rgba(244,63,94,.35)'):'rgba(255,255,255,0.07)'}`,position:'relative',overflow:'hidden'}}>
+        <div style={{position:'absolute',top:-40,right:-40,width:180,height:180,borderRadius:'50%',background:`radial-gradient(circle,${slaPct!=null?(slaPct>=85?'rgba(16,185,129,.07)':slaPct>=60?'rgba(245,158,11,.07)':'rgba(244,63,94,.07)'):'rgba(255,255,255,.02)'},transparent 70%)`,pointerEvents:'none'}}/>
+        <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:16}}>
+          <div>
+            <div style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.12em',marginBottom:6}}>⏱ SLA · Tempo de Espera Clínicas</div>
+            <div style={{fontSize:12,color:C.sub}}>Atendimento em até <strong style={{color:C.text}}>30 minutos</strong> &nbsp;·&nbsp; Meta <strong style={{color:C.emerald}}>≥ 85%</strong></div>
+          </div>
+          <div style={{textAlign:'right'}}>
+            <div style={{fontSize:60,fontWeight:900,color:slaPct!=null?(slaPct>=85?C.emerald:slaPct>=60?C.amber:C.rose):'rgba(255,255,255,.15)',lineHeight:1,letterSpacing:'-3px'}}>{slaPct!=null?slaPct:'—'}<span style={{fontSize:slaPct!=null?28:0}}>%</span></div>
+            <div style={{fontSize:9,color:C.muted,marginTop:4}}>conformidade</div>
+          </div>
+        </div>
+        <div style={{position:'relative',height:10,background:'rgba(255,255,255,0.06)',borderRadius:5,overflow:'hidden',marginBottom:14}}>
+          <div style={{position:'absolute',top:0,left:0,height:'100%',width:(slaPct||0)+'%',background:`linear-gradient(90deg,${slaPct!=null&&slaPct>=85?C.emerald:slaPct!=null&&slaPct>=60?C.amber:C.rose},${slaPct!=null&&slaPct>=85?C.emerald+'bb':slaPct!=null&&slaPct>=60?C.amber+'bb':C.rose+'bb'})`,borderRadius:5,transition:'width .7s ease',boxShadow:`0 0 12px ${slaPct!=null&&slaPct>=85?C.emerald:slaPct!=null&&slaPct>=60?C.amber:C.rose}40`}}/>
+          <div style={{position:'absolute',top:0,left:'85%',width:2.5,height:'100%',background:'rgba(255,255,255,0.5)'}}/>
+        </div>
+        <div style={{display:'flex',gap:24,flexWrap:'wrap'}}>
+          {[
+            {label:'Dentro do SLA',value:slaDentro,color:C.emerald,icon:'✓'},
+            {label:'Fora do SLA',value:slaFora,color:C.rose,icon:'✗'},
+            {label:'Total analisado',value:slaTotal,color:C.muted,icon:'#'},
+          ].map(k=>(
+            <div key={k.label} style={{display:'flex',alignItems:'center',gap:10}}>
+              <div style={{width:8,height:8,borderRadius:'50%',background:k.color}}/>
+              <span style={{fontSize:11,color:C.muted}}>{k.label}:</span>
+              <span style={{fontSize:15,fontWeight:700,color:k.color}}>{k.value.toLocaleString('pt-BR')}</span>
+            </div>
+          ))}
+        </div>
+      </div>
       <div style={{background:'rgba(255,255,255,0.025)',border:'1px solid rgba(255,255,255,0.06)',borderRadius:12,padding:'12px 18px',marginBottom:14}}>
         <div style={{display:'flex',alignItems:'center',gap:16}}>
           {[{label:'Moderada',value:modCnt,sub:'15–30min',color:'#F59E0B'},{label:'Grave',value:grvCnt,sub:'31–1h29',color:'#F97316'},{label:'Crítica',value:critCnt,sub:'+1h30',color:'#F43F5E'}].map((k,i)=>(
@@ -1281,6 +1322,23 @@ export default function Home(){
         }
       }
       if(uploadErrors.length>0)console.error('Upload errors:',uploadErrors)
+
+      // ── Upload espera via route.js (mapEspera já conhece as colunas) ──────
+      const wsNames=wb.SheetNames
+      const wsEspera=wb.Sheets['Folha1']||wb.Sheets[wsNames.find(n=>n.toLowerCase()!=='pontos'&&n.toLowerCase()!=='sheet1')]
+      if(wsEspera){
+        const jsonEspera=XLSX.utils.sheet_to_json(wsEspera,{range:3,defval:''})
+        if(jsonEspera.length>0){
+          const CHUNKE=200
+          for(let i=0;i<jsonEspera.length;i+=CHUNKE){
+            const batch=jsonEspera.slice(i,i+CHUNKE)
+            setStoreMsg(`Espera ${Math.min(i+CHUNKE,jsonEspera.length)}/${jsonEspera.length}…`)
+            try{
+              await fetch('/api/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows:batch,ts,table:'espera'})})
+            }catch(e){console.error('Espera batch',i,'error:',e)}
+          }
+        }
+      }
 
       setStoreMsg('Recarregando…')
       const[ag,esp]=await Promise.all([loadTable('agendas'),loadTable('espera')])
