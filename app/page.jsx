@@ -1304,48 +1304,26 @@ export default function Home(){
         qt_encaixe:     Number(r['QT_ENCAIXE'])||0,
       })
 
-      // Upload agendas direto ao Supabase — INSERT simples, chunk 500
-      const CHUNK=500
-      let uploadErrors=[]
+      // ── Upload agendas via route.js — dedup por (data_agenda|nm_local|nm_medico) ─
+      const CHUNK=100
       for(let i=0;i<json.length;i+=CHUNK){
-        const batch=json.slice(i,i+CHUNK).map(mapAgRow)
+        const batch=json.slice(i,i+CHUNK)
         setStoreMsg(`Agendas ${Math.min(i+CHUNK,json.length)}/${json.length}…`)
         try{
-          const res=await fetch(`${SB_URL}/rest/v1/agendas`,{
-            method:'POST',
-            headers:{...SBH,'Prefer':'resolution=merge-duplicates,return=minimal'},
-            body:JSON.stringify(batch)
-          })
-          if(!res.ok){
-            const errText=await res.text()
-            let parsed={}
-            try{parsed=JSON.parse(errText)}catch{}
-            const msg=parsed.message||parsed.hint||errText
-            uploadErrors.push(`batch ${i}: ${msg}`)
-            setStoreMsg(`⚠ Erro no batch ${i}: ${msg}`)
-            await new Promise(r=>setTimeout(r,2000)) // mostra o erro por 2s
-          }
-        }catch(e){
-          uploadErrors.push(`batch ${i}: ${e.message}`)
-          setStoreMsg(`⚠ Erro de rede batch ${i}: ${e.message}`)
-          await new Promise(r=>setTimeout(r,2000))
-        }
+          const res=await fetch('/api/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows:batch,ts,table:'agendas'})})
+          if(!res.ok)console.error(`Ag batch ${i}:`,await res.text())
+        }catch(e){console.error(`Ag batch ${i}:`,e)}
       }
-      if(uploadErrors.length>0)console.error('Upload errors:',uploadErrors)
 
-      // ── Upload espera via route.js (mesmos dados PONTOS, mapEspera filtra) ─
-      // mapEspera usa colunas TEMPO_DE_ESPERA, HR_REGISTRO_ESPERA, QT_PACIENTES_AGUARDANDO
-      const CHUNKE=200
+      // ── Upload espera via route.js — mapEspera filtra linhas sem dados de espera ─
+      const CHUNKE=100
       for(let i=0;i<json.length;i+=CHUNKE){
         const batchE=json.slice(i,i+CHUNKE)
         setStoreMsg(`Espera ${Math.min(i+CHUNKE,json.length)}/${json.length}…`)
         try{
-          await fetch('/api/save',{
-            method:'POST',
-            headers:{'Content-Type':'application/json'},
-            body:JSON.stringify({rows:batchE,ts,table:'espera'})
-          })
-        }catch(e){console.error('Espera batch',i,'error:',e)}
+          const res=await fetch('/api/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows:batchE,ts,table:'espera'})})
+          if(!res.ok)console.error(`Esp batch ${i}:`,await res.text())
+        }catch(e){console.error(`Esp batch ${i}:`,e)}
       }
 
       setStoreMsg('Recarregando…')
