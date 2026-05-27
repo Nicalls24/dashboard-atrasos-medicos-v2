@@ -1059,7 +1059,17 @@ function TabEspera({rows}){
     }
     return p
   }
-  if(!rows.length)return(<div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',height:'60vh',gap:14}}><div style={{fontSize:44}}>⏱️</div><div style={{fontSize:18,fontWeight:700,color:'#F1F5F9'}}>Nenhum dado de espera</div></div>)
+  if(!rows.length)return(
+    <div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',height:'60vh',gap:16}}>
+      <div style={{fontSize:44}}>⏱️</div>
+      <div style={{fontSize:18,fontWeight:700,color:C.text}}>Nenhum dado de espera</div>
+      <div style={{fontSize:12,color:C.muted,textAlign:'center',maxWidth:440,lineHeight:1.7}}>
+        Carregue a planilha normalmente pelo botão <strong style={{color:C.amber}}>+ Carregar Planilha</strong>.<br/>
+        Os dados de espera são lidos automaticamente das colunas<br/>
+        <code style={{color:C.teal,fontSize:11}}>TEMPO_DE_ESPERA · HR_REGISTRO_ESPERA · QT_PACIENTES_AGUARDANDO</code>
+      </div>
+    </div>
+  )
   const horasDispFim=horaFilt==='TODAS'?[]:horasDisp.filter(h=>h>parseInt(horaFilt))
   const cardE={background:'rgba(255,255,255,0.025)',border:'1px solid rgba(255,255,255,0.06)',borderRadius:14,padding:'18px 20px'}
   return(
@@ -1323,21 +1333,19 @@ export default function Home(){
       }
       if(uploadErrors.length>0)console.error('Upload errors:',uploadErrors)
 
-      // ── Upload espera via route.js (mapEspera já conhece as colunas) ──────
-      const wsNames=wb.SheetNames
-      const wsEspera=wb.Sheets['Folha1']||wb.Sheets[wsNames.find(n=>n.toLowerCase()!=='pontos'&&n.toLowerCase()!=='sheet1')]
-      if(wsEspera){
-        const jsonEspera=XLSX.utils.sheet_to_json(wsEspera,{range:3,defval:''})
-        if(jsonEspera.length>0){
-          const CHUNKE=200
-          for(let i=0;i<jsonEspera.length;i+=CHUNKE){
-            const batch=jsonEspera.slice(i,i+CHUNKE)
-            setStoreMsg(`Espera ${Math.min(i+CHUNKE,jsonEspera.length)}/${jsonEspera.length}…`)
-            try{
-              await fetch('/api/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows:batch,ts,table:'espera'})})
-            }catch(e){console.error('Espera batch',i,'error:',e)}
-          }
-        }
+      // ── Upload espera via route.js (mesmos dados PONTOS, mapEspera filtra) ─
+      // mapEspera usa colunas TEMPO_DE_ESPERA, HR_REGISTRO_ESPERA, QT_PACIENTES_AGUARDANDO
+      const CHUNKE=200
+      for(let i=0;i<json.length;i+=CHUNKE){
+        const batchE=json.slice(i,i+CHUNKE)
+        setStoreMsg(`Espera ${Math.min(i+CHUNKE,json.length)}/${json.length}…`)
+        try{
+          await fetch('/api/save',{
+            method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({rows:batchE,ts,table:'espera'})
+          })
+        }catch(e){console.error('Espera batch',i,'error:',e)}
       }
 
       setStoreMsg('Recarregando…')
