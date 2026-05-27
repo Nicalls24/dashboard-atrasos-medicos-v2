@@ -1077,49 +1077,65 @@ function TabEspera({rows}){
       <div style={{marginBottom:16}}><PeriodoBar value={periodo} onChange={p=>{setPeriodo(p);setDateFrom('');setDateTo('');setUnidFilt('');setHoraFilt('TODAS');setHoraFiltFim('TODAS')}} allDates={allDates} dateFrom={dateFrom} dateTo={dateTo} onDateFrom={setDateFrom} onDateTo={setDateTo} label={`${totalReg.toLocaleString('pt-BR')} registros`}/></div>
       <SearchBar search={search} onSearch={setSearch} uf={ufFilt} onUf={setUfFilt} ufs={ufs} showClear={ufFilt!=='TODOS'||!!search} onClear={()=>{setUfFilt('TODOS');setSearch('')}}/>
 
-      {/* ── SLA CARD: Tempo de Espera Clínicas ≤30min ≥85% ── */}
-      <div style={{borderRadius:14,padding:'18px 22px',marginBottom:14,background:'rgba(255,255,255,0.025)',border:`1px solid ${slaPct!=null?(slaPct>=85?'rgba(16,185,129,.35)':slaPct>=60?'rgba(245,158,11,.35)':'rgba(244,63,94,.35)'):'rgba(255,255,255,0.07)'}`,position:'relative',overflow:'hidden'}}>
-        <div style={{position:'absolute',top:-40,right:-40,width:180,height:180,borderRadius:'50%',background:`radial-gradient(circle,${slaPct!=null?(slaPct>=85?'rgba(16,185,129,.07)':slaPct>=60?'rgba(245,158,11,.07)':'rgba(244,63,94,.07)'):'rgba(255,255,255,.02)'},transparent 70%)`,pointerEvents:'none'}}/>
-        <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:16}}>
-          <div>
-            <div style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.12em',marginBottom:6}}>⏱ SLA · Tempo de Espera Clínicas</div>
-            <div style={{fontSize:12,color:C.sub}}>Atendimento em até <strong style={{color:C.text}}>30 minutos</strong> &nbsp;·&nbsp; Meta <strong style={{color:C.emerald}}>≥ 85%</strong></div>
-          </div>
-          <div style={{textAlign:'right'}}>
-            <div style={{fontSize:60,fontWeight:900,color:slaPct!=null?(slaPct>=85?C.emerald:slaPct>=60?C.amber:C.rose):'rgba(255,255,255,.15)',lineHeight:1,letterSpacing:'-3px'}}>{slaPct!=null?slaPct:'—'}<span style={{fontSize:slaPct!=null?28:0}}>%</span></div>
-            <div style={{fontSize:9,color:C.muted,marginTop:4}}>conformidade</div>
-          </div>
-        </div>
-        <div style={{position:'relative',height:10,background:'rgba(255,255,255,0.06)',borderRadius:5,overflow:'hidden',marginBottom:14}}>
-          <div style={{position:'absolute',top:0,left:0,height:'100%',width:(slaPct||0)+'%',background:`linear-gradient(90deg,${slaPct!=null&&slaPct>=85?C.emerald:slaPct!=null&&slaPct>=60?C.amber:C.rose},${slaPct!=null&&slaPct>=85?C.emerald+'bb':slaPct!=null&&slaPct>=60?C.amber+'bb':C.rose+'bb'})`,borderRadius:5,transition:'width .7s ease',boxShadow:`0 0 12px ${slaPct!=null&&slaPct>=85?C.emerald:slaPct!=null&&slaPct>=60?C.amber:C.rose}40`}}/>
-          <div style={{position:'absolute',top:0,left:'85%',width:2.5,height:'100%',background:'rgba(255,255,255,0.5)'}}/>
-        </div>
-        <div style={{display:'flex',gap:24,flexWrap:'wrap'}}>
-          {[
-            {label:'Dentro do SLA',value:slaDentro,color:C.emerald,icon:'✓'},
-            {label:'Fora do SLA',value:slaFora,color:C.rose,icon:'✗'},
-            {label:'Total analisado',value:slaTotal,color:C.muted,icon:'#'},
-          ].map(k=>(
-            <div key={k.label} style={{display:'flex',alignItems:'center',gap:10}}>
-              <div style={{width:8,height:8,borderRadius:'50%',background:k.color}}/>
-              <span style={{fontSize:11,color:C.muted}}>{k.label}:</span>
-              <span style={{fontSize:15,fontWeight:700,color:k.color}}>{k.value.toLocaleString('pt-BR')}</span>
+      {/* ── MODELO B: SLA + Severidades lado a lado ── */}
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14,marginBottom:16}}>
+
+        {/* Painel esquerdo: SLA */}
+        <div style={{borderRadius:12,padding:'16px 20px',border:`0.5px solid ${slaPct!=null?(slaPct>=85?'rgba(16,185,129,.4)':slaPct>=60?'rgba(245,158,11,.4)':'rgba(244,63,94,.4)'):'rgba(255,255,255,0.1)'}`,background:'rgba(255,255,255,0.025)',position:'relative',overflow:'hidden'}}>
+          <div style={{position:'absolute',top:-30,right:-30,width:140,height:140,borderRadius:'50%',background:`radial-gradient(circle,${slaPct!=null&&slaPct>=85?'rgba(16,185,129,.06)':slaPct!=null&&slaPct>=60?'rgba(245,158,11,.06)':'rgba(244,63,94,.06)'},transparent 70%)`,pointerEvents:'none'}}/>
+          <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:14}}>
+            <div>
+              <div style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.12em',marginBottom:5}}>⏱ SLA · Tempo de espera</div>
+              <div style={{fontSize:11,color:C.sub}}>Atendimento em até <strong style={{color:C.text}}>30 minutos</strong></div>
+              <div style={{fontSize:11,color:C.sub}}>Meta <strong style={{color:C.emerald}}>≥ 85%</strong></div>
             </div>
-          ))}
+            <div style={{textAlign:'right'}}>
+              <div style={{fontSize:48,fontWeight:900,color:slaPct!=null?(slaPct>=85?C.emerald:slaPct>=60?C.amber:C.rose):'rgba(255,255,255,.2)',lineHeight:1,letterSpacing:'-2px'}}>{slaPct!=null?slaPct:'—'}<span style={{fontSize:slaPct!=null?22:0}}>%</span></div>
+              <div style={{fontSize:9,color:C.muted,marginTop:3}}>conformidade</div>
+            </div>
+          </div>
+          <div style={{position:'relative',height:8,background:'rgba(255,255,255,0.07)',borderRadius:4,overflow:'hidden',marginBottom:12}}>
+            <div style={{position:'absolute',top:0,left:0,height:'100%',width:(slaPct||0)+'%',background:slaPct!=null&&slaPct>=85?C.emerald:slaPct!=null&&slaPct>=60?C.amber:C.rose,borderRadius:4,transition:'width .7s ease'}}/>
+            <div style={{position:'absolute',top:0,left:'85%',width:2,height:'100%',background:'rgba(255,255,255,0.5)'}}/>
+          </div>
+          <div style={{display:'flex',justifyContent:'space-between',fontSize:12}}>
+            <div style={{display:'flex',alignItems:'center',gap:6}}>
+              <div style={{width:7,height:7,borderRadius:'50%',background:C.emerald}}/>
+              <span style={{color:C.muted}}>Dentro:</span>
+              <span style={{fontWeight:700,color:C.emerald}}>{slaDentro.toLocaleString('pt-BR')}</span>
+            </div>
+            <div style={{display:'flex',alignItems:'center',gap:6}}>
+              <div style={{width:7,height:7,borderRadius:'50%',background:C.rose}}/>
+              <span style={{color:C.muted}}>Fora:</span>
+              <span style={{fontWeight:700,color:C.rose}}>{slaFora.toLocaleString('pt-BR')}</span>
+            </div>
+            <div style={{display:'flex',alignItems:'center',gap:6}}>
+              <div style={{width:7,height:7,borderRadius:'50%',background:C.muted}}/>
+              <span style={{color:C.muted}}>Total: <span style={{fontWeight:700,color:C.sub}}>{slaTotal.toLocaleString('pt-BR')}</span></span>
+            </div>
+          </div>
+        </div>
+
+        {/* Painel direito: Severidades */}
+        <div style={{borderRadius:12,padding:'16px 20px',border:'0.5px solid rgba(255,255,255,0.1)',background:'rgba(255,255,255,0.025)'}}>
+          <div style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.12em',marginBottom:14}}>Severidade da espera</div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10,height:'calc(100% - 32px)'}}>
+            {[
+              {label:'Moderada',value:modCnt,sub:'15–30min',color:C.amber,border:'rgba(245,158,11,.3)',bg:'rgba(245,158,11,.06)'},
+              {label:'Grave',value:grvCnt,sub:'31min–1h29',color:C.orange,border:'rgba(249,115,22,.3)',bg:'rgba(249,115,22,.06)'},
+              {label:'Crítica',value:critCnt,sub:'>1h30',color:C.rose,border:'rgba(244,63,94,.3)',bg:'rgba(244,63,94,.06)'},
+            ].map(k=>(
+              <div key={k.label} style={{textAlign:'center',padding:'14px 8px',borderRadius:10,border:`0.5px solid ${k.border}`,background:k.bg,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:4}}>
+                <div style={{fontSize:9,fontWeight:700,color:k.color,textTransform:'uppercase',letterSpacing:'.1em'}}>{k.label}</div>
+                <div style={{fontSize:32,fontWeight:900,color:k.color,lineHeight:1,letterSpacing:'-1px'}}>{k.value.toLocaleString('pt-BR')}</div>
+                <div style={{fontSize:9,color:C.muted}}>{k.sub}</div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
-      <div style={{background:'rgba(255,255,255,0.025)',border:'1px solid rgba(255,255,255,0.06)',borderRadius:12,padding:'12px 18px',marginBottom:14}}>
-        <div style={{display:'flex',alignItems:'center',gap:16}}>
-          {[{label:'Moderada',value:modCnt,sub:'15–30min',color:'#F59E0B'},{label:'Grave',value:grvCnt,sub:'31–1h29',color:'#F97316'},{label:'Crítica',value:critCnt,sub:'+1h30',color:'#F43F5E'}].map((k,i)=>(
-            <div key={k.label} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:2,minWidth:58,paddingLeft:i>0?16:0,borderLeft:i>0?'0.5px solid rgba(255,255,255,0.07)':'none'}}>
-              <span style={{fontSize:9,fontWeight:700,color:k.color,textTransform:'uppercase',letterSpacing:'.07em'}}>{k.label}</span>
-              <span style={{fontSize:22,fontWeight:800,color:k.color,lineHeight:1}}>{k.value.toLocaleString('pt-BR')}</span>
-              <span style={{fontSize:8,color:'#475569'}}>{k.sub}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-      <div style={{display:'grid',gridTemplateColumns:'1fr 320px',gap:14,marginBottom:14}}>
+
+            <div style={{display:'grid',gridTemplateColumns:'1fr 320px',gap:14,marginBottom:14}}>
         <div style={cardE}>
           {unidFilt&&<div style={{display:'flex',alignItems:'center',gap:10,marginBottom:12,padding:'8px 12px',background:'rgba(245,158,11,0.08)',border:'0.5px solid rgba(245,158,11,0.25)',borderRadius:9}}><div style={{width:6,height:6,borderRadius:'50%',background:'#F59E0B',flexShrink:0}}/><span style={{fontSize:11,color:'#F59E0B',flex:1,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>Filtrando: {unidFilt}</span><button onClick={()=>setUnidFilt('')} style={{background:'transparent',border:'none',color:'#475569',cursor:'pointer',fontSize:12}}>✕</button></div>}
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:16}}>
