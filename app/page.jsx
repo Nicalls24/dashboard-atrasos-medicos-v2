@@ -462,36 +462,40 @@ function TabAgendas({rows}){
 
       {/* Filtro de hora início removido */}
 
-      {/* KPI BAR */}
-      <div style={{display:'flex',background:'rgba(255,255,255,0.025)',border:'0.5px solid rgba(255,255,255,0.07)',borderRadius:12,overflow:'hidden',marginBottom:14}}>
-        <div style={{flex:'1.4',padding:'16px 20px',borderRight:'0.5px solid rgba(255,255,255,0.07)'}}>
-          <div style={{fontSize:9,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.1em',marginBottom:5}}>Total Agendas</div>
-          <div style={{fontSize:30,fontWeight:800,color:C.amber,letterSpacing:'-1px',lineHeight:1}}>{totalAg.toLocaleString('pt-BR')}</div>
-          <div style={{display:'flex',gap:14,marginTop:8}}>
-            <div style={{display:'flex',alignItems:'center',gap:5}}><div style={{width:18,height:3,background:C.teal,borderRadius:2}}/><span style={{fontSize:9,color:C.muted}}>{totalCons.toLocaleString('pt-BR')} consultas</span></div>
-            <div style={{display:'flex',alignItems:'center',gap:5}}><div style={{width:18,height:3,background:C.violet,borderRadius:2}}/><span style={{fontSize:9,color:C.muted}}>{totalEnc.toLocaleString('pt-BR')} encaixe</span></div>
+      {/* KPI BAR — Modelo A */}
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10,marginBottom:14}}>
+        {/* Card 1: Total Agendas */}
+        <div style={{...card,padding:'16px 18px'}}>
+          <div style={{fontSize:9,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.1em',marginBottom:6}}>Total Agendas</div>
+          <div style={{fontSize:36,fontWeight:800,color:C.amber,letterSpacing:'-1px',lineHeight:1,marginBottom:8}}>{totalAg.toLocaleString('pt-BR')}</div>
+          <div style={{display:'flex',gap:14,marginBottom:8}}>
+            <span style={{fontSize:10,color:C.teal}}>▬ {totalCons.toLocaleString('pt-BR')} consultas</span>
+            <span style={{fontSize:10,color:C.violet||'#8B5CF6'}}>▬ {totalEnc} encaixe</span>
           </div>
-          <div style={{marginTop:8,height:4,background:'rgba(255,255,255,0.04)',borderRadius:2,overflow:'hidden',display:'flex',gap:1}}>
-            <div style={{flex:totalCons,background:C.teal,opacity:.7}}/><div style={{flex:totalEnc,background:C.violet,opacity:.7}}/>
-          </div>
-        </div>
-        <div style={{flex:'1',padding:'16px 20px',borderRight:'0.5px solid rgba(255,255,255,0.07)'}}>
-          <div style={{fontSize:9,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.1em',marginBottom:5}}>Afetadas por problema</div>
-          <div style={{fontSize:30,fontWeight:800,color:C.rose,letterSpacing:'-1px',lineHeight:1}}>{(faltaAg+atrAg+critAg+grvAg).toLocaleString('pt-BR')}</div>
-          <div style={{fontSize:9,color:C.muted,marginTop:6}}>{totalAg>0?((faltaAg+atrAg+critAg+grvAg)/totalAg*100).toFixed(1):'0'}% das agendas</div>
-          <div style={{marginTop:8,height:4,background:'rgba(255,255,255,0.04)',borderRadius:2,overflow:'hidden'}}>
-            <div style={{width:(totalAg>0?((faltaAg+atrAg+critAg+grvAg)/totalAg*100).toFixed(1):0)+'%',height:'100%',background:C.rose,opacity:.7,borderRadius:2}}/>
+          <div style={{height:4,background:'rgba(255,255,255,0.06)',borderRadius:2,overflow:'hidden',display:'flex'}}>
+            <div style={{flex:totalCons||1,background:C.teal,opacity:.8}}/>
+            <div style={{flex:totalEnc||0,background:'#8B5CF6',opacity:.8}}/>
           </div>
         </div>
-        <div style={{flex:'1.8',padding:'16px 24px',position:'relative',overflow:'hidden'}}>
-          <div style={{position:'absolute',top:-20,right:-20,width:120,height:120,borderRadius:'50%',background:'radial-gradient(circle,rgba(16,185,129,0.06),transparent 70%)',pointerEvents:'none'}}/>
-          <div style={{fontSize:9,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.12em',marginBottom:6}}>Médicos com Ocorrências</div>
-          <div style={{fontSize:42,fontWeight:900,color:C.emerald,lineHeight:1,letterSpacing:'-2px'}}>{faltaDocs.length+remarcaDocs.length+atrDocs.length+critDocs.length+grvDocs.length}</div>
-          <div style={{fontSize:9,color:C.muted,marginTop:8}}>médicos afetados no período</div>
-          <div style={{marginTop:10,display:'flex',gap:10,flexWrap:'wrap'}}>
-            <div style={{display:'flex',alignItems:'center',gap:4}}><div style={{width:6,height:6,borderRadius:'50%',background:C.blue}}/><span style={{fontSize:9,color:C.muted}}>{faltaDocs.length} falta{faltaDocs.length!==1?'s':''}</span></div>
-            <div style={{display:'flex',alignItems:'center',gap:4}}><div style={{width:6,height:6,borderRadius:'50%',background:'#8B5CF6'}}/><span style={{fontSize:9,color:C.muted}}>{remarcaDocs.length} remarca{remarcaDocs.length!==1?'ções':'ção'}</span></div>
-            <div style={{display:'flex',alignItems:'center',gap:4}}><div style={{width:6,height:6,borderRadius:'50%',background:C.rose}}/><span style={{fontSize:9,color:C.muted}}>{critDocs.length+grvDocs.length+atrDocs.length} atraso{(critDocs.length+grvDocs.length+atrDocs.length)!==1?'s':''}</span></div>
+        {/* Card 2: Afetadas */}
+        <div style={{...card,padding:'16px 18px'}}>
+          <div style={{fontSize:9,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.1em',marginBottom:6}}>Afetadas por Problema</div>
+          <div style={{fontSize:36,fontWeight:800,color:C.rose,letterSpacing:'-1px',lineHeight:1,marginBottom:8}}>{(faltaAg+remarcaAg+atrAg+critAg+grvAg).toLocaleString('pt-BR')}</div>
+          <div style={{fontSize:10,color:C.muted,marginBottom:8}}>{totalAg>0?((faltaAg+remarcaAg+atrAg+critAg+grvAg)/totalAg*100).toFixed(1):0}% das agendas</div>
+          <div style={{height:4,background:'rgba(255,255,255,0.06)',borderRadius:2,overflow:'hidden'}}>
+            <div style={{width:totalAg>0?((faltaAg+remarcaAg+atrAg+critAg+grvAg)/totalAg*100).toFixed(1)+'%':'0%',height:'100%',background:C.rose,opacity:.8}}/>
+          </div>
+        </div>
+        {/* Card 3: Médicos */}
+        <div style={{...card,padding:'16px 18px'}}>
+          <div style={{fontSize:9,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.1em',marginBottom:6}}>Médicos com Ocorrências</div>
+          <div style={{fontSize:36,fontWeight:800,color:C.emerald,letterSpacing:'-1px',lineHeight:1,marginBottom:8}}>
+            {faltaDocs.length+remarcaDocs.length+atrDocs.length+grvDocs.length+critDocs.length}
+          </div>
+          <div style={{display:'flex',gap:10,flexWrap:'wrap'}}>
+            <span style={{fontSize:10,color:C.blue}}>● {faltaDocs.length} falta{faltaDocs.length!==1?'s':''}</span>
+            <span style={{fontSize:10,color:'#8B5CF6'}}>● {remarcaDocs.length} remar.</span>
+            <span style={{fontSize:10,color:C.rose}}>● {atrDocs.length+grvDocs.length+critDocs.length} atrasos</span>
           </div>
         </div>
       </div>
@@ -539,47 +543,37 @@ function TabAgendas({rows}){
         {/* ── PAINEL DIREITO EXECUTIVO ── */}
         <div style={{display:'flex',flexDirection:'column',gap:12}}>
 
-          {/* BLOCO 1: KPIs grandes — Médicos Impacto */}
-          <div style={{background:'rgba(255,255,255,0.025)',border:'1px solid rgba(255,255,255,0.07)',borderRadius:14,padding:'20px',position:'relative',overflow:'hidden'}}>
-            {/* Glow de fundo */}
-            <div style={{position:'absolute',top:-40,right:-40,width:180,height:180,borderRadius:'50%',background:'radial-gradient(circle,rgba(244,63,94,0.06),transparent 70%)',pointerEvents:'none'}}/>
-            <div style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.14em',marginBottom:16}}>⚡ Médicos — Impacto nas Agendas</div>
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
-              {/* Linha 1: Faltas + Remarcação */}
-              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:10}}>
-                {[
-                  {label:'Falta Médica',docs:faltaDocs.length,ag:faltaAg,color:C.blue},
-                  {label:'Remarcação Adm',docs:remarcaDocs.length,ag:remarcaAg,color:'#8B5CF6'},
-                ].map(k=>(
-                  <div key={k.label} style={{borderRadius:12,padding:'14px 16px',background:`linear-gradient(145deg,${k.color}14,${k.color}06)`,border:`1px solid ${k.color}30`,position:'relative',overflow:'hidden'}}>
-                    <div style={{fontSize:8,fontWeight:700,color:k.color,textTransform:'uppercase',letterSpacing:'.1em',marginBottom:8}}>{k.label}</div>
-                    <div style={{fontSize:40,fontWeight:900,color:k.color,lineHeight:1,letterSpacing:'-2px'}}>{k.docs}</div>
-                    <div style={{fontSize:9,color:C.muted,marginTop:4}}>médico{k.docs!==1?'s':''}</div>
-                    <div style={{marginTop:8,paddingTop:6,borderTop:`0.5px solid ${k.color}20`,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                      <span style={{fontSize:8,color:C.muted}}>agendas</span>
-                      <span style={{fontSize:12,fontWeight:800,color:k.color}}>{k.ag.toLocaleString('pt-BR')}</span>
-                    </div>
+          {/* BLOCO 1: KPIs compactos — 2+3 grid */}
+          <div style={{...card,padding:'14px 16px'}}>
+            <div style={{fontSize:9,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.12em',marginBottom:12}}>⚡ Médicos — Impacto nas Agendas</div>
+            {/* Linha 1: Falta + Remarcação */}
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:8}}>
+              {[
+                {label:'Falta Médica',docs:faltaDocs.length,ag:faltaAg,color:C.blue,border:'rgba(59,130,246,.3)',bg:'rgba(59,130,246,.06)'},
+                {label:'Remarcação Adm',docs:remarcaDocs.length,ag:remarcaAg,color:'#8B5CF6',border:'rgba(139,92,246,.3)',bg:'rgba(139,92,246,.06)'},
+              ].map(k=>(
+                <div key={k.label} style={{borderRadius:8,padding:'10px 12px',border:`0.5px solid ${k.border}`,background:k.bg,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                  <div>
+                    <div style={{fontSize:8,fontWeight:700,color:k.color,textTransform:'uppercase',letterSpacing:'.08em',marginBottom:4}}>{k.label}</div>
+                    <div style={{fontSize:9,color:C.muted}}>{k.ag} agendas</div>
                   </div>
-                ))}
-              </div>
-              {/* Linha 2: Atrasos */}
-              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10}}>
-                {[
-                  {label:'Atraso',docs:atrDocs.length,ag:atrAg,color:C.amber},
-                  {label:'Atraso Grave',docs:grvDocs.length,ag:grvAg,color:C.orange},
-                  {label:'Atraso Crítico',docs:critDocs.length,ag:critAg,color:C.rose},
-                ].map(k=>(
-                  <div key={k.label} style={{borderRadius:12,padding:'14px 16px',background:`linear-gradient(145deg,${k.color}14,${k.color}06)`,border:`1px solid ${k.color}30`,position:'relative',overflow:'hidden'}}>
-                    <div style={{fontSize:8,fontWeight:700,color:k.color,textTransform:'uppercase',letterSpacing:'.1em',marginBottom:8}}>{k.label}</div>
-                    <div style={{fontSize:40,fontWeight:900,color:k.color,lineHeight:1,letterSpacing:'-2px'}}>{k.docs}</div>
-                    <div style={{fontSize:9,color:C.muted,marginTop:4}}>médico{k.docs!==1?'s':''}</div>
-                    <div style={{marginTop:8,paddingTop:6,borderTop:`0.5px solid ${k.color}20`,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                      <span style={{fontSize:8,color:C.muted}}>agendas</span>
-                      <span style={{fontSize:12,fontWeight:800,color:k.color}}>{k.ag.toLocaleString('pt-BR')}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
+                  <div style={{fontSize:28,fontWeight:900,color:k.color,lineHeight:1,letterSpacing:'-1px'}}>{k.docs}</div>
+                </div>
+              ))}
+            </div>
+            {/* Linha 2: Atrasos */}
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8}}>
+              {[
+                {label:'Atraso',docs:atrDocs.length,ag:atrAg,color:C.amber,border:'rgba(245,158,11,.3)',bg:'rgba(245,158,11,.06)'},
+                {label:'Atraso Grave',docs:grvDocs.length,ag:grvAg,color:C.orange,border:'rgba(249,115,22,.3)',bg:'rgba(249,115,22,.06)'},
+                {label:'Atraso Crítico',docs:critDocs.length,ag:critAg,color:C.rose,border:'rgba(244,63,94,.3)',bg:'rgba(244,63,94,.06)'},
+              ].map(k=>(
+                <div key={k.label} style={{borderRadius:8,padding:'10px 8px',border:`0.5px solid ${k.border}`,background:k.bg,textAlign:'center'}}>
+                  <div style={{fontSize:8,fontWeight:700,color:k.color,textTransform:'uppercase',letterSpacing:'.06em',marginBottom:4}}>{k.label}</div>
+                  <div style={{fontSize:26,fontWeight:900,color:k.color,lineHeight:1,letterSpacing:'-1px'}}>{k.docs}</div>
+                  <div style={{fontSize:8,color:C.muted,marginTop:3}}>{k.ag} agendas</div>
+                </div>
+              ))}
             </div>
           </div>
 
