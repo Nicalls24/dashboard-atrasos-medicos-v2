@@ -1314,15 +1314,31 @@ export default function Home(){
         qt_encaixe:     Number(r['QT_ENCAIXE'])||0,
       })
 
-      // ── Upload agendas via route.js — dedup por (data_agenda|nm_local|nm_medico) ─
+      // ── Extrai as datas únicas da planilha para limpar antes de inserir
+      const datesToClear=[...new Set(
+        json.map(r=>xlsDateStr(r['DT_REGISTRO'])).filter(Boolean)
+      )]
+
+      // ── Upload agendas via route.js
       const CHUNK=100
       for(let i=0;i<json.length;i+=CHUNK){
         const batch=json.slice(i,i+CHUNK)
         setStoreMsg(`Agendas ${Math.min(i+CHUNK,json.length)}/${json.length}…`)
         try{
-          const res=await fetch('/api/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows:batch,ts,table:'agendas'})})
+          const res=await fetch('/api/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows:batch,ts,table:'agendas',isFirstBatch:i===0,datesToClear:i===0?datesToClear:[]})})
           if(!res.ok)console.error(`Ag batch ${i}:`,await res.text())
         }catch(e){console.error(`Ag batch ${i}:`,e)}
+      }
+
+      // ── Upload espera via route.js
+      const CHUNKE=100
+      for(let i=0;i<json.length;i+=CHUNKE){
+        const batchE=json.slice(i,i+CHUNKE)
+        setStoreMsg(`Espera ${Math.min(i+CHUNKE,json.length)}/${json.length}…`)
+        try{
+          const res=await fetch('/api/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows:batchE,ts,table:'espera',isFirstBatch:i===0,datesToClear:i===0?datesToClear:[]})})
+          if(!res.ok)console.error(`Esp batch ${i}:`,await res.text())
+        }catch(e){console.error(`Esp batch ${i}:`,e)}
       }
 
       // ── Upload espera via route.js — mapEspera filtra linhas sem dados de espera ─
