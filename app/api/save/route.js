@@ -3,11 +3,12 @@ import { NextResponse } from 'next/server'
 const SB_URL = 'https://fwdvzsywudpieqlqnxkp.supabase.co'
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ3ZHZ6c3l3dWRwaWVxbHFueGtwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg1ODcyNzEsImV4cCI6MjA5NDE2MzI3MX0.SkyfE_HVulz_TyQldI6XpENSJAuu6xDgUEDz4vObKYQ'
 
+// SEM resolution=merge-duplicates — usamos DELETE+INSERT por lote no handler
 const SB_HEADERS = {
   'apikey': SB_KEY,
   'Authorization': `Bearer ${SB_KEY}`,
   'Content-Type': 'application/json',
-  'Prefer': 'return=minimal,resolution=merge-duplicates',
+  'Prefer': 'return=minimal',
 }
 
 function serialToDate(v) {
@@ -20,21 +21,18 @@ function serialToDate(v) {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`
 }
 
-// Excel timedelta: número = fração do dia (ex: 0.020833 = 30min = 30/1440)
-// String pode vir como "HH:MM:SS" ou "H:MM:SS"
 function toMinutes(v) {
   if (v === null || v === undefined || v === '') return null
 
   if (typeof v === 'number') {
-    // Fração de dia → minutos (1 dia = 1440 minutos)
     if (v >= 0 && v < 1) return Math.round(v * 1440)
-    // Total de segundos (inteiro > 1)
     if (v >= 1) return Math.round(v / 60)
     return 0
   }
 
   if (typeof v === 'string') {
     const s     = v.trim()
+    if (!s) return null
     const neg   = s.startsWith('-')
     const clean = s.replace('-','').trim()
     const parts = clean.split(':').map(Number)
@@ -58,7 +56,10 @@ function mapAgenda(r, ts) {
     base_sigo:           r['BASE_DE_DADOS_SIGO']   || null,
     hr_inicio_min:       toMinutes(r['HR_INICIO']),
     hr_fim_min:          toMinutes(r['HR_FIM']),
-    hr_entrada_min:      toMinutes(r['HR_ENTRADA']),
+    // HR_ENTRADA null/undefined = sem ponto; 0 = chegou à meia-noite
+    hr_entrada_min:      (r['HR_ENTRADA'] === null || r['HR_ENTRADA'] === undefined || r['HR_ENTRADA'] === '')
+                           ? null
+                           : toMinutes(r['HR_ENTRADA']),
     status:              r['STATUS']               || null,
     atraso:              r['ATRASO']               || null,
     tempo_atraso:        r['TEMPO DE ATRASO']      || null,
@@ -74,16 +75,20 @@ function mapEspera(r, ts) {
   const tempoEspera = r['TEMPO_DE_ESPERA']
   const qtPac       = r[' QT_PACIENTES_AGUARDANDO'] ?? r['QT_PACIENTES_AGUARDANDO']
 
-  // skip rows without any espera data
-  if ((tempoEspera === null || tempoEspera === undefined || tempoEspera === '') &&
-      (qtPac === null || qtPac === undefined || qtPac === '')) return null
+  // Linha sem dados de espera: tempo ausente E pacientes ausentes
+  // Checar null/undefined/string vazia E também 0 numérico sem pacientes
+  const semTempo = tempoEspera === null || tempoEspera === undefined || tempoEspera === ''
+  const semPac   = qtPac === null || qtPac === undefined || qtPac === '' || Number(qtPac) === 0
 
-  // tempo de atraso (coluna T) — pode ser negativo
+  if (semTempo && semPac) return null
+
+  // Se tempo presente mas for 0 (sem espera real), ainda salva para SLA
+  const tempoMin = toMinutes(tempoEspera)
+
   const tempoAtraso = r['TEMPO DE ATRASO']
-  let tempoAtrasoMin = null
-  if (tempoAtraso !== null && tempoAtraso !== undefined && tempoAtraso !== '') {
-    tempoAtrasoMin = toMinutes(tempoAtraso)
-  }
+  const tempoAtrasoMin = (tempoAtraso !== null && tempoAtraso !== undefined && tempoAtraso !== '')
+    ? toMinutes(tempoAtraso)
+    : null
 
   return {
     data_agenda:             serialToDate(r['DATA_AGENDA']),
@@ -94,9 +99,9 @@ function mapEspera(r, ts) {
     ds_especialidade:        r['DS_ESPECIALIDADE'] || null,
     cidade:                  r['CIDADE          '] || r['CIDADE'] || null,
     hr_registro_espera_min:  toMinutes(r['HR_REGISTRO_ESPERA']),
-    qt_pacientes_aguardando: qtPac !== null && qtPac !== undefined && qtPac !== '' ? Number(qtPac) : null,
-    tempo_espera_min:        toMinutes(tempoEspera),
-    qt_pacts:                r['QTS PACTS'] !== null && r['QTS PACTS'] !== undefined ? Number(r['QTS PACTS']) : null,
+    qt_pacientes_aguardando: (qtPac !== null && qtPac !== undefined && qtPac !== '') ? Number(qtPac) : null,
+    tempo_espera_min:        tempoMin,
+    qt_pacts:                (r['QTS PACTS'] !== null && r['QTS PACTS'] !== undefined) ? Number(r['QTS PACTS']) : null,
     atraso:                  r['ATRASO']           || null,
     tempo_atraso_min:        tempoAtrasoMin,
     status:                  r['STATUS']           || null,
@@ -117,9 +122,7 @@ export async function POST(request) {
 
     if (!mappedRaw.length) return NextResponse.json({ ok:true, saved:0 })
 
-    // DEDUPLICAÇÃO: remove linhas com mesma constraint única dentro do lote.
-    // O Postgres rejeita upsert se 2 linhas do mesmo batch têm a mesma chave.
-    // Mantém a de MAIOR tempo_espera_min (espera/agendas), a mais relevante.
+    // Deduplicação dentro do lote (mesma chave lógica → mantém a com maior espera)
     const dedup = new Map()
     for (const m of mappedRaw) {
       const key = table === 'espera'
@@ -127,25 +130,32 @@ export async function POST(request) {
         : `${m.data_agenda}|${m.nm_local}|${m.nm_medico}`
       const prev = dedup.get(key)
       if (!prev) { dedup.set(key, m); continue }
-      const pv = table === 'espera' ? (prev.tempo_espera_min||0) : 0
-      const cv = table === 'espera' ? (m.tempo_espera_min||0) : 0
+      const pv = (prev.tempo_espera_min || 0)
+      const cv = (m.tempo_espera_min || 0)
       if (cv >= pv) dedup.set(key, m)
     }
     const mapped = Array.from(dedup.values())
 
+    // INSERT simples sem merge-duplicates (evita erro 409 por falta de UNIQUE constraint)
+    // O DELETE geral antes do primeiro lote garante dados limpos a cada upload
     const res = await fetch(`${SB_URL}/rest/v1/${table}`, {
       method: 'POST',
-      headers: SB_HEADERS,
+      headers: {
+        ...SB_HEADERS,
+        'Prefer': 'return=minimal',
+      },
       body: JSON.stringify(mapped),
     })
 
     if (!res.ok) {
       const txt = await res.text()
+      console.error(`[save/${table}] Supabase error:`, txt)
       return NextResponse.json({ ok:false, error:txt }, { status:500 })
     }
 
     return NextResponse.json({ ok:true, saved: mapped.length })
   } catch(e) {
+    console.error('[save] exception:', e)
     return NextResponse.json({ ok:false, error:e.message }, { status:500 })
   }
 }
