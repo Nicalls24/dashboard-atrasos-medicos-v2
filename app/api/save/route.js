@@ -3,7 +3,6 @@ import { NextResponse } from 'next/server'
 const SB_URL = 'https://fwdvzsywudpieqlqnxkp.supabase.co'
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ3ZHZ6c3l3dWRwaWVxbHFueGtwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg1ODcyNzEsImV4cCI6MjA5NDE2MzI3MX0.SkyfE_HVulz_TyQldI6XpENSJAuu6xDgUEDz4vObKYQ'
 
-// SEM resolution=merge-duplicates — usamos DELETE+INSERT por lote no handler
 const SB_HEADERS = {
   'apikey': SB_KEY,
   'Authorization': `Bearer ${SB_KEY}`,
@@ -23,23 +22,20 @@ function serialToDate(v) {
 
 function toMinutes(v) {
   if (v === null || v === undefined || v === '') return null
-
   if (typeof v === 'number') {
     if (v >= 0 && v < 1) return Math.round(v * 1440)
     if (v >= 1) return Math.round(v / 60)
     return 0
   }
-
   if (typeof v === 'string') {
-    const s     = v.trim()
+    const s = v.trim()
     if (!s) return null
-    const neg   = s.startsWith('-')
-    const clean = s.replace('-','').trim()
+    const neg = s.startsWith('-')
+    const clean = s.replace('-', '').trim()
     const parts = clean.split(':').map(Number)
-    const mins  = (parts[0]||0)*60 + (parts[1]||0)
+    const mins = (parts[0] || 0) * 60 + (parts[1] || 0)
     return neg ? -mins : mins
   }
-
   return null
 }
 
@@ -47,48 +43,39 @@ function mapAgenda(r, ts) {
   return {
     data_agenda:         serialToDate(r['DATA_AGENDA']),
     dt_registro:         serialToDate(r['DT_REGISTRO'] || r['dt_registro']),
-    uf:                  r['UF']                  || null,
-    nm_filial:           r['NM_FILIAL']            || null,
-    nm_local:            r['NM_LOCAL']             || null,
-    nm_medico:           r['NM_MEDICO']            || null,
-    ds_especialidade:    r['DS_ESPECIALIDADE']     || null,
-    cidade:              r['CIDADE          ']     || r['CIDADE'] || null,
-    base_sigo:           r['BASE_DE_DADOS_SIGO']   || null,
+    uf:                  r['UF']                || null,
+    nm_filial:           r['NM_FILIAL']          || null,
+    nm_local:            r['NM_LOCAL']           || null,
+    nm_medico:           r['NM_MEDICO']          || null,
+    ds_especialidade:    r['DS_ESPECIALIDADE']   || null,
+    cidade:              r['CIDADE          ']   || r['CIDADE'] || null,
+    base_sigo:           r['BASE_DE_DADOS_SIGO'] || null,
     hr_inicio_min:       toMinutes(r['HR_INICIO']),
     hr_fim_min:          toMinutes(r['HR_FIM']),
-    // HR_ENTRADA null/undefined = sem ponto; 0 = chegou à meia-noite
     hr_entrada_min:      (r['HR_ENTRADA'] === null || r['HR_ENTRADA'] === undefined || r['HR_ENTRADA'] === '')
-                           ? null
-                           : toMinutes(r['HR_ENTRADA']),
-    status:              r['STATUS']               || null,
-    atraso:              r['ATRASO']               || null,
-    tempo_atraso:        r['TEMPO DE ATRASO']      || null,
-    motivo_cancelamento: r['MOTIVO_CANCELAMENTO']  || null,
-    entrada_origem:      r['ENTRADA_ORIGEM']        || null,
-    qt_consulta:         Number(r['QT_CONSULTA'])  || 0,
-    qt_encaixe:          Number(r['QT_ENCAIXE'])   || 0,
+                           ? null : toMinutes(r['HR_ENTRADA']),
+    status:              r['STATUS']             || null,
+    atraso:              r['ATRASO']             || null,
+    tempo_atraso:        r['TEMPO DE ATRASO']    || null,
+    motivo_cancelamento: r['MOTIVO_CANCELAMENTO'] || null,
+    entrada_origem:      r['ENTRADA_ORIGEM']      || null,
+    qt_consulta:         Number(r['QT_CONSULTA']) || 0,
+    qt_encaixe:          Number(r['QT_ENCAIXE'])  || 0,
     verif_ts:            ts || null,
   }
 }
 
 function mapEspera(r, ts) {
   const tempoEspera = r['TEMPO_DE_ESPERA']
-  const qtPac       = r[' QT_PACIENTES_AGUARDANDO'] ?? r['QT_PACIENTES_AGUARDANDO']
+  const qtPac = r[' QT_PACIENTES_AGUARDANDO'] ?? r['QT_PACIENTES_AGUARDANDO']
 
-  // Linha sem dados de espera: tempo ausente E pacientes ausentes
-  // Checar null/undefined/string vazia E também 0 numérico sem pacientes
   const semTempo = tempoEspera === null || tempoEspera === undefined || tempoEspera === ''
-  const semPac   = qtPac === null || qtPac === undefined || qtPac === '' || Number(qtPac) === 0
-
+  const semPac = qtPac === null || qtPac === undefined || qtPac === ''
   if (semTempo && semPac) return null
-
-  // Se tempo presente mas for 0 (sem espera real), ainda salva para SLA
-  const tempoMin = toMinutes(tempoEspera)
 
   const tempoAtraso = r['TEMPO DE ATRASO']
   const tempoAtrasoMin = (tempoAtraso !== null && tempoAtraso !== undefined && tempoAtraso !== '')
-    ? toMinutes(tempoAtraso)
-    : null
+    ? toMinutes(tempoAtraso) : null
 
   return {
     data_agenda:             serialToDate(r['DATA_AGENDA']),
@@ -100,7 +87,7 @@ function mapEspera(r, ts) {
     cidade:                  r['CIDADE          '] || r['CIDADE'] || null,
     hr_registro_espera_min:  toMinutes(r['HR_REGISTRO_ESPERA']),
     qt_pacientes_aguardando: (qtPac !== null && qtPac !== undefined && qtPac !== '') ? Number(qtPac) : null,
-    tempo_espera_min:        tempoMin,
+    tempo_espera_min:        toMinutes(tempoEspera),
     qt_pacts:                (r['QTS PACTS'] !== null && r['QTS PACTS'] !== undefined) ? Number(r['QTS PACTS']) : null,
     atraso:                  r['ATRASO']           || null,
     tempo_atraso_min:        tempoAtrasoMin,
@@ -113,61 +100,53 @@ export async function POST(request) {
   try {
     const { rows, ts, table } = await request.json()
 
-    if (!['agendas','espera'].includes(table))
-      return NextResponse.json({ ok:false, error:'Invalid table' }, { status:400 })
+    if (!['agendas', 'espera'].includes(table))
+      return NextResponse.json({ ok: false, error: 'Invalid table' }, { status: 400 })
 
     const mappedRaw = table === 'agendas'
       ? rows.map(r => mapAgenda(r, ts)).filter(Boolean)
       : rows.map(r => mapEspera(r, ts)).filter(Boolean)
 
-    if (!mappedRaw.length) return NextResponse.json({ ok:true, saved:0 })
+    if (!mappedRaw.length) return NextResponse.json({ ok: true, saved: 0 })
 
-    // Deduplicação dentro do lote (mesma chave lógica → mantém a com maior espera)
+    // Dedup por chave correta:
+    // agendas: (data_agenda, nm_local, nm_medico, hr_inicio_min) — inclui turno
+    // espera:  (data_agenda, hr_registro_espera_min, nm_local, nm_medico)
     const dedup = new Map()
     for (const m of mappedRaw) {
-      const key = table === 'espera'
-        ? `${m.data_agenda}|${m.hr_registro_espera_min}|${m.nm_local}|${m.nm_medico}`
-        : `${m.data_agenda}|${m.nm_local}|${m.nm_medico}`
-      const prev = dedup.get(key)
-      if (!prev) { dedup.set(key, m); continue }
-      const pv = (prev.tempo_espera_min || 0)
-      const cv = (m.tempo_espera_min || 0)
-      if (cv >= pv) dedup.set(key, m)
+      const key = table === 'agendas'
+        ? `${m.data_agenda}|${m.nm_local}|${m.nm_medico}|${m.hr_inicio_min}`
+        : `${m.data_agenda}|${m.hr_registro_espera_min}|${m.nm_local}|${m.nm_medico}`
+      if (!dedup.has(key)) dedup.set(key, m)
     }
     const mapped = Array.from(dedup.values())
 
-    // INSERT simples sem merge-duplicates (evita erro 409 por falta de UNIQUE constraint)
-    // O DELETE geral antes do primeiro lote garante dados limpos a cada upload
     const res = await fetch(`${SB_URL}/rest/v1/${table}`, {
       method: 'POST',
-      headers: {
-        ...SB_HEADERS,
-        'Prefer': 'return=minimal',
-      },
+      headers: SB_HEADERS,
       body: JSON.stringify(mapped),
     })
 
     if (!res.ok) {
       const txt = await res.text()
-      console.error(`[save/${table}] Supabase error:`, txt)
-      return NextResponse.json({ ok:false, error:txt }, { status:500 })
+      console.error(`[save/${table}] error:`, txt)
+      return NextResponse.json({ ok: false, error: txt }, { status: 500 })
     }
 
-    return NextResponse.json({ ok:true, saved: mapped.length })
-  } catch(e) {
-    console.error('[save] exception:', e)
-    return NextResponse.json({ ok:false, error:e.message }, { status:500 })
+    return NextResponse.json({ ok: true, saved: mapped.length })
+  } catch (e) {
+    return NextResponse.json({ ok: false, error: e.message }, { status: 500 })
   }
 }
 
 export async function DELETE() {
   try {
     await Promise.all([
-      fetch(`${SB_URL}/rest/v1/agendas?id=gt.0`, { method:'DELETE', headers:SB_HEADERS }),
-      fetch(`${SB_URL}/rest/v1/espera?id=gt.0`,  { method:'DELETE', headers:SB_HEADERS }),
+      fetch(`${SB_URL}/rest/v1/agendas?id=gt.0`, { method: 'DELETE', headers: SB_HEADERS }),
+      fetch(`${SB_URL}/rest/v1/espera?id=gt.0`,  { method: 'DELETE', headers: SB_HEADERS }),
     ])
-    return NextResponse.json({ ok:true })
-  } catch(e) {
-    return NextResponse.json({ ok:false, error:e.message }, { status:500 })
+    return NextResponse.json({ ok: true })
+  } catch (e) {
+    return NextResponse.json({ ok: false, error: e.message }, { status: 500 })
   }
 }
