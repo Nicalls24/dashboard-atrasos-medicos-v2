@@ -7,7 +7,7 @@ const SB_HEADERS = {
   'apikey': SB_KEY,
   'Authorization': `Bearer ${SB_KEY}`,
   'Content-Type': 'application/json',
-  'Prefer': 'return=minimal',
+  'Prefer': 'return=minimal,resolution=merge-duplicates',
 }
 
 function serialToDate(v) {
@@ -70,7 +70,7 @@ function mapEspera(r, ts) {
   const qtPac = r[' QT_PACIENTES_AGUARDANDO'] ?? r['QT_PACIENTES_AGUARDANDO']
 
   const semTempo = tempoEspera === null || tempoEspera === undefined || tempoEspera === ''
-  const semPac = qtPac === null || qtPac === undefined || qtPac === ''
+  const semPac   = qtPac === null || qtPac === undefined || qtPac === ''
   if (semTempo && semPac) return null
 
   const tempoAtraso = r['TEMPO DE ATRASO']
@@ -80,18 +80,18 @@ function mapEspera(r, ts) {
   return {
     data_agenda:             serialToDate(r['DATA_AGENDA']),
     dt_registro:             serialToDate(r['DT_REGISTRO'] || r['dt_registro']),
-    uf:                      r['UF']              || null,
-    nm_local:                r['NM_LOCAL']        || null,
-    nm_medico:               r['NM_MEDICO']       || null,
-    ds_especialidade:        r['DS_ESPECIALIDADE'] || null,
-    cidade:                  r['CIDADE          '] || r['CIDADE'] || null,
+    uf:                      r['UF']               || null,
+    nm_local:                r['NM_LOCAL']          || null,
+    nm_medico:               r['NM_MEDICO']         || null,
+    ds_especialidade:        r['DS_ESPECIALIDADE']  || null,
+    cidade:                  r['CIDADE          ']  || r['CIDADE'] || null,
     hr_registro_espera_min:  toMinutes(r['HR_REGISTRO_ESPERA']),
     qt_pacientes_aguardando: (qtPac !== null && qtPac !== undefined && qtPac !== '') ? Number(qtPac) : null,
     tempo_espera_min:        toMinutes(tempoEspera),
     qt_pacts:                (r['QTS PACTS'] !== null && r['QTS PACTS'] !== undefined) ? Number(r['QTS PACTS']) : null,
-    atraso:                  r['ATRASO']           || null,
+    atraso:                  r['ATRASO']            || null,
     tempo_atraso_min:        tempoAtrasoMin,
-    status:                  r['STATUS']           || null,
+    status:                  r['STATUS']            || null,
     verif_ts:                ts || null,
   }
 }
@@ -109,9 +109,7 @@ export async function POST(request) {
 
     if (!mappedRaw.length) return NextResponse.json({ ok: true, saved: 0 })
 
-    // Dedup por chave correta:
-    // agendas: (data_agenda, nm_local, nm_medico, hr_inicio_min) — inclui turno
-    // espera:  (data_agenda, hr_registro_espera_min, nm_local, nm_medico)
+    // Dedup dentro do lote pela chave correta (inclui hr_inicio_min para agendas)
     const dedup = new Map()
     for (const m of mappedRaw) {
       const key = table === 'agendas'
@@ -121,6 +119,7 @@ export async function POST(request) {
     }
     const mapped = Array.from(dedup.values())
 
+    // Upsert: insere novas linhas e atualiza as existentes pela constraint única
     const res = await fetch(`${SB_URL}/rest/v1/${table}`, {
       method: 'POST',
       headers: SB_HEADERS,
