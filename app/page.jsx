@@ -86,9 +86,6 @@ function SearchBar({search,onSearch,uf,onUf,ufs,showClear,onClear}){
   )
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-// TAB AGENDAS
-// ══════════════════════════════════════════════════════════════════════════════
 const fmtHHMM=m=>{if(m==null)return'—';const h=Math.floor(m/60),min=m%60;return String(h).padStart(2,'0')+':'+String(min).padStart(2,'0')}
 
 function TabAgendas({rows}){
@@ -105,7 +102,7 @@ function TabAgendas({rows}){
   const[agJustDraft,setAgJustDraft]=useState({})
   const[agJustSaving,setAgJustSaving]=useState(false)
   const[justExpanded,setJustExpanded]=useState({})
-  const[expandedHoras,setExpandedHoras]=useState({}) // accordion: {hora: bool}
+  const[expandedHoras,setExpandedHoras]=useState({})
 
   const allDates=useMemo(()=>[...new Set(rows.map(r=>norm10(r.dt_registro||r.data_agenda)).filter(Boolean))].sort(),[rows])
   const periodoFn=useMemo(()=>buildFilter(allDates,periodo,dateFrom,dateTo),[allDates,periodo,dateFrom,dateTo])
@@ -154,21 +151,16 @@ function TabAgendas({rows}){
     return r
   },[rows,periodoFn,ufFilt,search,horasFilt,unidFilt])
 
-  // filteredGlobal: igual a filtered mas SEM unidFilt → para % global do período
   const filteredGlobal=useMemo(()=>{
     let r=rows.filter(d=>periodoFn(d.dt_registro||d.data_agenda))
     if(ufFilt!=='TODOS')r=r.filter(d=>d.uf===ufFilt)
     if(search){const q=search.toLowerCase();r=r.filter(d=>[d.nm_local,d.nm_medico,d.ds_especialidade,d.cidade].some(v=>String(v||'').toLowerCase().includes(q)))}
-    // SEM unidFilt e SEM horasFilt — % global do período
     return r
   },[rows,periodoFn,ufFilt,search,horasFilt])
 
-  // justAgGlobal: todas as justificativas do período (sem filtro de unidade)
   const justAgGlobal=useMemo(()=>allAgJust.filter(x=>periodoFn(x.data_ref)),[allAgJust,periodoFn])
 
-  // % global: total de (médico+hora+unidade) com problema vs com justificativa no período
   const globalJustStats=useMemo(()=>{
-    const _statusUP=d=>String(d.status||'').toUpperCase()
     const _atrasoU=d=>String(d.atraso||'').toUpperCase().trim()
     const isFn=d=>_atrasoU(d)==='FALTA'||_atrasoU(d)==='SIM'
     const totalSet=new Set()
@@ -187,7 +179,7 @@ function TabAgendas({rows}){
 
   const globalJustColor=globalJustStats.pct>=80?C.emerald:globalJustStats.pct>=50?C.amber:C.rose
 
-    const docHoraMap=useMemo(()=>{
+  const docHoraMap=useMemo(()=>{
     const map={}
     filtered.forEach(d=>{
       if(!d.nm_medico)return
@@ -210,7 +202,6 @@ function TabAgendas({rows}){
     return s
   },[justAgFiltered])
 
-  // ── Helpers para TEMPO DE ATRASO (funções puras — sem hook) ────────────────
   const parseTempoMinFn=(t)=>{
     if(t==null||t===''||t===false)return null
     const s=String(t).trim()
@@ -220,7 +211,7 @@ function TabAgendas({rows}){
       const clean=s.replace(/^[-+]/,'')
       const pts=clean.split(':')
       const mins=parseInt(pts[0]||'0')*60+parseInt(pts[1]||'0')
-      return neg?mins:-mins // negativo no arquivo = atraso → positivo retornado
+      return neg?mins:-mins
     }
     return null
   }
@@ -230,53 +221,35 @@ function TabAgendas({rows}){
     return Math.floor(m/60)+'h'+(m%60>0?' '+m%60+'m':'')
   }
 
-    const agStats=useMemo(()=>{
+  const agStats=useMemo(()=>{
     const totalRows=filtered.length
     const totalCons=filtered.reduce((a,d)=>a+(d.qt_consulta||0),0)
     const totalEnc =filtered.reduce((a,d)=>a+(d.qt_encaixe ||0),0)
     const totalAg  =totalCons+totalEnc
-
-    // ── Classificação por coluna ATRASO (S) + STATUS (U) ────────────────────────
-    // ATRASO='FALTA' → sem ponto + falta ou remarcação
-    // ATRASO='SIM'   → atrasado (grave, crítico ou simples)
-    // HR_ENTRADA null → sem ponto  |  preenchida → com ponto
-    const statusU=d=>String(d.status||'').trim()
-    const statusUP=d=>statusU(d).toUpperCase()
+    const statusUP=d=>String(d.status||'').toUpperCase()
     const atrasoU=d=>String(d.atraso||'').toUpperCase().trim()
-
-    // ── Regras exatas por valor de STATUS ─────────────────────────────────────
-    // Falta Médica   : ATRASO=FALTA  e STATUS='Falta Médica'
-    // Remarcação Adm : ATRASO=FALTA  e STATUS='Remarcação Adm' ou 'Remarcação médico'
-    // Atraso         : ATRASO=SIM    e STATUS='ATRASO'
-    // Atraso Grave   : ATRASO=SIM    e STATUS='ATRASO GRAVE'
-    // Atraso Crítico : ATRASO=SIM    e STATUS='ATRASO CRÍTICO'
-    const isFaltaMedFn =d=>atrasoU(d)==='FALTA'&&!statusUP(d).includes('REMARCA')
-    const isRemarcaFn  =d=>atrasoU(d)==='FALTA'&&statusUP(d).includes('REMARCA')
-    const isCritFn     =d=>atrasoU(d)==='SIM'&&(statusUP(d).includes('CRÍTICO')||statusUP(d).includes('CRITICO'))
-    const isGrvFn      =d=>atrasoU(d)==='SIM'&&statusUP(d).includes('GRAVE')
-    const isAtrSoFn    =d=>atrasoU(d)==='SIM'&&!isCritFn(d)&&!isGrvFn(d)
-    const isFaltaFn    =d=>atrasoU(d)==='FALTA' // alias para feedList/byDate — todo ATRASO=FALTA
-
+    const isFaltaMedFn=d=>atrasoU(d)==='FALTA'&&!statusUP(d).includes('REMARCA')
+    const isRemarcaFn =d=>atrasoU(d)==='FALTA'&&statusUP(d).includes('REMARCA')
+    const isCritFn    =d=>atrasoU(d)==='SIM'&&(statusUP(d).includes('CRÍTICO')||statusUP(d).includes('CRITICO'))
+    const isGrvFn     =d=>atrasoU(d)==='SIM'&&statusUP(d).includes('GRAVE')
+    const isAtrSoFn   =d=>atrasoU(d)==='SIM'&&!isCritFn(d)&&!isGrvFn(d)
+    const isFaltaFn   =d=>atrasoU(d)==='FALTA'
     const faltaRows  =filtered.filter(isFaltaMedFn)
     const remarcaRows=filtered.filter(isRemarcaFn)
     const critRows   =filtered.filter(isCritFn)
     const grvRows    =filtered.filter(isGrvFn)
     const atrRows    =filtered.filter(isAtrSoFn)
-
-    // unique doctors per category
     const uniqDocs=rows=>([...new Set(rows.map(d=>d.nm_medico).filter(Boolean))])
     const faltaDocs  =uniqDocs(faltaRows)
     const remarcaDocs=uniqDocs(remarcaRows)
     const critDocs   =uniqDocs(critRows)
     const grvDocs    =uniqDocs(grvRows)
     const atrDocs    =uniqDocs(atrRows)
-
     const faltaAg=faltaRows.reduce((a,d)=>a+(d.qt_consulta||0)+(d.qt_encaixe||0),0)
     const remarcaAg=remarcaRows.reduce((a,d)=>a+(d.qt_consulta||0)+(d.qt_encaixe||0),0)
     const critAg   =critRows   .reduce((a,d)=>a+(d.qt_consulta||0)+(d.qt_encaixe||0),0)
     const grvAg    =grvRows    .reduce((a,d)=>a+(d.qt_consulta||0)+(d.qt_encaixe||0),0)
     const atrAg    =atrRows    .reduce((a,d)=>a+(d.qt_consulta||0)+(d.qt_encaixe||0),0)
-
     const uMap={}
     filtered.forEach(d=>{
       const u=d.nm_local||'?'
@@ -285,7 +258,6 @@ function TabAgendas({rows}){
       if(isFaltaFn(d))uMap[u].faltas++;if(atrasoU(d)==='SIM')uMap[u].atrasos++
     })
     const feedList=Object.values(uMap).sort((a,b)=>b.total-a.total).slice(0,20)
-
     const sMap={}
     filtered.forEach(d=>{
       const s=d.ds_especialidade||'Não informado'
@@ -293,7 +265,6 @@ function TabAgendas({rows}){
       sMap[s].total+=(d.qt_consulta||0)+(d.qt_encaixe||0)
     })
     const topSpec=Object.values(sMap).sort((a,b)=>b.total-a.total).slice(0,8)
-
     const dMap={}
     filtered.forEach(d=>{
       const dt=norm10(d.data_agenda);if(!dt)return
@@ -314,105 +285,44 @@ function TabAgendas({rows}){
       delivered:Math.max(0,Math.round((byDate[byDate.length-1]?.delivered||0)+mkSlope('delivered')*(i+1))),
       consultas:0,encaixe:0,isProj:true,
     })):[]
-
     const docsFaltaU=unidFilt?faltaDocs.map(nm=>({nm,status:'Falta Médica',color:C.blue})):[]
     const docsCritU =unidFilt?critDocs .map(nm=>({nm,status:'Atraso Crítico',color:C.rose})):[]
     const docsGrvU  =unidFilt?grvDocs  .map(nm=>({nm,status:'Atraso Grave',color:C.orange})):[]
     const docsAtrU  =unidFilt?atrDocs  .map(nm=>({nm,status:'Atraso 31–45min',color:C.amber})):[]
-
-    // ── SITUAÇÃO DE PONTO ─────────────────────────────────────────────────────
-    // Col O (hr_entrada): null = sem ponto | preenchida = chegou
-    // Col S (atraso): 'FALTA' | 'SIM' | 'NÃO'
-    // Col T (tempo_de_atraso): '-00:31:00' string (negativo = atrasado)
-    // Col U (status): 'Falta Médica' | 'Remarcação Adm' | 'ATRASO' | 'ATRASO GRAVE' | 'ATRASO CRÍTICO'
-    //
-    // Visão 1: hr_entrada=null + atraso='FALTA' → faltou (mostra STATUS como motivo)
-    // Visão 2: hr_entrada=null + atraso='SIM'   → sem ponto em atraso (mostra TEMPO + classificação)
-    // Visão 3: hr_entrada=preenchida + atraso='SIM' → com ponto atrasado (mostra TEMPO + STATUS)
-
-    // parseTempoMin e fmtTempoMin definidos como parseTempoMinFn/fmtTempoMinFn no escopo do componente
-
     const rowsPonto=rows
       .filter(d=>periodoFn(d.dt_registro||d.data_agenda))
       .filter(d=>ufFilt==='TODOS'||d.uf===ufFilt)
       .filter(d=>{if(!search)return true;const q=search.toLowerCase();return[d.nm_local,d.nm_medico,d.ds_especialidade,d.cidade].some(v=>String(v||'').toLowerCase().includes(q))})
       .filter(d=>{if(horasFilt.length===0)return true;const h=d.hr_inicio_min;if(h==null)return false;return horasFilt.includes(Math.floor(h/60))})
-
-    const semPontoFaltaMap  = {} // hora → [{nm, status}]
-    const semPontoAtrasoMap = {} // hora → [{nm, tempo_min, status}]
-    const comPontoAtrasoList= [] // [{nm, tempo_min, status, hora}]
-
+    const semPontoFaltaMap={},semPontoAtrasoMap={},comPontoAtrasoList=[]
     rowsPonto.forEach(d=>{
       const hrRaw=d.hr_entrada_min??d.HR_ENTRADA_MIN??null
       const temPonto=hrRaw!==null&&hrRaw!==undefined&&String(hrRaw).trim()!==''&&String(hrRaw).trim()!=='0'&&hrRaw!==0
-      const atrasoU=String(d.atraso||'').toUpperCase().trim()
-      const isFalta=atrasoU==='FALTA'
-      const isSIM  =atrasoU==='SIM'
+      const atrasoUv=String(d.atraso||'').toUpperCase().trim()
+      const isFalta=atrasoUv==='FALTA',isSIM=atrasoUv==='SIM'
       if(!isFalta&&!isSIM)return
-
       const h=d.hr_inicio_min!=null?Math.floor(d.hr_inicio_min/60):null
       if(h==null||h<0||h>23)return
-
       const nm=d.nm_medico||'—'
       const tempo_min=parseTempoMinFn(d.tempo_atraso??d['TEMPO DE ATRASO']??null)
       const status=d.status||''
-
-      // hr_ini_min/hr_fim_min fora do if/else — acessíveis em ambos os blocos
-      const hr_ini_min=d.hr_inicio_min??null
-      const hr_fim_min=d.hr_fim_min??d.hr_fim??null
-
+      const hr_ini_min=d.hr_inicio_min??null,hr_fim_min=d.hr_fim_min??d.hr_fim??null
       if(!temPonto){
-        // SEM PONTO
-        if(isFalta){
-          if(!semPontoFaltaMap[h])semPontoFaltaMap[h]=[]
-          if(!semPontoFaltaMap[h].find(x=>x.nm===nm&&x.nm_local===(d.nm_local||'')))
-            semPontoFaltaMap[h].push({nm,status,nm_local:d.nm_local||'',hr_ini_min,hr_fim_min})
-        }else if(isSIM){
-          if(!semPontoAtrasoMap[h])semPontoAtrasoMap[h]=[]
-          if(!semPontoAtrasoMap[h].find(x=>x.nm===nm&&x.nm_local===(d.nm_local||'')))
-            semPontoAtrasoMap[h].push({nm,tempo_min,status,nm_local:d.nm_local||'',hr_ini_min,hr_fim_min})
-        }
-      }else{
-        // COM PONTO + ATRASO
-        if(isSIM&&!comPontoAtrasoList.find(x=>x.nm===nm&&x.hora===h&&x.nm_local===(d.nm_local||'')))
-          comPontoAtrasoList.push({nm,tempo_min,status,hora:h,nm_local:d.nm_local||'',hr_ini_min,hr_fim_min})
-      }
+        if(isFalta){if(!semPontoFaltaMap[h])semPontoFaltaMap[h]=[];if(!semPontoFaltaMap[h].find(x=>x.nm===nm&&x.nm_local===(d.nm_local||'')))semPontoFaltaMap[h].push({nm,status,nm_local:d.nm_local||'',hr_ini_min,hr_fim_min})}
+        else if(isSIM){if(!semPontoAtrasoMap[h])semPontoAtrasoMap[h]=[];if(!semPontoAtrasoMap[h].find(x=>x.nm===nm&&x.nm_local===(d.nm_local||'')))semPontoAtrasoMap[h].push({nm,tempo_min,status,nm_local:d.nm_local||'',hr_ini_min,hr_fim_min})}
+      }else{if(isSIM&&!comPontoAtrasoList.find(x=>x.nm===nm&&x.hora===h&&x.nm_local===(d.nm_local||'')))comPontoAtrasoList.push({nm,tempo_min,status,hora:h,nm_local:d.nm_local||'',hr_ini_min,hr_fim_min})}
     })
-
-    const allHorasPonto=[...new Set([
-      ...Object.keys(semPontoFaltaMap),
-      ...Object.keys(semPontoAtrasoMap),
-      ...comPontoAtrasoList.map(d=>String(d.hora))
-    ])].map(Number).filter(h=>!isNaN(h)).sort((a,b)=>a-b)
-
-    const situacaoPontoHoras=allHorasPonto.map(hora=>({
-      hora,
-      semPontoFalta :[...(semPontoFaltaMap [hora]||[])],
-      semPontoAtraso:[...(semPontoAtrasoMap[hora]||[])],
-      comPontoAtraso:[...new Map(comPontoAtrasoList.filter(d=>d.hora===hora).map(d=>[d.nm,d])).values()],
-    }))
-    const semPontoFaltaTotal =[...new Set(Object.values(semPontoFaltaMap ).flatMap(arr=>arr.map(x=>x.nm)))].length
+    const allHorasPonto=[...new Set([...Object.keys(semPontoFaltaMap),...Object.keys(semPontoAtrasoMap),...comPontoAtrasoList.map(d=>String(d.hora))])].map(Number).filter(h=>!isNaN(h)).sort((a,b)=>a-b)
+    const situacaoPontoHoras=allHorasPonto.map(hora=>({hora,semPontoFalta:[...(semPontoFaltaMap[hora]||[])],semPontoAtraso:[...(semPontoAtrasoMap[hora]||[])],comPontoAtraso:[...new Map(comPontoAtrasoList.filter(d=>d.hora===hora).map(d=>[d.nm,d])).values()]}))
+    const semPontoFaltaTotal=[...new Set(Object.values(semPontoFaltaMap).flatMap(arr=>arr.map(x=>x.nm)))].length
     const semPontoAtrasoTotal=[...new Set(Object.values(semPontoAtrasoMap).flatMap(arr=>arr.map(x=>x.nm)))].length
     const comPontoAtrasoTotal=[...new Set(comPontoAtrasoList.map(d=>d.nm))].length
-
-        return{totalRows,totalCons,totalEnc,totalAg,
-      faltaDocs,remarcaDocs,critDocs,grvDocs,atrDocs,faltaAg,remarcaAg,critAg,grvAg,atrAg,
-      feedList,topSpec,byDate,projData,
-      docsFaltaU,docsCritU,docsGrvU,docsAtrU,
-      situacaoPontoHoras,semPontoAtrasoTotal,semPontoFaltaTotal,comPontoAtrasoTotal}
+    return{totalRows,totalCons,totalEnc,totalAg,faltaDocs,remarcaDocs,critDocs,grvDocs,atrDocs,faltaAg,remarcaAg,critAg,grvAg,atrAg,feedList,topSpec,byDate,projData,docsFaltaU,docsCritU,docsGrvU,docsAtrU,situacaoPontoHoras,semPontoAtrasoTotal,semPontoFaltaTotal,comPontoAtrasoTotal}
   },[filtered,unidFilt,rows,periodoFn,ufFilt,search,horasFilt])
 
   const agStatsResult=agStats||{}
-  const{totalRows=0,totalCons=0,totalEnc=0,totalAg=0,
-    faltaDocs=[],remarcaDocs=[],critDocs=[],grvDocs=[],atrDocs=[],
-    faltaAg=0,remarcaAg=0,critAg=0,grvAg=0,atrAg=0,
-    feedList=[],topSpec=[],byDate=[],projData=[],
-    docsFaltaU=[],docsCritU=[],docsGrvU=[],docsAtrU=[],
-    situacaoPontoHoras=[],semPontoAtrasoTotal=0,semPontoFaltaTotal=0,comPontoAtrasoTotal=0}=agStatsResult
-
+  const{totalRows=0,totalCons=0,totalEnc=0,totalAg=0,faltaDocs=[],remarcaDocs=[],critDocs=[],grvDocs=[],atrDocs=[],faltaAg=0,remarcaAg=0,critAg=0,grvAg=0,atrAg=0,feedList=[],topSpec=[],byDate=[],projData=[],docsFaltaU=[],docsCritU=[],docsGrvU=[],docsAtrU=[],situacaoPontoHoras=[],semPontoAtrasoTotal=0,semPontoFaltaTotal=0,comPontoAtrasoTotal=0}=agStatsResult
   const allDocsList=useMemo(()=>[...docsFaltaU,...docsAtrU,...docsGrvU,...docsCritU],[docsFaltaU,docsAtrU,docsGrvU,docsCritU])
-  // justPct, justColor, justifiedCount removidos → usar globalJustStats e globalJustColor
-
   const trendAllData=trendView==='real'?byDate:[...byDate,...projData]
   const tMaxAg=Math.max(...trendAllData.map(d=>d.agendas||0),1)
   const tRealCnt=byDate.length
@@ -420,7 +330,6 @@ function TabAgendas({rows}){
   const tTotalGap=byDate.reduce((a,d)=>a+(d.impactadas||0),0)
   const tAvgAg=byDate.length>0?Math.round(byDate.reduce((a,d)=>a+(d.agendas||0),0)/byDate.length):0
   const tSlope=projData.length>0?((projData[0]?.agendas||0)-(tLastReal?.agendas||0)):0
-
   const AVW=800,AVH=150,APL=52,APR=20,APT=10,APB=32
   const ACW=AVW-APL-APR,ACH=AVH-APT-APB
   const aNT=trendAllData.length
@@ -452,431 +361,175 @@ function TabAgendas({rows}){
   return(
     <div>
       <div style={{marginBottom:14}}>
-        <PeriodoBar value={periodo} onChange={p=>{setPeriodo(p);setDateFrom('');setDateTo('');setUnidFilt('');setHorasFilt([])}}
-          allDates={allDates} dateFrom={dateFrom} dateTo={dateTo} onDateFrom={setDateFrom} onDateTo={setDateTo}
-          label={totalRows.toLocaleString('pt-BR')+' registros'}/>
+        <PeriodoBar value={periodo} onChange={p=>{setPeriodo(p);setDateFrom('');setDateTo('');setUnidFilt('');setHorasFilt([])}} allDates={allDates} dateFrom={dateFrom} dateTo={dateTo} onDateFrom={setDateFrom} onDateTo={setDateTo} label={totalRows.toLocaleString('pt-BR')+' registros'}/>
       </div>
-      <SearchBar search={search} onSearch={setSearch} uf={ufFilt} onUf={setUfFilt} ufs={ufs}
-        showClear={ufFilt!=='TODOS'||!!search||!!unidFilt}
-        onClear={()=>{setUfFilt('TODOS');setSearch('');setUnidFilt('')}}/>
-
-      {/* Filtro de hora início removido */}
-
-      {/* KPI BAR — Modelo A */}
+      <SearchBar search={search} onSearch={setSearch} uf={ufFilt} onUf={setUfFilt} ufs={ufs} showClear={ufFilt!=='TODOS'||!!search||!!unidFilt} onClear={()=>{setUfFilt('TODOS');setSearch('');setUnidFilt('')}}/>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10,marginBottom:14}}>
-        {/* Card 1: Total Agendas */}
         <div style={{...card,padding:'16px 18px'}}>
           <div style={{fontSize:9,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.1em',marginBottom:6}}>Total Agendas</div>
           <div style={{fontSize:36,fontWeight:800,color:C.amber,letterSpacing:'-1px',lineHeight:1,marginBottom:8}}>{totalAg.toLocaleString('pt-BR')}</div>
-          <div style={{display:'flex',gap:14,marginBottom:8}}>
-            <span style={{fontSize:10,color:C.teal}}>▬ {totalCons.toLocaleString('pt-BR')} consultas</span>
-            <span style={{fontSize:10,color:C.violet||'#8B5CF6'}}>▬ {totalEnc} encaixe</span>
-          </div>
-          <div style={{height:4,background:'rgba(255,255,255,0.06)',borderRadius:2,overflow:'hidden',display:'flex'}}>
-            <div style={{flex:totalCons||1,background:C.teal,opacity:.8}}/>
-            <div style={{flex:totalEnc||0,background:'#8B5CF6',opacity:.8}}/>
-          </div>
+          <div style={{display:'flex',gap:14,marginBottom:8}}><span style={{fontSize:10,color:C.teal}}>▬ {totalCons.toLocaleString('pt-BR')} consultas</span><span style={{fontSize:10,color:C.violet||'#8B5CF6'}}>▬ {totalEnc} encaixe</span></div>
+          <div style={{height:4,background:'rgba(255,255,255,0.06)',borderRadius:2,overflow:'hidden',display:'flex'}}><div style={{flex:totalCons||1,background:C.teal,opacity:.8}}/><div style={{flex:totalEnc||0,background:'#8B5CF6',opacity:.8}}/></div>
         </div>
-        {/* Card 2: Afetadas */}
         <div style={{...card,padding:'16px 18px'}}>
           <div style={{fontSize:9,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.1em',marginBottom:6}}>Afetadas por Problema</div>
           <div style={{fontSize:36,fontWeight:800,color:C.rose,letterSpacing:'-1px',lineHeight:1,marginBottom:8}}>{(faltaAg+remarcaAg+atrAg+critAg+grvAg).toLocaleString('pt-BR')}</div>
           <div style={{fontSize:10,color:C.muted,marginBottom:8}}>{totalAg>0?((faltaAg+remarcaAg+atrAg+critAg+grvAg)/totalAg*100).toFixed(1):0}% das agendas</div>
-          <div style={{height:4,background:'rgba(255,255,255,0.06)',borderRadius:2,overflow:'hidden'}}>
-            <div style={{width:totalAg>0?((faltaAg+remarcaAg+atrAg+critAg+grvAg)/totalAg*100).toFixed(1)+'%':'0%',height:'100%',background:C.rose,opacity:.8}}/>
-          </div>
+          <div style={{height:4,background:'rgba(255,255,255,0.06)',borderRadius:2,overflow:'hidden'}}><div style={{width:totalAg>0?((faltaAg+remarcaAg+atrAg+critAg+grvAg)/totalAg*100).toFixed(1)+'%':'0%',height:'100%',background:C.rose,opacity:.8}}/></div>
         </div>
-        {/* Card 3: Médicos */}
         <div style={{...card,padding:'16px 18px'}}>
           <div style={{fontSize:9,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.1em',marginBottom:6}}>Médicos com Ocorrências</div>
-          <div style={{fontSize:36,fontWeight:800,color:C.emerald,letterSpacing:'-1px',lineHeight:1,marginBottom:8}}>
-            {faltaDocs.length+remarcaDocs.length+atrDocs.length+grvDocs.length+critDocs.length}
-          </div>
-          <div style={{display:'flex',gap:10,flexWrap:'wrap'}}>
-            <span style={{fontSize:10,color:C.blue}}>● {faltaDocs.length} falta{faltaDocs.length!==1?'s':''}</span>
-            <span style={{fontSize:10,color:'#8B5CF6'}}>● {remarcaDocs.length} remar.</span>
-            <span style={{fontSize:10,color:C.rose}}>● {atrDocs.length+grvDocs.length+critDocs.length} atrasos</span>
-          </div>
+          <div style={{fontSize:36,fontWeight:800,color:C.emerald,letterSpacing:'-1px',lineHeight:1,marginBottom:8}}>{faltaDocs.length+remarcaDocs.length+atrDocs.length+grvDocs.length+critDocs.length}</div>
+          <div style={{display:'flex',gap:10,flexWrap:'wrap'}}><span style={{fontSize:10,color:C.blue}}>● {faltaDocs.length} falta{faltaDocs.length!==1?'s':''}</span><span style={{fontSize:10,color:'#8B5CF6'}}>● {remarcaDocs.length} remar.</span><span style={{fontSize:10,color:C.rose}}>● {atrDocs.length+grvDocs.length+critDocs.length} atrasos</span></div>
         </div>
       </div>
-
-      {/* FEED + PAINEL DIREITO EXECUTIVO */}
       <div style={{display:'grid',gridTemplateColumns:'1fr 460px',gap:14,marginBottom:14}}>
-        {/* Feed */}
         <div style={card}>
-          {unidFilt&&(
-            <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:12,padding:'8px 12px',background:'rgba(245,158,11,0.08)',border:'0.5px solid rgba(245,158,11,0.25)',borderRadius:9}}>
-              <div style={{width:6,height:6,borderRadius:'50%',background:C.amber}}/><span style={{fontSize:11,color:C.amber,flex:1,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>Filtrando: {unidFilt}</span>
-              <button onClick={()=>setUnidFilt('')} style={{background:'transparent',border:'none',color:C.muted,cursor:'pointer',fontSize:12}}>✕</button>
-            </div>
-          )}
+          {unidFilt&&(<div style={{display:'flex',alignItems:'center',gap:10,marginBottom:12,padding:'8px 12px',background:'rgba(245,158,11,0.08)',border:'0.5px solid rgba(245,158,11,0.25)',borderRadius:9}}><div style={{width:6,height:6,borderRadius:'50%',background:C.amber}}/><span style={{fontSize:11,color:C.amber,flex:1,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>Filtrando: {unidFilt}</span><button onClick={()=>setUnidFilt('')} style={{background:'transparent',border:'none',color:C.muted,cursor:'pointer',fontSize:12}}>✕</button></div>)}
           <div style={{fontSize:13,fontWeight:700,color:C.text,marginBottom:4}}>Unidades por volume de agendas</div>
           <div style={{fontSize:10,color:C.muted,marginBottom:14}}>{unidFilt?'clique ✕ para limpar':'clique para filtrar e justificar médicos'}</div>
           <div style={{display:'flex',flexDirection:'column',gap:5,maxHeight:500,overflowY:'auto'}}>
             {feedList.slice(0,15).map((item,i)=>{
               const isSel=unidFilt===item.nm_local,pct=maxFeed>0?(item.total/maxFeed)*100:0
-              return(
-                <div key={i} onClick={()=>setUnidFilt(isSel?'':item.nm_local)} style={{display:'flex',alignItems:'center',gap:10,padding:'9px 12px',borderRadius:10,cursor:'pointer',background:isSel?'rgba(245,158,11,0.1)':'rgba(255,255,255,0.02)',border:isSel?'1px solid rgba(245,158,11,0.4)':'0.5px solid rgba(255,255,255,0.05)',transition:'all .15s'}}
-                  onMouseEnter={e=>{if(!isSel)e.currentTarget.style.background='rgba(255,255,255,0.04)'}}
-                  onMouseLeave={e=>{if(!isSel)e.currentTarget.style.background='rgba(255,255,255,0.02)'}}>
-                  <div style={{fontSize:10,fontWeight:800,color:i<3?C.amber:C.muted,minWidth:22}}>#{ i+1}</div>
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:11,fontWeight:600,color:C.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.nm_local}</div>
-                    <div style={{height:3,background:'rgba(255,255,255,0.06)',borderRadius:2,marginTop:4,overflow:'hidden'}}>
-                      <div style={{height:'100%',borderRadius:2,background:i<3?C.amber:C.teal,width:pct+'%',transition:'width .5s'}}/>
-                    </div>
-                  </div>
-                  <div style={{textAlign:'right',flexShrink:0}}>
-                    <div style={{fontSize:12,fontWeight:700,color:i<3?C.amber:C.text}}>{item.total.toLocaleString('pt-BR')}</div>
-                    <div style={{fontSize:8,color:C.muted}}>{item.consultas}c+{item.encaixe}e</div>
-                  </div>
-                  <div style={{display:'flex',flexDirection:'column',gap:2,flexShrink:0}}>
-                    {item.faltas>0&&<span style={{fontSize:8,padding:'1px 5px',borderRadius:10,background:'rgba(59,130,246,0.15)',color:C.blue,border:'0.5px solid rgba(59,130,246,0.3)',whiteSpace:'nowrap'}}>{item.faltas}f</span>}
-                    {item.atrasos>0&&<span style={{fontSize:8,padding:'1px 5px',borderRadius:10,background:'rgba(244,63,94,0.12)',color:C.rose,border:'0.5px solid rgba(244,63,94,0.3)',whiteSpace:'nowrap'}}>{item.atrasos}a</span>}
-                  </div>
-                </div>
-              )
+              return(<div key={i} onClick={()=>setUnidFilt(isSel?'':item.nm_local)} style={{display:'flex',alignItems:'center',gap:10,padding:'9px 12px',borderRadius:10,cursor:'pointer',background:isSel?'rgba(245,158,11,0.1)':'rgba(255,255,255,0.02)',border:isSel?'1px solid rgba(245,158,11,0.4)':'0.5px solid rgba(255,255,255,0.05)',transition:'all .15s'}} onMouseEnter={e=>{if(!isSel)e.currentTarget.style.background='rgba(255,255,255,0.04)'}} onMouseLeave={e=>{if(!isSel)e.currentTarget.style.background='rgba(255,255,255,0.02)'}}>
+                <div style={{fontSize:10,fontWeight:800,color:i<3?C.amber:C.muted,minWidth:22}}>#{i+1}</div>
+                <div style={{flex:1,minWidth:0}}><div style={{fontSize:11,fontWeight:600,color:C.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.nm_local}</div><div style={{height:3,background:'rgba(255,255,255,0.06)',borderRadius:2,marginTop:4,overflow:'hidden'}}><div style={{height:'100%',borderRadius:2,background:i<3?C.amber:C.teal,width:pct+'%',transition:'width .5s'}}/></div></div>
+                <div style={{textAlign:'right',flexShrink:0}}><div style={{fontSize:12,fontWeight:700,color:i<3?C.amber:C.text}}>{item.total.toLocaleString('pt-BR')}</div><div style={{fontSize:8,color:C.muted}}>{item.consultas}c+{item.encaixe}e</div></div>
+                <div style={{display:'flex',flexDirection:'column',gap:2,flexShrink:0}}>{item.faltas>0&&<span style={{fontSize:8,padding:'1px 5px',borderRadius:10,background:'rgba(59,130,246,0.15)',color:C.blue,border:'0.5px solid rgba(59,130,246,0.3)',whiteSpace:'nowrap'}}>{item.faltas}f</span>}{item.atrasos>0&&<span style={{fontSize:8,padding:'1px 5px',borderRadius:10,background:'rgba(244,63,94,0.12)',color:C.rose,border:'0.5px solid rgba(244,63,94,0.3)',whiteSpace:'nowrap'}}>{item.atrasos}a</span>}</div>
+              </div>)
             })}
           </div>
         </div>
-
-        {/* ── PAINEL DIREITO EXECUTIVO ── */}
         <div style={{display:'flex',flexDirection:'column',gap:12}}>
-
-          {/* BLOCO 1: KPIs compactos — 2+3 grid */}
           <div style={{...card,padding:'14px 16px'}}>
             <div style={{fontSize:9,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.12em',marginBottom:12}}>⚡ Médicos — Impacto nas Agendas</div>
-            {/* Linha 1: Falta + Remarcação */}
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:8}}>
-              {[
-                {label:'Falta Médica',docs:faltaDocs.length,ag:faltaAg,color:C.blue,border:'rgba(59,130,246,.3)',bg:'rgba(59,130,246,.06)'},
-                {label:'Remarcação Adm',docs:remarcaDocs.length,ag:remarcaAg,color:'#8B5CF6',border:'rgba(139,92,246,.3)',bg:'rgba(139,92,246,.06)'},
-              ].map(k=>(
-                <div key={k.label} style={{borderRadius:8,padding:'10px 12px',border:`0.5px solid ${k.border}`,background:k.bg,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                  <div>
-                    <div style={{fontSize:8,fontWeight:700,color:k.color,textTransform:'uppercase',letterSpacing:'.08em',marginBottom:4}}>{k.label}</div>
-                    <div style={{fontSize:9,color:C.muted}}>{k.ag} agendas</div>
-                  </div>
-                  <div style={{fontSize:28,fontWeight:900,color:k.color,lineHeight:1,letterSpacing:'-1px'}}>{k.docs}</div>
-                </div>
-              ))}
+              {[{label:'Falta Médica',docs:faltaDocs.length,ag:faltaAg,color:C.blue,border:'rgba(59,130,246,.3)',bg:'rgba(59,130,246,.06)'},{label:'Remarcação Adm',docs:remarcaDocs.length,ag:remarcaAg,color:'#8B5CF6',border:'rgba(139,92,246,.3)',bg:'rgba(139,92,246,.06)'}].map(k=>(<div key={k.label} style={{borderRadius:8,padding:'10px 12px',border:`0.5px solid ${k.border}`,background:k.bg,display:'flex',justifyContent:'space-between',alignItems:'center'}}><div><div style={{fontSize:8,fontWeight:700,color:k.color,textTransform:'uppercase',letterSpacing:'.08em',marginBottom:4}}>{k.label}</div><div style={{fontSize:9,color:C.muted}}>{k.ag} agendas</div></div><div style={{fontSize:28,fontWeight:900,color:k.color,lineHeight:1,letterSpacing:'-1px'}}>{k.docs}</div></div>))}
             </div>
-            {/* Linha 2: Atrasos */}
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8}}>
-              {[
-                {label:'Atraso',docs:atrDocs.length,ag:atrAg,color:C.amber,border:'rgba(245,158,11,.3)',bg:'rgba(245,158,11,.06)'},
-                {label:'Atraso Grave',docs:grvDocs.length,ag:grvAg,color:C.orange,border:'rgba(249,115,22,.3)',bg:'rgba(249,115,22,.06)'},
-                {label:'Atraso Crítico',docs:critDocs.length,ag:critAg,color:C.rose,border:'rgba(244,63,94,.3)',bg:'rgba(244,63,94,.06)'},
-              ].map(k=>(
-                <div key={k.label} style={{borderRadius:8,padding:'10px 8px',border:`0.5px solid ${k.border}`,background:k.bg,textAlign:'center'}}>
-                  <div style={{fontSize:8,fontWeight:700,color:k.color,textTransform:'uppercase',letterSpacing:'.06em',marginBottom:4}}>{k.label}</div>
-                  <div style={{fontSize:26,fontWeight:900,color:k.color,lineHeight:1,letterSpacing:'-1px'}}>{k.docs}</div>
-                  <div style={{fontSize:8,color:C.muted,marginTop:3}}>{k.ag} agendas</div>
-                </div>
-              ))}
+              {[{label:'Atraso',docs:atrDocs.length,ag:atrAg,color:C.amber,border:'rgba(245,158,11,.3)',bg:'rgba(245,158,11,.06)'},{label:'Atraso Grave',docs:grvDocs.length,ag:grvAg,color:C.orange,border:'rgba(249,115,22,.3)',bg:'rgba(249,115,22,.06)'},{label:'Atraso Crítico',docs:critDocs.length,ag:critAg,color:C.rose,border:'rgba(244,63,94,.3)',bg:'rgba(244,63,94,.06)'}].map(k=>(<div key={k.label} style={{borderRadius:8,padding:'10px 8px',border:`0.5px solid ${k.border}`,background:k.bg,textAlign:'center'}}><div style={{fontSize:8,fontWeight:700,color:k.color,textTransform:'uppercase',letterSpacing:'.06em',marginBottom:4}}>{k.label}</div><div style={{fontSize:26,fontWeight:900,color:k.color,lineHeight:1,letterSpacing:'-1px'}}>{k.docs}</div><div style={{fontSize:8,color:C.muted,marginTop:3}}>{k.ag} agendas</div></div>))}
             </div>
           </div>
-
-          {/* BLOCO 2: % Justificativas GLOBAL — destaque visual */}
           <div style={{borderRadius:14,padding:'20px',background:`linear-gradient(135deg,${globalJustColor}12,${globalJustColor}05)`,border:`1px solid ${globalJustColor}30`,transition:'all .4s',position:'relative',overflow:'hidden'}}>
             <div style={{position:'absolute',top:-30,left:-30,width:150,height:150,borderRadius:'50%',background:`radial-gradient(circle,${globalJustColor}08,transparent 70%)`,pointerEvents:'none'}}/>
             <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:14}}>
               <div>
                 <div style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.12em',marginBottom:4}}>Justificativas · Meta 80%</div>
-                <div style={{fontSize:9,color:C.muted,marginTop:2}}>
-                  {periodo==='HOJE'?'Hoje':periodo==='ONTEM'?'Ontem':periodo==='SEMANA'?'Semana':periodo==='MES'?'Mês':periodo==='ANO'?'Ano':'Período'} · todas as unidades
-                </div>
+                <div style={{fontSize:9,color:C.muted,marginTop:2}}>{periodo==='HOJE'?'Hoje':periodo==='ONTEM'?'Ontem':periodo==='SEMANA'?'Semana':periodo==='MES'?'Mês':periodo==='ANO'?'Ano':'Período'} · todas as unidades</div>
                 {unidFilt&&<div style={{fontSize:9,color:C.amber,marginTop:4,fontStyle:'italic'}}>↳ justificando: {unidFilt}</div>}
               </div>
-              <div style={{textAlign:'right'}}>
-                <div style={{fontSize:52,fontWeight:900,color:globalJustColor,lineHeight:1,letterSpacing:'-2px'}}>{globalJustStats.pct}<span style={{fontSize:26}}>%</span></div>
-                <div style={{fontSize:9,color:C.muted,marginTop:2}}>{globalJustStats.justified}/{globalJustStats.total} méd. just.</div>
-              </div>
+              <div style={{textAlign:'right'}}><div style={{fontSize:52,fontWeight:900,color:globalJustColor,lineHeight:1,letterSpacing:'-2px'}}>{globalJustStats.pct}<span style={{fontSize:26}}>%</span></div><div style={{fontSize:9,color:C.muted,marginTop:2}}>{globalJustStats.justified}/{globalJustStats.total} méd. just.</div></div>
             </div>
-            <div style={{position:'relative',height:12,background:'rgba(255,255,255,0.06)',borderRadius:6,overflow:'hidden',marginBottom:6}}>
-              <div style={{position:'absolute',top:0,left:0,height:'100%',width:`${globalJustStats.pct}%`,background:`linear-gradient(90deg,${globalJustColor},${globalJustColor}bb)`,borderRadius:6,transition:'width .7s ease',boxShadow:`0 0 12px ${globalJustColor}40`}}/>
-              <div style={{position:'absolute',top:0,left:'80%',width:2.5,height:'100%',background:'rgba(255,255,255,0.5)'}}/>
-            </div>
-            <div style={{display:'flex',justifyContent:'space-between',fontSize:9,color:C.muted}}>
-              <span>{globalJustStats.justified} justificado{globalJustStats.justified!==1?'s':''} de {globalJustStats.total} total de ocorrências</span>
-              <span style={{fontWeight:700,color:globalJustColor}}>← meta 80%</span>
-            </div>
+            <div style={{position:'relative',height:12,background:'rgba(255,255,255,0.06)',borderRadius:6,overflow:'hidden',marginBottom:6}}><div style={{position:'absolute',top:0,left:0,height:'100%',width:`${globalJustStats.pct}%`,background:`linear-gradient(90deg,${globalJustColor},${globalJustColor}bb)`,borderRadius:6,transition:'width .7s ease',boxShadow:`0 0 12px ${globalJustColor}40`}}/><div style={{position:'absolute',top:0,left:'80%',width:2.5,height:'100%',background:'rgba(255,255,255,0.5)'}}/></div>
+            <div style={{display:'flex',justifyContent:'space-between',fontSize:9,color:C.muted}}><span>{globalJustStats.justified} justificado{globalJustStats.justified!==1?'s':''} de {globalJustStats.total} total de ocorrências</span><span style={{fontWeight:700,color:globalJustColor}}>← meta 80%</span></div>
           </div>
-
-          {/* BLOCO 3: Lista médicos + justificativas */}
           {unidFilt&&allDocsList.length>0&&(
             <div style={{...card,flex:1}}>
-              <div style={{fontSize:9,fontWeight:700,color:C.amber,textTransform:'uppercase',letterSpacing:'.1em',marginBottom:10}}>
-                ✎ Médicos · {horasFilt.length>0?horasFilt.map(h=>String(h).padStart(2,'0')+'h').join(', '):'todas as horas'}
-              </div>
+              <div style={{fontSize:9,fontWeight:700,color:C.amber,textTransform:'uppercase',letterSpacing:'.1em',marginBottom:10}}>✎ Médicos · {horasFilt.length>0?horasFilt.map(h=>String(h).padStart(2,'0')+'h').join(', '):'todas as horas'}</div>
               <div style={{display:'flex',flexDirection:'column',gap:4,maxHeight:240,overflowY:'auto'}}>
                 {allDocsList.map((doc,i)=>{
-                  const hora=docHoraMap[doc.nm]
-                  const key=doc.nm+'::'+String(hora??'x')
-                  const isJust=docsJustSet.has(key)
+                  const hora=docHoraMap[doc.nm],key=doc.nm+'::'+String(hora??'x'),isJust=docsJustSet.has(key)
                   const savedJust=justAgFiltered.find(j=>j.nm_medico===doc.nm&&(hora==null||parseInt(j.hora)===hora||j.hora===-1))
                   const draftText=agJustDraft[key]!==undefined?agJustDraft[key]:(savedJust?.texto||'')
-                  const isExpanded=justExpanded[key]||false
-                  const cfg=getStatusCfg(doc.status)
-                  return(
-                    <div key={i} style={{borderRadius:8,background:isJust?`${cfg.color}08`:'rgba(255,255,255,0.02)',border:`0.5px solid ${isJust?cfg.color+'25':'rgba(255,255,255,0.06)'}`,overflow:'hidden'}}>
-                      <div style={{display:'flex',alignItems:'center',gap:7,padding:'7px 10px'}}>
-                        {hora!=null&&<span style={{fontFamily:'monospace',fontSize:9,color:C.muted,flexShrink:0,minWidth:26}}>{String(hora).padStart(2,'0')}h</span>}
-                        <div style={{width:5,height:5,borderRadius:'50%',background:cfg.color,flexShrink:0}}/>
-                        <span style={{fontSize:10,fontWeight:600,color:C.text,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{doc.nm}</span>
-                        <span style={{fontSize:8,fontWeight:700,padding:'1px 6px',borderRadius:10,background:`${cfg.color}15`,color:cfg.color,border:`0.5px solid ${cfg.color}28`,flexShrink:0,whiteSpace:'nowrap'}}>{cfg.label}</span>
-                        {isJust&&<span style={{fontSize:9,color:C.emerald}}>✓</span>}
-                        <button onClick={()=>setJustExpanded(prev=>({...prev,[key]:!isExpanded}))}
-                          style={{background:isExpanded?'rgba(245,158,11,0.15)':'rgba(255,255,255,0.05)',border:`0.5px solid ${isExpanded?'rgba(245,158,11,0.4)':'rgba(255,255,255,0.1)'}`,borderRadius:5,color:isExpanded?C.amber:C.muted,fontSize:11,cursor:'pointer',flexShrink:0,padding:'2px 6px',transition:'all .15s'}}>
-                          {isExpanded?'▲':'✎'}
-                        </button>
-                      </div>
-                      {!isExpanded&&isJust&&savedJust?.texto&&(
-                        <div style={{padding:'0 10px 6px',fontSize:9,color:C.muted,fontStyle:'italic',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',borderTop:`0.5px solid ${cfg.color}12`}}>↳ {savedJust.texto}</div>
-                      )}
-                      {isExpanded&&(
-                        <div style={{padding:'8px 10px 10px',borderTop:`0.5px solid ${cfg.color}18`,background:`${cfg.color}04`}}>
-                          <textarea value={draftText} onChange={e=>setAgJustDraft(prev=>({...prev,[key]:e.target.value}))}
-                            placeholder={`Justificativa para ${doc.nm}${hora!=null?' às '+String(hora).padStart(2,'0')+'h':''}…`} rows={2}
-                            style={{width:'100%',background:'rgba(255,255,255,0.05)',border:`0.5px solid ${cfg.color}35`,borderRadius:7,color:C.text,fontSize:10,padding:'6px 8px',outline:'none',resize:'vertical',fontFamily:"'DM Sans',sans-serif"}}/>
-                          <div style={{display:'flex',justifyContent:'flex-end',gap:5,marginTop:5}}>
-                            {agJustDraft[key]!==undefined&&<button onClick={()=>setAgJustDraft(prev=>{const n={...prev};delete n[key];return n})} style={{background:'transparent',border:'0.5px solid rgba(255,255,255,0.1)',borderRadius:5,color:C.muted,fontSize:9,padding:'3px 8px',cursor:'pointer'}}>Descartar</button>}
-                            <button onClick={async()=>{if(!draftText.trim())return;await saveAgJust(doc.nm,hora,draftText);setJustExpanded(prev=>({...prev,[key]:false}));setAgJustDraft(prev=>{const n={...prev};delete n[key];return n})}}
-                              disabled={agJustSaving||!draftText.trim()}
-                              style={{background:draftText.trim()?`${cfg.color}20`:'rgba(255,255,255,0.04)',border:`0.5px solid ${draftText.trim()?cfg.color+'45':'rgba(255,255,255,0.1)'}`,borderRadius:5,color:draftText.trim()?cfg.color:C.muted,fontSize:10,fontWeight:700,padding:'3px 12px',cursor:draftText.trim()?'pointer':'default'}}>
-                              {agJustSaving?'Salvando…':'Salvar'}
-                            </button>
-                          </div>
-                        </div>
-                      )}
+                  const isExpanded=justExpanded[key]||false,cfg=getStatusCfg(doc.status)
+                  return(<div key={i} style={{borderRadius:8,background:isJust?`${cfg.color}08`:'rgba(255,255,255,0.02)',border:`0.5px solid ${isJust?cfg.color+'25':'rgba(255,255,255,0.06)'}`,overflow:'hidden'}}>
+                    <div style={{display:'flex',alignItems:'center',gap:7,padding:'7px 10px'}}>
+                      {hora!=null&&<span style={{fontFamily:'monospace',fontSize:9,color:C.muted,flexShrink:0,minWidth:26}}>{String(hora).padStart(2,'0')}h</span>}
+                      <div style={{width:5,height:5,borderRadius:'50%',background:cfg.color,flexShrink:0}}/>
+                      <span style={{fontSize:10,fontWeight:600,color:C.text,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{doc.nm}</span>
+                      <span style={{fontSize:8,fontWeight:700,padding:'1px 6px',borderRadius:10,background:`${cfg.color}15`,color:cfg.color,border:`0.5px solid ${cfg.color}28`,flexShrink:0,whiteSpace:'nowrap'}}>{cfg.label}</span>
+                      {isJust&&<span style={{fontSize:9,color:C.emerald}}>✓</span>}
+                      <button onClick={()=>setJustExpanded(prev=>({...prev,[key]:!isExpanded}))} style={{background:isExpanded?'rgba(245,158,11,0.15)':'rgba(255,255,255,0.05)',border:`0.5px solid ${isExpanded?'rgba(245,158,11,0.4)':'rgba(255,255,255,0.1)'}`,borderRadius:5,color:isExpanded?C.amber:C.muted,fontSize:11,cursor:'pointer',flexShrink:0,padding:'2px 6px',transition:'all .15s'}}>{isExpanded?'▲':'✎'}</button>
                     </div>
-                  )
+                    {!isExpanded&&isJust&&savedJust?.texto&&(<div style={{padding:'0 10px 6px',fontSize:9,color:C.muted,fontStyle:'italic',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',borderTop:`0.5px solid ${cfg.color}12`}}>↳ {savedJust.texto}</div>)}
+                    {isExpanded&&(<div style={{padding:'8px 10px 10px',borderTop:`0.5px solid ${cfg.color}18`,background:`${cfg.color}04`}}>
+                      <textarea value={draftText} onChange={e=>setAgJustDraft(prev=>({...prev,[key]:e.target.value}))} placeholder={`Justificativa para ${doc.nm}${hora!=null?' às '+String(hora).padStart(2,'0')+'h':''}…`} rows={2} style={{width:'100%',background:'rgba(255,255,255,0.05)',border:`0.5px solid ${cfg.color}35`,borderRadius:7,color:C.text,fontSize:10,padding:'6px 8px',outline:'none',resize:'vertical',fontFamily:"'DM Sans',sans-serif"}}/>
+                      <div style={{display:'flex',justifyContent:'flex-end',gap:5,marginTop:5}}>
+                        {agJustDraft[key]!==undefined&&<button onClick={()=>setAgJustDraft(prev=>{const n={...prev};delete n[key];return n})} style={{background:'transparent',border:'0.5px solid rgba(255,255,255,0.1)',borderRadius:5,color:C.muted,fontSize:9,padding:'3px 8px',cursor:'pointer'}}>Descartar</button>}
+                        <button onClick={async()=>{if(!draftText.trim())return;await saveAgJust(doc.nm,hora,draftText);setJustExpanded(prev=>({...prev,[key]:false}));setAgJustDraft(prev=>{const n={...prev};delete n[key];return n})}} disabled={agJustSaving||!draftText.trim()} style={{background:draftText.trim()?`${cfg.color}20`:'rgba(255,255,255,0.04)',border:`0.5px solid ${draftText.trim()?cfg.color+'45':'rgba(255,255,255,0.1)'}`,borderRadius:5,color:draftText.trim()?cfg.color:C.muted,fontSize:10,fontWeight:700,padding:'3px 12px',cursor:draftText.trim()?'pointer':'default'}}>{agJustSaving?'Salvando…':'Salvar'}</button>
+                      </div>
+                    </div>)}
+                  </div>)
                 })}
               </div>
             </div>
           )}
-          {unidFilt&&allDocsList.length===0&&(
-            <div style={{...card,fontSize:11,color:C.muted,textAlign:'center',padding:'24px 20px'}}>Sem ocorrências nesta unidade no período.</div>
-          )}
+          {unidFilt&&allDocsList.length===0&&(<div style={{...card,fontSize:11,color:C.muted,textAlign:'center',padding:'24px 20px'}}>Sem ocorrências nesta unidade no período.</div>)}
         </div>
       </div>
-
-      {/* ── SITUAÇÃO DE PONTO — Accordion ── */}
       <div style={{...card,marginBottom:14}}>
-        {/* Header + resumo */}
         <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:18}}>
           <div>
             <div style={{fontSize:13,fontWeight:700,color:C.text,marginBottom:4}}>Situação de Ponto · por Hora de Agenda</div>
-            <div style={{fontSize:10,color:C.muted}}>
-              Col O (HR_ENTRADA) · Col S (ATRASO) · Col T (TEMPO DE ATRASO) · Col U (STATUS)
-              {horasFilt.length>0?` · filtrando ${horasFilt.map(h=>String(h).padStart(2,'0')+'h').join(', ')}`:' · todas as horas'}
-            </div>
+            <div style={{fontSize:10,color:C.muted}}>Col O (HR_ENTRADA) · Col S (ATRASO) · Col T (TEMPO DE ATRASO) · Col U (STATUS){horasFilt.length>0?` · filtrando ${horasFilt.map(h=>String(h).padStart(2,'0')+'h').join(', ')}`:' · todas as horas'}</div>
           </div>
           <div style={{display:'flex',gap:10,flexShrink:0}}>
-            {[
-              {label:'Visão 1',sub:'Faltou',value:semPontoFaltaTotal,color:'#185FA5',bg:'#E6F1FB',border:'#B5D4F4'},
-              {label:'Visão 2',sub:'Sem Ponto · Atraso',value:semPontoAtrasoTotal,color:'#854F0B',bg:'#FAEEDA',border:'#FAC775'},
-              {label:'Com Ponto',sub:'Chegou · Atrasado',value:comPontoAtrasoTotal,color:'#0F6E56',bg:'#E1F5EE',border:'#9FE1CB'},
-            ].map(k=>(
-              <div key={k.label} style={{textAlign:'center',padding:'12px 18px',borderRadius:12,background:k.bg,border:`1px solid ${k.border}`,minWidth:110}}>
-                <div style={{fontSize:9,fontWeight:500,color:k.color,textTransform:'uppercase',letterSpacing:'.1em',marginBottom:2}}>{k.label}</div>
-                <div style={{fontSize:32,fontWeight:500,color:k.color,lineHeight:1,letterSpacing:'-1px'}}>{k.value}</div>
-                <div style={{fontSize:8,color:k.color,opacity:.7,marginTop:4,lineHeight:1.3}}>{k.sub}</div>
-              </div>
-            ))}
+            {[{label:'Visão 1',sub:'Faltou',value:semPontoFaltaTotal,color:'#185FA5',bg:'#E6F1FB',border:'#B5D4F4'},{label:'Visão 2',sub:'Sem Ponto · Atraso',value:semPontoAtrasoTotal,color:'#854F0B',bg:'#FAEEDA',border:'#FAC775'},{label:'Com Ponto',sub:'Chegou · Atrasado',value:comPontoAtrasoTotal,color:'#0F6E56',bg:'#E1F5EE',border:'#9FE1CB'}].map(k=>(<div key={k.label} style={{textAlign:'center',padding:'12px 18px',borderRadius:12,background:k.bg,border:`1px solid ${k.border}`,minWidth:110}}><div style={{fontSize:9,fontWeight:500,color:k.color,textTransform:'uppercase',letterSpacing:'.1em',marginBottom:2}}>{k.label}</div><div style={{fontSize:32,fontWeight:500,color:k.color,lineHeight:1,letterSpacing:'-1px'}}>{k.value}</div><div style={{fontSize:8,color:k.color,opacity:.7,marginTop:4,lineHeight:1.3}}>{k.sub}</div></div>))}
           </div>
         </div>
-
-        {situacaoPontoHoras.length===0?(
-          <div style={{textAlign:'center',padding:'32px 0',color:C.muted,fontSize:12}}>
-            {horasFilt.length>0
-              ?`Nenhuma ocorrência nas ${horasFilt.map(h=>String(h).padStart(2,'0')+'h').join(', ')}.`
-              :'Nenhuma ocorrência de ponto no período.'}
-          </div>
-        ):(
+        {situacaoPontoHoras.length===0?(<div style={{textAlign:'center',padding:'32px 0',color:C.muted,fontSize:12}}>{horasFilt.length>0?`Nenhuma ocorrência nas ${horasFilt.map(h=>String(h).padStart(2,'0')+'h').join(', ')}.`:'Nenhuma ocorrência de ponto no período.'}</div>):(
           <div style={{display:'flex',flexDirection:'column',gap:6}}>
             {situacaoPontoHoras.map(({hora,semPontoFalta,semPontoAtraso,comPontoAtraso})=>{
               const isOpen=expandedHoras[hora]||false
-              const totalHora=semPontoFalta.length+semPontoAtraso.length+comPontoAtraso.length
-              return(
-                <div key={hora} style={{borderRadius:10,border:'0.5px solid rgba(255,255,255,0.1)',overflow:'hidden'}}>
-                  {/* Hora header — clicável */}
-                  <div onClick={()=>setExpandedHoras(prev=>({...prev,[hora]:!isOpen}))}
-                    style={{display:'flex',alignItems:'center',gap:14,padding:'11px 18px',background:isOpen?'rgba(255,255,255,0.05)':'rgba(255,255,255,0.02)',cursor:'pointer',userSelect:'none',transition:'background .15s'}}
-                    onMouseEnter={e=>e.currentTarget.style.background='rgba(255,255,255,0.05)'}
-                    onMouseLeave={e=>e.currentTarget.style.background=isOpen?'rgba(255,255,255,0.05)':'rgba(255,255,255,0.02)'}>
-                    <span style={{fontFamily:'monospace',fontSize:16,fontWeight:500,color:C.text,minWidth:52}}>{String(hora).padStart(2,'0')}:00</span>
-                    <div style={{display:'flex',gap:6,flexWrap:'wrap',flex:1}}>
-                      {semPontoFalta.length>0&&(
-                        <span style={{fontSize:11,padding:'2px 10px',borderRadius:20,background:'#E6F1FB',color:'#185FA5',border:'0.5px solid #B5D4F4',fontWeight:500}}>
-                          {semPontoFalta.length} faltou
-                        </span>
-                      )}
-                      {semPontoAtraso.length>0&&(
-                        <span style={{fontSize:11,padding:'2px 10px',borderRadius:20,background:'#FAEEDA',color:'#854F0B',border:'0.5px solid #FAC775',fontWeight:500}}>
-                          {semPontoAtraso.length} sem ponto · atraso
-                        </span>
-                      )}
-                      {comPontoAtraso.length>0&&(
-                        <span style={{fontSize:11,padding:'2px 10px',borderRadius:20,background:'#E1F5EE',color:'#0F6E56',border:'0.5px solid #9FE1CB',fontWeight:500}}>
-                          {comPontoAtraso.length} com ponto · atrasado
-                        </span>
-                      )}
-                    </div>
-                    <span style={{fontSize:12,color:C.muted,flexShrink:0}}>{isOpen?'▾ recolher':'▸ expandir'}</span>
+              return(<div key={hora} style={{borderRadius:10,border:'0.5px solid rgba(255,255,255,0.1)',overflow:'hidden'}}>
+                <div onClick={()=>setExpandedHoras(prev=>({...prev,[hora]:!isOpen}))} style={{display:'flex',alignItems:'center',gap:14,padding:'11px 18px',background:isOpen?'rgba(255,255,255,0.05)':'rgba(255,255,255,0.02)',cursor:'pointer',userSelect:'none',transition:'background .15s'}} onMouseEnter={e=>e.currentTarget.style.background='rgba(255,255,255,0.05)'} onMouseLeave={e=>e.currentTarget.style.background=isOpen?'rgba(255,255,255,0.05)':'rgba(255,255,255,0.02)'}>
+                  <span style={{fontFamily:'monospace',fontSize:16,fontWeight:500,color:C.text,minWidth:52}}>{String(hora).padStart(2,'0')}:00</span>
+                  <div style={{display:'flex',gap:6,flexWrap:'wrap',flex:1}}>
+                    {semPontoFalta.length>0&&<span style={{fontSize:11,padding:'2px 10px',borderRadius:20,background:'#E6F1FB',color:'#185FA5',border:'0.5px solid #B5D4F4',fontWeight:500}}>{semPontoFalta.length} faltou</span>}
+                    {semPontoAtraso.length>0&&<span style={{fontSize:11,padding:'2px 10px',borderRadius:20,background:'#FAEEDA',color:'#854F0B',border:'0.5px solid #FAC775',fontWeight:500}}>{semPontoAtraso.length} sem ponto · atraso</span>}
+                    {comPontoAtraso.length>0&&<span style={{fontSize:11,padding:'2px 10px',borderRadius:20,background:'#E1F5EE',color:'#0F6E56',border:'0.5px solid #9FE1CB',fontWeight:500}}>{comPontoAtraso.length} com ponto · atrasado</span>}
                   </div>
-
-                  {/* Conteúdo expandido */}
-                  {isOpen&&(
-                    <div style={{padding:'14px 18px',borderTop:'0.5px solid rgba(255,255,255,0.07)',display:'flex',flexDirection:'column',gap:14}}>
-
-                      {/* VISÃO 1: FALTOU */}
-                      {semPontoFalta.length>0&&(
-                        <div>
-                          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
-                            <div style={{width:18,height:1.5,background:'#B5D4F4',borderRadius:1}}/>
-                            <span style={{fontSize:10,fontWeight:500,color:'#185FA5',textTransform:'uppercase',letterSpacing:'.1em'}}>
-                              Visão 1 · Faltou (HR_ENTRADA vazia + ATRASO=FALTA)
-                            </span>
-                          </div>
-                          <div style={{display:'flex',flexDirection:'column',gap:5}}>
-                            {semPontoFalta.map((doc,i)=>{
-                              const motivoMap={
-                                'Falta Médica':{label:'Falta Médica',color:'#185FA5',bg:'#E6F1FB',border:'#B5D4F4'},
-                                'Remarcação Adm':{label:'Remarcação Adm',color:'#534AB7',bg:'#EEEDFE',border:'#CECBF6'},
-                                'Remarcação Médico':{label:'Remarcação Médico',color:'#185FA5',bg:'#E6F1FB',border:'#B5D4F4'},
-                                'Remarcação médico':{label:'Remarcação Médico',color:'#185FA5',bg:'#E6F1FB',border:'#B5D4F4'},
-                              }
-                              const motivo=motivoMap[doc.status]||{label:doc.status||'Falta',color:'#185FA5',bg:'#E6F1FB',border:'#B5D4F4'}
-                              return(
-                                <div key={i} style={{display:'flex',alignItems:'center',borderRadius:8,border:`0.5px solid ${motivo.border}`,width:'100%'}}>
-                                  <div style={{padding:'8px 14px',background:motivo.bg,display:'flex',alignItems:'center',gap:10,flex:1,minWidth:0}}>
-                                    <div style={{width:5,height:5,borderRadius:'50%',background:motivo.color,flexShrink:0}}/>
-                                    <span style={{fontSize:11,color:motivo.color,fontWeight:500}}>{doc.nm}</span>
-                                    {doc.nm_local&&<span style={{fontSize:10,color:motivo.color,opacity:.65,whiteSpace:'nowrap'}}>· {doc.nm_local}</span>}
-                                  </div>
-                                  <div style={{padding:'8px 14px',background:`${motivo.bg}`,borderLeft:`0.5px solid ${motivo.border}`,display:'flex',alignItems:'center',gap:12,flexShrink:0}}>
-                                    {doc.hr_ini_min!=null&&<span style={{fontSize:10,color:motivo.color,fontFamily:'monospace',whiteSpace:'nowrap'}}>{fmtHHMM(doc.hr_ini_min)} → {fmtHHMM(doc.hr_fim_min)}</span>}
-                                    <span style={{fontSize:10,fontWeight:500,color:motivo.color,whiteSpace:'nowrap'}}>{motivo.label}</span>
-                                  </div>
-                                </div>
-                              )
-                            })}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* VISÃO 2: SEM PONTO EM ATRASO */}
-                      {semPontoAtraso.length>0&&(
-                        <div>
-                          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
-                            <div style={{width:18,height:1.5,background:'#FAC775',borderRadius:1}}/>
-                            <span style={{fontSize:10,fontWeight:500,color:'#854F0B',textTransform:'uppercase',letterSpacing:'.1em'}}>
-                              Visão 2 · Sem Ponto em Atraso (HR_ENTRADA vazia + ATRASO=SIM)
-                            </span>
-                          </div>
-                          <div style={{display:'flex',flexDirection:'column',gap:5}}>
-                            {semPontoAtraso.map((doc,i)=>{
-                              const tempoStr=fmtTempoMinFn(doc.tempo_min)
-                              const cfg=getStatusCfg(doc.status)
-                              const atrColors={
-                                'ATRASO':{color:'#854F0B',bg:'#FAEEDA',border:'#FAC775',badge:'#FAC775'},
-                                'ATRASO GRAVE':{color:'#993C1D',bg:'#FAECE7',border:'#F5C4B3',badge:'#F5C4B3'},
-                                'ATRASO CRÍTICO':{color:'#A32D2D',bg:'#FCEBEB',border:'#F7C1C1',badge:'#F7C1C1'},
-                              }
-                              const atrCfg=atrColors[doc.status]||atrColors['ATRASO']
-                              return(
-                                <div key={i} style={{display:'flex',alignItems:'center',borderRadius:8,border:`0.5px solid ${atrCfg.border}`,width:'100%'}}>
-                                  <div style={{padding:'8px 14px',background:atrCfg.bg,display:'flex',alignItems:'center',gap:10,flex:1,minWidth:0}}>
-                                    <div style={{width:5,height:5,borderRadius:'50%',background:atrCfg.color,flexShrink:0}}/>
-                                    <span style={{fontSize:11,color:atrCfg.color,fontWeight:500}}>{doc.nm}</span>
-                                    {doc.nm_local&&<span style={{fontSize:10,color:atrCfg.color,opacity:.65,whiteSpace:'nowrap'}}>· {doc.nm_local}</span>}
-                                  </div>
-                                  <div style={{padding:'8px 14px',background:atrCfg.bg,borderLeft:`0.5px solid ${atrCfg.border}`,display:'flex',alignItems:'center',gap:10,flexShrink:0}}>
-                                    {doc.hr_ini_min!=null&&<span style={{fontSize:10,color:atrCfg.color,fontFamily:'monospace',whiteSpace:'nowrap'}}>{fmtHHMM(doc.hr_ini_min)}→{fmtHHMM(doc.hr_fim_min)}</span>}
-                                    {tempoStr&&<span style={{fontSize:12,fontWeight:500,color:atrCfg.color,whiteSpace:'nowrap'}}>{tempoStr} em atraso</span>}
-                                    <span style={{fontSize:10,padding:'2px 8px',borderRadius:8,background:atrCfg.badge,color:atrCfg.color,whiteSpace:'nowrap',fontWeight:500}}>{cfg.label}</span>
-                                  </div>
-                                </div>
-                              )
-                            })}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* COM PONTO ATRASADO */}
-                      {comPontoAtraso.length>0&&(
-                        <div>
-                          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
-                            <div style={{width:18,height:1.5,background:'#9FE1CB',borderRadius:1}}/>
-                            <span style={{fontSize:10,fontWeight:500,color:'#0F6E56',textTransform:'uppercase',letterSpacing:'.1em'}}>
-                              Com Ponto · Chegou Atrasado (HR_ENTRADA preenchida + ATRASO=SIM)
-                            </span>
-                          </div>
-                          <div style={{display:'flex',flexDirection:'column',gap:5}}>
-                            {comPontoAtraso.map((doc,i)=>{
-                              const tempoStr=fmtTempoMinFn(doc.tempo_min)
-                              const cfg=getStatusCfg(doc.status)
-                              return(
-                                <div key={i} style={{display:'flex',alignItems:'center',borderRadius:8,border:'0.5px solid #9FE1CB',width:'100%'}}>
-                                  <div style={{padding:'8px 14px',background:'#E1F5EE',display:'flex',alignItems:'center',gap:10,flex:1,minWidth:0}}>
-                                    <div style={{width:5,height:5,borderRadius:'50%',background:'#0F6E56',flexShrink:0}}/>
-                                    <span style={{fontSize:11,color:'#0F6E56',fontWeight:500}}>{doc.nm}</span>
-                                    {doc.nm_local&&<span style={{fontSize:10,color:'#0F6E56',opacity:.65,whiteSpace:'nowrap'}}>· {doc.nm_local}</span>}
-                                  </div>
-                                  <div style={{padding:'8px 14px',background:'#E1F5EE',borderLeft:'0.5px solid #9FE1CB',display:'flex',alignItems:'center',gap:10,flexShrink:0}}>
-                                    {doc.hr_ini_min!=null&&<span style={{fontSize:10,color:'#0F6E56',fontFamily:'monospace',whiteSpace:'nowrap'}}>{fmtHHMM(doc.hr_ini_min)}→{fmtHHMM(doc.hr_fim_min)}</span>}
-                                    {tempoStr&&<span style={{fontSize:12,fontWeight:500,color:'#0F6E56',whiteSpace:'nowrap'}}>{tempoStr} em atraso</span>}
-                                    <span style={{fontSize:10,padding:'2px 8px',borderRadius:8,background:'#9FE1CB',color:'#085041',whiteSpace:'nowrap',fontWeight:500}}>{cfg.label}</span>
-                                  </div>
-                                </div>
-                              )
-                            })}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
+                  <span style={{fontSize:12,color:C.muted,flexShrink:0}}>{isOpen?'▾ recolher':'▸ expandir'}</span>
                 </div>
-              )
+                {isOpen&&(<div style={{padding:'14px 18px',borderTop:'0.5px solid rgba(255,255,255,0.07)',display:'flex',flexDirection:'column',gap:14}}>
+                  {semPontoFalta.length>0&&(<div>
+                    <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}><div style={{width:18,height:1.5,background:'#B5D4F4',borderRadius:1}}/><span style={{fontSize:10,fontWeight:500,color:'#185FA5',textTransform:'uppercase',letterSpacing:'.1em'}}>Visão 1 · Faltou (HR_ENTRADA vazia + ATRASO=FALTA)</span></div>
+                    <div style={{display:'flex',flexDirection:'column',gap:5}}>
+                      {semPontoFalta.map((doc,i)=>{
+                        const motivoMap={'Falta Médica':{label:'Falta Médica',color:'#185FA5',bg:'#E6F1FB',border:'#B5D4F4'},'Remarcação Adm':{label:'Remarcação Adm',color:'#534AB7',bg:'#EEEDFE',border:'#CECBF6'},'Remarcação Médico':{label:'Remarcação Médico',color:'#185FA5',bg:'#E6F1FB',border:'#B5D4F4'},'Remarcação médico':{label:'Remarcação Médico',color:'#185FA5',bg:'#E6F1FB',border:'#B5D4F4'}}
+                        const motivo=motivoMap[doc.status]||{label:doc.status||'Falta',color:'#185FA5',bg:'#E6F1FB',border:'#B5D4F4'}
+                        return(<div key={i} style={{display:'flex',alignItems:'center',borderRadius:8,border:`0.5px solid ${motivo.border}`,width:'100%'}}><div style={{padding:'8px 14px',background:motivo.bg,display:'flex',alignItems:'center',gap:10,flex:1,minWidth:0}}><div style={{width:5,height:5,borderRadius:'50%',background:motivo.color,flexShrink:0}}/><span style={{fontSize:11,color:motivo.color,fontWeight:500}}>{doc.nm}</span>{doc.nm_local&&<span style={{fontSize:10,color:motivo.color,opacity:.65,whiteSpace:'nowrap'}}>· {doc.nm_local}</span>}</div><div style={{padding:'8px 14px',background:`${motivo.bg}`,borderLeft:`0.5px solid ${motivo.border}`,display:'flex',alignItems:'center',gap:12,flexShrink:0}}>{doc.hr_ini_min!=null&&<span style={{fontSize:10,color:motivo.color,fontFamily:'monospace',whiteSpace:'nowrap'}}>{fmtHHMM(doc.hr_ini_min)} → {fmtHHMM(doc.hr_fim_min)}</span>}<span style={{fontSize:10,fontWeight:500,color:motivo.color,whiteSpace:'nowrap'}}>{motivo.label}</span></div></div>)
+                      })}
+                    </div>
+                  </div>)}
+                  {semPontoAtraso.length>0&&(<div>
+                    <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}><div style={{width:18,height:1.5,background:'#FAC775',borderRadius:1}}/><span style={{fontSize:10,fontWeight:500,color:'#854F0B',textTransform:'uppercase',letterSpacing:'.1em'}}>Visão 2 · Sem Ponto em Atraso (HR_ENTRADA vazia + ATRASO=SIM)</span></div>
+                    <div style={{display:'flex',flexDirection:'column',gap:5}}>
+                      {semPontoAtraso.map((doc,i)=>{
+                        const tempoStr=fmtTempoMinFn(doc.tempo_min),cfg=getStatusCfg(doc.status)
+                        const atrColors={'ATRASO':{color:'#854F0B',bg:'#FAEEDA',border:'#FAC775',badge:'#FAC775'},'ATRASO GRAVE':{color:'#993C1D',bg:'#FAECE7',border:'#F5C4B3',badge:'#F5C4B3'},'ATRASO CRÍTICO':{color:'#A32D2D',bg:'#FCEBEB',border:'#F7C1C1',badge:'#F7C1C1'}}
+                        const atrCfg=atrColors[doc.status]||atrColors['ATRASO']
+                        return(<div key={i} style={{display:'flex',alignItems:'center',borderRadius:8,border:`0.5px solid ${atrCfg.border}`,width:'100%'}}><div style={{padding:'8px 14px',background:atrCfg.bg,display:'flex',alignItems:'center',gap:10,flex:1,minWidth:0}}><div style={{width:5,height:5,borderRadius:'50%',background:atrCfg.color,flexShrink:0}}/><span style={{fontSize:11,color:atrCfg.color,fontWeight:500}}>{doc.nm}</span>{doc.nm_local&&<span style={{fontSize:10,color:atrCfg.color,opacity:.65,whiteSpace:'nowrap'}}>· {doc.nm_local}</span>}</div><div style={{padding:'8px 14px',background:atrCfg.bg,borderLeft:`0.5px solid ${atrCfg.border}`,display:'flex',alignItems:'center',gap:10,flexShrink:0}}>{doc.hr_ini_min!=null&&<span style={{fontSize:10,color:atrCfg.color,fontFamily:'monospace',whiteSpace:'nowrap'}}>{fmtHHMM(doc.hr_ini_min)}→{fmtHHMM(doc.hr_fim_min)}</span>}{tempoStr&&<span style={{fontSize:12,fontWeight:500,color:atrCfg.color,whiteSpace:'nowrap'}}>{tempoStr} em atraso</span>}<span style={{fontSize:10,padding:'2px 8px',borderRadius:8,background:atrCfg.badge,color:atrCfg.color,whiteSpace:'nowrap',fontWeight:500}}>{cfg.label}</span></div></div>)
+                      })}
+                    </div>
+                  </div>)}
+                  {comPontoAtraso.length>0&&(<div>
+                    <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}><div style={{width:18,height:1.5,background:'#9FE1CB',borderRadius:1}}/><span style={{fontSize:10,fontWeight:500,color:'#0F6E56',textTransform:'uppercase',letterSpacing:'.1em'}}>Com Ponto · Chegou Atrasado (HR_ENTRADA preenchida + ATRASO=SIM)</span></div>
+                    <div style={{display:'flex',flexDirection:'column',gap:5}}>
+                      {comPontoAtraso.map((doc,i)=>{
+                        const tempoStr=fmtTempoMinFn(doc.tempo_min),cfg=getStatusCfg(doc.status)
+                        return(<div key={i} style={{display:'flex',alignItems:'center',borderRadius:8,border:'0.5px solid #9FE1CB',width:'100%'}}><div style={{padding:'8px 14px',background:'#E1F5EE',display:'flex',alignItems:'center',gap:10,flex:1,minWidth:0}}><div style={{width:5,height:5,borderRadius:'50%',background:'#0F6E56',flexShrink:0}}/><span style={{fontSize:11,color:'#0F6E56',fontWeight:500}}>{doc.nm}</span>{doc.nm_local&&<span style={{fontSize:10,color:'#0F6E56',opacity:.65,whiteSpace:'nowrap'}}>· {doc.nm_local}</span>}</div><div style={{padding:'8px 14px',background:'#E1F5EE',borderLeft:'0.5px solid #9FE1CB',display:'flex',alignItems:'center',gap:10,flexShrink:0}}>{doc.hr_ini_min!=null&&<span style={{fontSize:10,color:'#0F6E56',fontFamily:'monospace',whiteSpace:'nowrap'}}>{fmtHHMM(doc.hr_ini_min)}→{fmtHHMM(doc.hr_fim_min)}</span>}{tempoStr&&<span style={{fontSize:12,fontWeight:500,color:'#0F6E56',whiteSpace:'nowrap'}}>{tempoStr} em atraso</span>}<span style={{fontSize:10,padding:'2px 8px',borderRadius:8,background:'#9FE1CB',color:'#085041',whiteSpace:'nowrap',fontWeight:500}}>{cfg.label}</span></div></div>)
+                      })}
+                    </div>
+                  </div>)}
+                </div>)}
+              </div>)
             })}
           </div>
         )}
       </div>
-
-            {/* TENDÊNCIA */}
       <div style={{...card,marginBottom:14}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:14}}>
-          <div>
-            <div style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.12em'}}>{'TENDÊNCIA · '+tRealCnt+' DIA'+(tRealCnt!==1?'S':'')}</div>
-            <div style={{fontSize:10,color:C.muted,marginTop:3}}>Agendadas vs Entregues</div>
-          </div>
-          <div style={{display:'flex',background:'rgba(255,255,255,0.04)',border:'0.5px solid rgba(255,255,255,0.08)',borderRadius:9,padding:3,gap:2}}>
-            {[{key:'real',label:'Real'},{key:'proj',label:'Projeção'}].map(v=><button key={v.key} onClick={()=>setTrendView(v.key)} style={{padding:'5px 14px',borderRadius:6,border:'none',cursor:'pointer',fontSize:11,fontWeight:700,transition:'all .15s',background:trendView===v.key?C.amber:'transparent',color:trendView===v.key?'#1a0800':C.muted}}>{v.label}</button>)}
-          </div>
+          <div><div style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.12em'}}>{'TENDÊNCIA · '+tRealCnt+' DIA'+(tRealCnt!==1?'S':'')}</div><div style={{fontSize:10,color:C.muted,marginTop:3}}>Agendadas vs Entregues</div></div>
+          <div style={{display:'flex',background:'rgba(255,255,255,0.04)',border:'0.5px solid rgba(255,255,255,0.08)',borderRadius:9,padding:3,gap:2}}>{[{key:'real',label:'Real'},{key:'proj',label:'Projeção'}].map(v=><button key={v.key} onClick={()=>setTrendView(v.key)} style={{padding:'5px 14px',borderRadius:6,border:'none',cursor:'pointer',fontSize:11,fontWeight:700,transition:'all .15s',background:trendView===v.key?C.amber:'transparent',color:trendView===v.key?'#1a0800':C.muted}}>{v.label}</button>)}</div>
         </div>
         <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:10,marginBottom:14}}>
-          {[
-            {label:'Agendadas hoje',value:tLastReal?tLastReal.agendas.toLocaleString('pt-BR'):'—',color:C.amber},
-            {label:'Entregues hoje',value:tLastReal?tLastReal.delivered.toLocaleString('pt-BR'):'—',color:C.emerald},
-            {label:'Gap acumulado',value:tTotalGap.toLocaleString('pt-BR'),color:C.rose},
-            {label:'Média diária',value:tAvgAg.toLocaleString('pt-BR'),color:C.teal},
-          ].map(k=><div key={k.label} style={{background:k.color+'12',border:'0.5px solid '+k.color+'20',borderRadius:9,padding:'10px 14px'}}><div style={{fontSize:9,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.07em',marginBottom:5}}>{k.label}</div><div style={{fontSize:20,fontWeight:800,color:k.color}}>{k.value}</div></div>)}
+          {[{label:'Agendadas hoje',value:tLastReal?tLastReal.agendas.toLocaleString('pt-BR'):'—',color:C.amber},{label:'Entregues hoje',value:tLastReal?tLastReal.delivered.toLocaleString('pt-BR'):'—',color:C.emerald},{label:'Gap acumulado',value:tTotalGap.toLocaleString('pt-BR'),color:C.rose},{label:'Média diária',value:tAvgAg.toLocaleString('pt-BR'),color:C.teal}].map(k=><div key={k.label} style={{background:k.color+'12',border:'0.5px solid '+k.color+'20',borderRadius:9,padding:'10px 14px'}}><div style={{fontSize:9,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.07em',marginBottom:5}}>{k.label}</div><div style={{fontSize:20,fontWeight:800,color:k.color}}>{k.value}</div></div>)}
         </div>
-        {aTip&&(
-          <div style={{position:'fixed',left:aTip.x+14,top:aTip.y-70,zIndex:999,pointerEvents:'none',background:'#0A0D16',border:'1px solid rgba(245,158,11,0.3)',borderRadius:10,padding:'10px 14px',boxShadow:'0 8px 32px rgba(0,0,0,0.6)',minWidth:150}}>
-            <div style={{fontSize:10,fontWeight:700,color:C.muted,marginBottom:6}}>{aTip.date?aTip.date.slice(5).replace('-','/'):'—'}{aTip.isProj?' · Projeção':''}</div>
-            <div style={{display:'flex',flexDirection:'column',gap:4}}>
-              <div style={{display:'flex',justifyContent:'space-between',gap:14,paddingBottom:4,borderBottom:'0.5px solid rgba(255,255,255,0.07)'}}><span style={{fontSize:11,color:C.muted}}>Agendas</span><span style={{fontSize:13,fontWeight:800,color:C.amber}}>{(aTip.agendas||0).toLocaleString('pt-BR')}</span></div>
-              <div style={{display:'flex',justifyContent:'space-between',gap:14}}><span style={{fontSize:11,color:C.rose}}>Afetadas</span><span style={{fontSize:12,fontWeight:800,color:C.rose}}>{(aTip.impactadas||0).toLocaleString('pt-BR')}</span></div>
-            </div>
-          </div>
-        )}
+        {aTip&&(<div style={{position:'fixed',left:aTip.x+14,top:aTip.y-70,zIndex:999,pointerEvents:'none',background:'#0A0D16',border:'1px solid rgba(245,158,11,0.3)',borderRadius:10,padding:'10px 14px',boxShadow:'0 8px 32px rgba(0,0,0,0.6)',minWidth:150}}><div style={{fontSize:10,fontWeight:700,color:C.muted,marginBottom:6}}>{aTip.date?aTip.date.slice(5).replace('-','/'):'—'}{aTip.isProj?' · Projeção':''}</div><div style={{display:'flex',flexDirection:'column',gap:4}}><div style={{display:'flex',justifyContent:'space-between',gap:14,paddingBottom:4,borderBottom:'0.5px solid rgba(255,255,255,0.07)'}}><span style={{fontSize:11,color:C.muted}}>Agendas</span><span style={{fontSize:13,fontWeight:800,color:C.amber}}>{(aTip.agendas||0).toLocaleString('pt-BR')}</span></div><div style={{display:'flex',justifyContent:'space-between',gap:14}}><span style={{fontSize:11,color:C.rose}}>Afetadas</span><span style={{fontSize:12,fontWeight:800,color:C.rose}}>{(aTip.impactadas||0).toLocaleString('pt-BR')}</span></div></div></div>)}
         {trendAllData.length===0?<div style={{textAlign:'center',padding:'32px 0',color:C.muted,fontSize:12}}>Sem dados suficientes.</div>:(
           <div>
-            <svg width="100%" viewBox={'0 0 '+AVW+' '+AVH} style={{display:'block',overflow:'visible',cursor:'crosshair'}}
-              onMouseMove={e=>{if(!trendAllData.length)return;const rc=e.currentTarget.getBoundingClientRect();const mx=(e.clientX-rc.left)/rc.width*AVW;let near=null,minD=Infinity;trendAllData.forEach((d,i)=>{const xv=aNT<=1?APL+ACW/2:APL+i/(aNT-1)*ACW;const dist=Math.abs(mx-xv);if(dist<minD){minD=dist;near={...d,idx:i}}});if(near&&minD<(ACW/Math.max(aNT-1,1))*.8)setATip({x:e.clientX,y:e.clientY,...near});else setATip(null)}}
-              onMouseLeave={()=>setATip(null)}>
+            <svg width="100%" viewBox={'0 0 '+AVW+' '+AVH} style={{display:'block',overflow:'visible',cursor:'crosshair'}} onMouseMove={e=>{if(!trendAllData.length)return;const rc=e.currentTarget.getBoundingClientRect();const mx=(e.clientX-rc.left)/rc.width*AVW;let near=null,minD=Infinity;trendAllData.forEach((d,i)=>{const xv=aNT<=1?APL+ACW/2:APL+i/(aNT-1)*ACW;const dist=Math.abs(mx-xv);if(dist<minD){minD=dist;near={...d,idx:i}}});if(near&&minD<(ACW/Math.max(aNT-1,1))*.8)setATip({x:e.clientX,y:e.clientY,...near});else setATip(null)}} onMouseLeave={()=>setATip(null)}>
               <defs><clipPath id="aClip"><rect x={APL} y={APT-2} width={ACW} height={ACH+4}/></clipPath></defs>
               {[0,Math.round(tMaxAg*.33),Math.round(tMaxAg*.66),tMaxAg].map((v,ti)=>(<g key={ti}><line x1={APL} y1={atyS(v)} x2={AVW-APR} y2={atyS(v)} stroke="rgba(255,255,255,0.05)" strokeWidth=".5"/><text x={APL-7} y={atyS(v)+4} textAnchor="end" fontSize="9" fill="#475569">{v>=1000?(v/1000).toFixed(0)+'k':v}</text></g>))}
               {trendView==='proj'&&tRealCnt>0&&aNT>tRealCnt&&<line x1={atxP(tRealCnt-1)} y1={APT} x2={atxP(tRealCnt-1)} y2={APT+ACH} stroke="rgba(245,158,11,0.22)" strokeWidth="1" strokeDasharray="4,3"/>}
@@ -894,43 +547,20 @@ function TabAgendas({rows}){
           </div>
         )}
       </div>
-
-      {/* TOP UNIDADES + ESPECIALIDADES */}
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
         <div style={card}>
           <div style={{fontSize:11,fontWeight:700,color:C.sub,textTransform:'uppercase',letterSpacing:'.1em',marginBottom:14}}>🏥 Top Unidades por Agendas</div>
-          {feedList.slice(0,8).map((u,i)=>{
-            const pct=maxFeed>0?(u.total/maxFeed)*100:0
-            return(<div key={u.nm_local} style={{marginBottom:10}}>
-              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4,gap:8}}>
-                <div style={{display:'flex',alignItems:'center',gap:6,minWidth:0}}><span style={{fontSize:9,fontWeight:800,color:i===0?C.amber:C.muted,minWidth:20}}>#{i+1}</span><span style={{fontSize:11,color:C.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{u.nm_local}</span></div>
-                <span style={{fontSize:11,fontWeight:700,color:i<3?C.amber:C.teal,flexShrink:0}}>{u.total.toLocaleString('pt-BR')}</span>
-              </div>
-              <div style={{height:5,borderRadius:3,overflow:'hidden',background:'rgba(255,255,255,0.04)'}}><div style={{height:'100%',background:i<3?C.amber:C.teal,width:pct+'%',transition:'width .5s',borderRadius:3}}/></div>
-            </div>)
-          })}
+          {feedList.slice(0,8).map((u,i)=>{const pct=maxFeed>0?(u.total/maxFeed)*100:0;return(<div key={u.nm_local} style={{marginBottom:10}}><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4,gap:8}}><div style={{display:'flex',alignItems:'center',gap:6,minWidth:0}}><span style={{fontSize:9,fontWeight:800,color:i===0?C.amber:C.muted,minWidth:20}}>#{i+1}</span><span style={{fontSize:11,color:C.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{u.nm_local}</span></div><span style={{fontSize:11,fontWeight:700,color:i<3?C.amber:C.teal,flexShrink:0}}>{u.total.toLocaleString('pt-BR')}</span></div><div style={{height:5,borderRadius:3,overflow:'hidden',background:'rgba(255,255,255,0.04)'}}><div style={{height:'100%',background:i<3?C.amber:C.teal,width:pct+'%',transition:'width .5s',borderRadius:3}}/></div></div>)})}
         </div>
         <div style={card}>
           <div style={{fontSize:11,fontWeight:700,color:C.sub,textTransform:'uppercase',letterSpacing:'.1em',marginBottom:14}}>🩺 Top Especialidades</div>
-          {topSpec.map((s,i)=>{
-            const pct=topSpec[0]?.total>0?(s.total/topSpec[0].total)*100:0
-            return(<div key={s.name} style={{marginBottom:10}}>
-              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4,gap:8}}>
-                <div style={{display:'flex',alignItems:'center',gap:6,minWidth:0}}><span style={{fontSize:9,fontWeight:800,color:i===0?C.amber:C.muted,minWidth:20}}>#{i+1}</span><span style={{fontSize:11,color:C.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{s.name}</span></div>
-                <span style={{fontSize:11,fontWeight:700,color:i<3?C.amber:C.cyan,flexShrink:0}}>{s.total.toLocaleString('pt-BR')}</span>
-              </div>
-              <div style={{background:'rgba(255,255,255,0.05)',borderRadius:3,height:4,overflow:'hidden'}}><div style={{height:'100%',background:i<3?C.amber:C.cyan,width:pct+'%',transition:'width .6s',borderRadius:3}}/></div>
-            </div>)
-          })}
+          {topSpec.map((s,i)=>{const pct=topSpec[0]?.total>0?(s.total/topSpec[0].total)*100:0;return(<div key={s.name} style={{marginBottom:10}}><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4,gap:8}}><div style={{display:'flex',alignItems:'center',gap:6,minWidth:0}}><span style={{fontSize:9,fontWeight:800,color:i===0?C.amber:C.muted,minWidth:20}}>#{i+1}</span><span style={{fontSize:11,color:C.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{s.name}</span></div><span style={{fontSize:11,fontWeight:700,color:i<3?C.amber:C.cyan,flexShrink:0}}>{s.total.toLocaleString('pt-BR')}</span></div><div style={{background:'rgba(255,255,255,0.05)',borderRadius:3,height:4,overflow:'hidden'}}><div style={{height:'100%',background:i<3?C.amber:C.cyan,width:pct+'%',transition:'width .6s',borderRadius:3}}/></div></div>)})}
         </div>
       </div>
     </div>
   )
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-// TAB ESPERA — sem alterações
-// ══════════════════════════════════════════════════════════════════════════════
 function TabEspera({rows}){
   const[periodo,setPeriodo]=useState('MES')
   const[dateFrom,setDateFrom]=useState('')
@@ -1008,15 +638,12 @@ function TabEspera({rows}){
     const projData=lastDate?Array.from({length:5},(_,i)=>({date:addDay(lastDate,i+1),mod:Math.max(0,Math.round(lM+slopeMod*(i+1))),grv:Math.max(0,Math.round(lG+slopeGrv*(i+1))),crit:Math.max(0,Math.round(lC+slopeCrt*(i+1))),total:0,pac:0,isProj:true})):[]
     const docsFalta=unidFilt?Object.entries(faltasList.filter(d=>d.nm_local===unidFilt).reduce((a,d)=>{const nm=d.nm_medico||'—';a[nm]=(a[nm]||0)+1;return a},{})).map(([nm,cnt])=>({nm,cnt})).sort((a,b)=>b.cnt-a.cnt):[]
     const docsAtraso=unidFilt?Object.entries(atrasosList.filter(d=>d.nm_local===unidFilt).reduce((a,d)=>{const nm=d.nm_medico||'—';if(!a[nm])a[nm]={cnt:0,status:d.status};a[nm].cnt++;return a},{})).map(([nm,v])=>({nm,...v})).sort((a,b)=>b.cnt-a.cnt):[]
-
-    // ── SLA: Tempo de Espera Clínicas (≤30min = dentro do SLA) ──────────────
-    const SLA_MAX=30 // minutos
+    const SLA_MAX=30
     const slaRows=filtered.filter(d=>d.tempo_espera_min!=null)
     const slaDentro=slaRows.filter(d=>d.tempo_espera_min<=SLA_MAX).length
-    const slaFora  =slaRows.length-slaDentro
-    const slaPct   =slaRows.length>0?Math.round(slaDentro/slaRows.length*100):null
-    const slaTotal =slaRows.length
-
+    const slaFora=slaRows.length-slaDentro
+    const slaPct=slaRows.length>0?Math.round(slaDentro/slaRows.length*100):null
+    const slaTotal=slaRows.length
     return{totalReg,modCnt,grvCnt,critCnt,feedList,faltasList,atrasosList,statusAt,byDate,projData,docsFalta,docsAtraso,slaDentro,slaFora,slaPct,slaTotal}
   },[filtered,unidFilt])
   const feedListFiltered=useMemo(()=>espStats.feedList.filter(item=>{
@@ -1057,11 +684,7 @@ function TabEspera({rows}){
     <div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',height:'60vh',gap:16}}>
       <div style={{fontSize:44}}>⏱️</div>
       <div style={{fontSize:18,fontWeight:700,color:C.text}}>Nenhum dado de espera</div>
-      <div style={{fontSize:12,color:C.muted,textAlign:'center',maxWidth:440,lineHeight:1.7}}>
-        Carregue a planilha normalmente pelo botão <strong style={{color:C.amber}}>+ Carregar Planilha</strong>.<br/>
-        Os dados de espera são lidos automaticamente das colunas<br/>
-        <code style={{color:C.teal,fontSize:11}}>TEMPO_DE_ESPERA · HR_REGISTRO_ESPERA · QT_PACIENTES_AGUARDANDO</code>
-      </div>
+      <div style={{fontSize:12,color:C.muted,textAlign:'center',maxWidth:440,lineHeight:1.7}}>Carregue a planilha normalmente pelo botão <strong style={{color:C.amber}}>+ Carregar Planilha</strong>.<br/>Os dados de espera são lidos automaticamente das colunas<br/><code style={{color:C.teal,fontSize:11}}>TEMPO_DE_ESPERA · HR_REGISTRO_ESPERA · QT_PACIENTES_AGUARDANDO</code></div>
     </div>
   )
   const horasDispFim=horaFilt==='TODAS'?[]:horasDisp.filter(h=>h>parseInt(horaFilt))
@@ -1070,66 +693,28 @@ function TabEspera({rows}){
     <div>
       <div style={{marginBottom:16}}><PeriodoBar value={periodo} onChange={p=>{setPeriodo(p);setDateFrom('');setDateTo('');setUnidFilt('');setHoraFilt('TODAS');setHoraFiltFim('TODAS')}} allDates={allDates} dateFrom={dateFrom} dateTo={dateTo} onDateFrom={setDateFrom} onDateTo={setDateTo} label={`${totalReg.toLocaleString('pt-BR')} registros`}/></div>
       <SearchBar search={search} onSearch={setSearch} uf={ufFilt} onUf={setUfFilt} ufs={ufs} showClear={ufFilt!=='TODOS'||!!search} onClear={()=>{setUfFilt('TODOS');setSearch('')}}/>
-
-      {/* ── MODELO B: SLA + Severidades lado a lado ── */}
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14,marginBottom:16}}>
-
-        {/* Painel esquerdo: SLA */}
         <div style={{borderRadius:12,padding:'16px 20px',border:`0.5px solid ${slaPct!=null?(slaPct>=85?'rgba(16,185,129,.4)':slaPct>=60?'rgba(245,158,11,.4)':'rgba(244,63,94,.4)'):'rgba(255,255,255,0.1)'}`,background:'rgba(255,255,255,0.025)',position:'relative',overflow:'hidden'}}>
           <div style={{position:'absolute',top:-30,right:-30,width:140,height:140,borderRadius:'50%',background:`radial-gradient(circle,${slaPct!=null&&slaPct>=85?'rgba(16,185,129,.06)':slaPct!=null&&slaPct>=60?'rgba(245,158,11,.06)':'rgba(244,63,94,.06)'},transparent 70%)`,pointerEvents:'none'}}/>
           <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:14}}>
-            <div>
-              <div style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.12em',marginBottom:5}}>⏱ SLA · Tempo de espera</div>
-              <div style={{fontSize:11,color:C.sub}}>Atendimento em até <strong style={{color:C.text}}>30 minutos</strong></div>
-              <div style={{fontSize:11,color:C.sub}}>Meta <strong style={{color:C.emerald}}>≥ 85%</strong></div>
-            </div>
-            <div style={{textAlign:'right'}}>
-              <div style={{fontSize:48,fontWeight:900,color:slaPct!=null?(slaPct>=85?C.emerald:slaPct>=60?C.amber:C.rose):'rgba(255,255,255,.2)',lineHeight:1,letterSpacing:'-2px'}}>{slaPct!=null?slaPct:'—'}<span style={{fontSize:slaPct!=null?22:0}}>%</span></div>
-              <div style={{fontSize:9,color:C.muted,marginTop:3}}>conformidade</div>
-            </div>
+            <div><div style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.12em',marginBottom:5}}>⏱ SLA · Tempo de espera</div><div style={{fontSize:11,color:C.sub}}>Atendimento em até <strong style={{color:C.text}}>30 minutos</strong></div><div style={{fontSize:11,color:C.sub}}>Meta <strong style={{color:C.emerald}}>≥ 85%</strong></div></div>
+            <div style={{textAlign:'right'}}><div style={{fontSize:48,fontWeight:900,color:slaPct!=null?(slaPct>=85?C.emerald:slaPct>=60?C.amber:C.rose):'rgba(255,255,255,.2)',lineHeight:1,letterSpacing:'-2px'}}>{slaPct!=null?slaPct:'—'}<span style={{fontSize:slaPct!=null?22:0}}>%</span></div><div style={{fontSize:9,color:C.muted,marginTop:3}}>conformidade</div></div>
           </div>
-          <div style={{position:'relative',height:8,background:'rgba(255,255,255,0.07)',borderRadius:4,overflow:'hidden',marginBottom:12}}>
-            <div style={{position:'absolute',top:0,left:0,height:'100%',width:(slaPct||0)+'%',background:slaPct!=null&&slaPct>=85?C.emerald:slaPct!=null&&slaPct>=60?C.amber:C.rose,borderRadius:4,transition:'width .7s ease'}}/>
-            <div style={{position:'absolute',top:0,left:'85%',width:2,height:'100%',background:'rgba(255,255,255,0.5)'}}/>
-          </div>
+          <div style={{position:'relative',height:8,background:'rgba(255,255,255,0.07)',borderRadius:4,overflow:'hidden',marginBottom:12}}><div style={{position:'absolute',top:0,left:0,height:'100%',width:(slaPct||0)+'%',background:slaPct!=null&&slaPct>=85?C.emerald:slaPct!=null&&slaPct>=60?C.amber:C.rose,borderRadius:4,transition:'width .7s ease'}}/><div style={{position:'absolute',top:0,left:'85%',width:2,height:'100%',background:'rgba(255,255,255,0.5)'}}/></div>
           <div style={{display:'flex',justifyContent:'space-between',fontSize:12}}>
-            <div style={{display:'flex',alignItems:'center',gap:6}}>
-              <div style={{width:7,height:7,borderRadius:'50%',background:C.emerald}}/>
-              <span style={{color:C.muted}}>Dentro:</span>
-              <span style={{fontWeight:700,color:C.emerald}}>{slaDentro.toLocaleString('pt-BR')}</span>
-            </div>
-            <div style={{display:'flex',alignItems:'center',gap:6}}>
-              <div style={{width:7,height:7,borderRadius:'50%',background:C.rose}}/>
-              <span style={{color:C.muted}}>Fora:</span>
-              <span style={{fontWeight:700,color:C.rose}}>{slaFora.toLocaleString('pt-BR')}</span>
-            </div>
-            <div style={{display:'flex',alignItems:'center',gap:6}}>
-              <div style={{width:7,height:7,borderRadius:'50%',background:C.muted}}/>
-              <span style={{color:C.muted}}>Total: <span style={{fontWeight:700,color:C.sub}}>{slaTotal.toLocaleString('pt-BR')}</span></span>
-            </div>
+            <div style={{display:'flex',alignItems:'center',gap:6}}><div style={{width:7,height:7,borderRadius:'50%',background:C.emerald}}/><span style={{color:C.muted}}>Dentro:</span><span style={{fontWeight:700,color:C.emerald}}>{slaDentro.toLocaleString('pt-BR')}</span></div>
+            <div style={{display:'flex',alignItems:'center',gap:6}}><div style={{width:7,height:7,borderRadius:'50%',background:C.rose}}/><span style={{color:C.muted}}>Fora:</span><span style={{fontWeight:700,color:C.rose}}>{slaFora.toLocaleString('pt-BR')}</span></div>
+            <div style={{display:'flex',alignItems:'center',gap:6}}><div style={{width:7,height:7,borderRadius:'50%',background:C.muted}}/><span style={{color:C.muted}}>Total: <span style={{fontWeight:700,color:C.sub}}>{slaTotal.toLocaleString('pt-BR')}</span></span></div>
           </div>
         </div>
-
-        {/* Painel direito: Severidades */}
         <div style={{borderRadius:12,padding:'16px 20px',border:'0.5px solid rgba(255,255,255,0.1)',background:'rgba(255,255,255,0.025)'}}>
           <div style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'.12em',marginBottom:14}}>Severidade da espera</div>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10,height:'calc(100% - 32px)'}}>
-            {[
-              {label:'Moderada',value:modCnt,sub:'15–30min',color:C.amber,border:'rgba(245,158,11,.3)',bg:'rgba(245,158,11,.06)'},
-              {label:'Grave',value:grvCnt,sub:'31min–1h29',color:C.orange,border:'rgba(249,115,22,.3)',bg:'rgba(249,115,22,.06)'},
-              {label:'Crítica',value:critCnt,sub:'>1h30',color:C.rose,border:'rgba(244,63,94,.3)',bg:'rgba(244,63,94,.06)'},
-            ].map(k=>(
-              <div key={k.label} style={{textAlign:'center',padding:'14px 8px',borderRadius:10,border:`0.5px solid ${k.border}`,background:k.bg,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:4}}>
-                <div style={{fontSize:9,fontWeight:700,color:k.color,textTransform:'uppercase',letterSpacing:'.1em'}}>{k.label}</div>
-                <div style={{fontSize:32,fontWeight:900,color:k.color,lineHeight:1,letterSpacing:'-1px'}}>{k.value.toLocaleString('pt-BR')}</div>
-                <div style={{fontSize:9,color:C.muted}}>{k.sub}</div>
-              </div>
-            ))}
+            {[{label:'Moderada',value:modCnt,sub:'15–30min',color:C.amber,border:'rgba(245,158,11,.3)',bg:'rgba(245,158,11,.06)'},{label:'Grave',value:grvCnt,sub:'31min–1h29',color:C.orange,border:'rgba(249,115,22,.3)',bg:'rgba(249,115,22,.06)'},{label:'Crítica',value:critCnt,sub:'>1h30',color:C.rose,border:'rgba(244,63,94,.3)',bg:'rgba(244,63,94,.06)'}].map(k=>(<div key={k.label} style={{textAlign:'center',padding:'14px 8px',borderRadius:10,border:`0.5px solid ${k.border}`,background:k.bg,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:4}}><div style={{fontSize:9,fontWeight:700,color:k.color,textTransform:'uppercase',letterSpacing:'.1em'}}>{k.label}</div><div style={{fontSize:32,fontWeight:900,color:k.color,lineHeight:1,letterSpacing:'-1px'}}>{k.value.toLocaleString('pt-BR')}</div><div style={{fontSize:9,color:C.muted}}>{k.sub}</div></div>))}
           </div>
         </div>
       </div>
-
-            <div style={{display:'grid',gridTemplateColumns:'1fr 320px',gap:14,marginBottom:14}}>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 320px',gap:14,marginBottom:14}}>
         <div style={cardE}>
           {unidFilt&&<div style={{display:'flex',alignItems:'center',gap:10,marginBottom:12,padding:'8px 12px',background:'rgba(245,158,11,0.08)',border:'0.5px solid rgba(245,158,11,0.25)',borderRadius:9}}><div style={{width:6,height:6,borderRadius:'50%',background:'#F59E0B',flexShrink:0}}/><span style={{fontSize:11,color:'#F59E0B',flex:1,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>Filtrando: {unidFilt}</span><button onClick={()=>setUnidFilt('')} style={{background:'transparent',border:'none',color:'#475569',cursor:'pointer',fontSize:12}}>✕</button></div>}
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:16}}>
@@ -1167,9 +752,7 @@ function TabEspera({rows}){
           <div style={{fontSize:13,fontWeight:700,color:'#F1F5F9',marginBottom:14}}>Médicos — Falta e Atraso</div>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1px 1fr',gap:0,alignItems:'stretch'}}>
             <div style={{paddingRight:16,display:'flex',flexDirection:'column',gap:10}}>
-              {[{label:'Faltas',value:faltasList.length,color:'#F43F5E',pct:medFPct},{label:'Atrasos >31min',value:atrasosList.length,color:'#F59E0B',pct:medAPct}].map(k=>(
-                <div key={k.label}><div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:5}}><div style={{display:'flex',alignItems:'center',gap:5}}><div style={{width:6,height:6,borderRadius:'50%',background:k.color}}/><span style={{fontSize:11,color:'#94A3B8'}}>{k.label}</span></div><span style={{fontSize:13,fontWeight:700,color:k.color}}>{k.value} <span style={{fontSize:9,color:'#475569',fontWeight:400}}>{k.pct}%</span></span></div><div style={{background:'rgba(255,255,255,0.05)',borderRadius:3,height:4,overflow:'hidden'}}><div style={{height:'100%',background:k.color,width:`${k.pct}%`,borderRadius:3,transition:'width .6s'}}/></div></div>
-              ))}
+              {[{label:'Faltas',value:faltasList.length,color:'#F43F5E',pct:medFPct},{label:'Atrasos >31min',value:atrasosList.length,color:'#F59E0B',pct:medAPct}].map(k=>(<div key={k.label}><div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:5}}><div style={{display:'flex',alignItems:'center',gap:5}}><div style={{width:6,height:6,borderRadius:'50%',background:k.color}}/><span style={{fontSize:11,color:'#94A3B8'}}>{k.label}</span></div><span style={{fontSize:13,fontWeight:700,color:k.color}}>{k.value} <span style={{fontSize:9,color:'#475569',fontWeight:400}}>{k.pct}%</span></span></div><div style={{background:'rgba(255,255,255,0.05)',borderRadius:3,height:4,overflow:'hidden'}}><div style={{height:'100%',background:k.color,width:`${k.pct}%`,borderRadius:3,transition:'width .6s'}}/></div></div>))}
               <div style={{display:'flex',alignItems:'center',gap:6,paddingTop:8,borderTop:'0.5px solid rgba(255,255,255,0.06)',marginTop:2}}><span style={{fontSize:22,fontWeight:800,color:'#F97316',lineHeight:1}}>{medTotalProb}</span><span style={{fontSize:10,color:'#475569'}}>total</span></div>
             </div>
             <div style={{background:'rgba(255,255,255,0.07)',margin:'0 16px'}}/>
@@ -1179,15 +762,7 @@ function TabEspera({rows}){
               {statusAt.map(({k,v})=>{const cfg=getStatusCfg(k),pctAt=statusAt[0]?.v>0?Math.round(v/statusAt[0].v*100):0;return<div key={k}><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:3}}><span style={{fontSize:10,color:'#94A3B8'}}>{cfg.label}</span><div style={{display:'flex',alignItems:'center',gap:8}}><span style={{fontSize:12,fontWeight:700,color:cfg.color}}>{v}</span><span style={{fontSize:9,color:'#475569'}}>{pctAt}%</span></div></div><div style={{background:'rgba(255,255,255,0.05)',borderRadius:3,height:5,overflow:'hidden'}}><div style={{height:'100%',background:`linear-gradient(90deg,${cfg.color},${cfg.color}88)`,width:`${pctAt}%`,borderRadius:3,transition:'width .6s'}}/></div></div>})}
             </div>
           </div>
-          {unidFilt&&(docsFalta.length>0||docsAtraso.length>0)&&(
-            <div style={{marginTop:12,paddingTop:12,borderTop:'0.5px solid rgba(255,255,255,0.06)'}}>
-              <div style={{fontSize:9,fontWeight:700,color:'#475569',textTransform:'uppercase',letterSpacing:'.09em',marginBottom:8}}>Médicos · {unidFilt}</div>
-              <div style={{display:'flex',flexDirection:'column',gap:5,maxHeight:140,overflowY:'auto'}}>
-                {docsFalta.map(d=><div key={'f'+d.nm} style={{display:'flex',alignItems:'center',gap:8,padding:'4px 0'}}><div style={{width:6,height:6,borderRadius:'50%',background:'#F43F5E',flexShrink:0}}/><span style={{fontSize:10.5,color:'#F1F5F9',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{d.nm}</span><span style={{fontSize:9,fontWeight:700,padding:'1px 7px',borderRadius:20,background:'rgba(244,63,94,0.12)',color:'#F43F5E',border:'0.5px solid rgba(244,63,94,0.3)',flexShrink:0}}>Falta</span></div>)}
-                {docsAtraso.map(d=>{const cfg=getStatusCfg(d.status);return<div key={'a'+d.nm} style={{display:'flex',alignItems:'center',gap:8,padding:'4px 0'}}><div style={{width:6,height:6,borderRadius:'50%',background:'#F59E0B',flexShrink:0}}/><span style={{fontSize:10.5,color:'#F1F5F9',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{d.nm}</span><span style={{fontSize:9,fontWeight:700,padding:'1px 7px',borderRadius:20,background:`${cfg.color}18`,color:cfg.color,border:`0.5px solid ${cfg.color}30`,flexShrink:0,whiteSpace:'nowrap'}}>{cfg.label}</span></div>})}
-              </div>
-            </div>
-          )}
+          {unidFilt&&(docsFalta.length>0||docsAtraso.length>0)&&(<div style={{marginTop:12,paddingTop:12,borderTop:'0.5px solid rgba(255,255,255,0.06)'}}><div style={{fontSize:9,fontWeight:700,color:'#475569',textTransform:'uppercase',letterSpacing:'.09em',marginBottom:8}}>Médicos · {unidFilt}</div><div style={{display:'flex',flexDirection:'column',gap:5,maxHeight:140,overflowY:'auto'}}>{docsFalta.map(d=><div key={'f'+d.nm} style={{display:'flex',alignItems:'center',gap:8,padding:'4px 0'}}><div style={{width:6,height:6,borderRadius:'50%',background:'#F43F5E',flexShrink:0}}/><span style={{fontSize:10.5,color:'#F1F5F9',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{d.nm}</span><span style={{fontSize:9,fontWeight:700,padding:'1px 7px',borderRadius:20,background:'rgba(244,63,94,0.12)',color:'#F43F5E',border:'0.5px solid rgba(244,63,94,0.3)',flexShrink:0}}>Falta</span></div>)}{docsAtraso.map(d=>{const cfg=getStatusCfg(d.status);return<div key={'a'+d.nm} style={{display:'flex',alignItems:'center',gap:8,padding:'4px 0'}}><div style={{width:6,height:6,borderRadius:'50%',background:'#F59E0B',flexShrink:0}}/><span style={{fontSize:10.5,color:'#F1F5F9',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{d.nm}</span><span style={{fontSize:9,fontWeight:700,padding:'1px 7px',borderRadius:20,background:`${cfg.color}18`,color:cfg.color,border:`0.5px solid ${cfg.color}30`,flexShrink:0,whiteSpace:'nowrap'}}>{cfg.label}</span></div>})}</div></div>)}
           {unidFilt&&docsFalta.length===0&&docsAtraso.length===0&&<div style={{marginTop:10,fontSize:11,color:'#475569',textAlign:'center'}}>Sem ocorrências nesta unidade.</div>}
         </div>
       </div>
@@ -1202,9 +777,7 @@ function TabEspera({rows}){
         {trendAllData.length===0?<div style={{textAlign:'center',padding:'40px 0',color:'#475569',fontSize:12}}>Sem dados suficientes.</div>:(
           <div>
             {tTip&&<div style={{position:'fixed',left:tTip.x+14,top:tTip.y-60,zIndex:999,pointerEvents:'none',background:'#0A0D16',border:'1px solid rgba(244,63,94,0.35)',borderRadius:10,padding:'10px 14px',boxShadow:'0 8px 32px rgba(0,0,0,0.6)',minWidth:140}}><div style={{fontSize:10,fontWeight:700,color:'#475569',marginBottom:6}}>{tTip.date?tTip.date.slice(5).replace('-','/'):'—'}{tTip.isProj?' · Projeção':''}</div><div style={{display:'flex',flexDirection:'column',gap:5}}><div style={{display:'flex',justifyContent:'space-between',gap:16}}><span style={{fontSize:11,color:'#F43F5E'}}>● Crítica</span><span style={{fontSize:13,fontWeight:800,color:'#F43F5E'}}>{tTip.crit||0}</span></div><div style={{display:'flex',justifyContent:'space-between',gap:16}}><span style={{fontSize:11,color:'#F97316'}}>● Grave</span><span style={{fontSize:12,fontWeight:700,color:'#F97316'}}>{tTip.grv||0}</span></div><div style={{display:'flex',justifyContent:'space-between',gap:16}}><span style={{fontSize:11,color:'#F59E0B'}}>● Moderada</span><span style={{fontSize:12,fontWeight:700,color:'#F59E0B'}}>{tTip.mod||0}</span></div></div></div>}
-            <svg width="100%" viewBox={'0 0 '+VW+' '+VH} style={{display:'block',overflow:'visible',cursor:'crosshair'}}
-              onMouseMove={e=>{if(!trendAllData.length)return;const rc=e.currentTarget.getBoundingClientRect();const mx=(e.clientX-rc.left)/rc.width*VW;let near=null,minD=Infinity;trendAllData.forEach((d,i)=>{const xv=nTotal<=1?PL+CW/2:PL+i/(nTotal-1)*CW;const dist=Math.abs(mx-xv);if(dist<minD){minD=dist;near={...d,idx:i}}});if(near&&minD<(CW/Math.max(nTotal-1,1))*.8)setTTip({x:e.clientX,y:e.clientY,...near});else setTTip(null)}}
-              onMouseLeave={()=>setTTip(null)}>
+            <svg width="100%" viewBox={'0 0 '+VW+' '+VH} style={{display:'block',overflow:'visible',cursor:'crosshair'}} onMouseMove={e=>{if(!trendAllData.length)return;const rc=e.currentTarget.getBoundingClientRect();const mx=(e.clientX-rc.left)/rc.width*VW;let near=null,minD=Infinity;trendAllData.forEach((d,i)=>{const xv=nTotal<=1?PL+CW/2:PL+i/(nTotal-1)*CW;const dist=Math.abs(mx-xv);if(dist<minD){minD=dist;near={...d,idx:i}}});if(near&&minD<(CW/Math.max(nTotal-1,1))*.8)setTTip({x:e.clientX,y:e.clientY,...near});else setTTip(null)}} onMouseLeave={()=>setTTip(null)}>
               <defs><clipPath id="tClip"><rect x={PL} y={PT-2} width={CW} height={CH+4}/></clipPath></defs>
               {[0,Math.round(trendMaxAll*.33),Math.round(trendMaxAll*.66),trendMaxAll].map((v,ti)=><g key={ti}><line x1={PL} y1={tyA(v)} x2={VW-PR} y2={tyA(v)} stroke="rgba(255,255,255,0.05)" strokeWidth=".5"/><text x={PL-7} y={tyA(v)+4} textAnchor="end" fontSize="9" fill="#475569">{v}</text></g>)}
               {trendView==='proj'&&trendRealCnt>0&&nTotal>trendRealCnt&&<line x1={txP(trendRealCnt-1)} y1={PT} x2={txP(trendRealCnt-1)} y2={PT+CH} stroke="rgba(245,158,11,0.25)" strokeWidth="1" strokeDasharray="4,3"/>}
@@ -1227,9 +800,6 @@ function TabEspera({rows}){
   )
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-// HOME
-// ══════════════════════════════════════════════════════════════════════════════
 export default function Home(){
   const[tab,setTab]=useState('espera')
   const[agendas,setAgendas]=useState([])
@@ -1279,8 +849,6 @@ export default function Home(){
       const total=json.length
       setStoreMsg(`${total.toLocaleString('pt-BR')} linhas — iniciando upload…`)
 
-      // ── Upload direto ao Supabase (bypass Vercel — sem timeout) ──────────────
-      // Transformação de tipos Excel→DB feita no browser
       const xlsTimeToMin=v=>{
         if(v===''||v==null)return null
         if(typeof v==='number'&&v>=0&&v<1)return Math.round(v*1440)
@@ -1293,28 +861,9 @@ export default function Home(){
         if(v instanceof Date)return v.toISOString().slice(0,10)
         return String(v).slice(0,10)
       }
-      // mapAgRow — colunas idênticas ao mapAgenda do route.js
-      const mapAgRow=r=>({
-        data_agenda:    xlsDateStr(r['DATA_AGENDA']),
-        dt_registro:    xlsDateStr(r['DT_REGISTRO']||''),
-        uf:             r['UF']||null,
-        nm_filial:      r['NM_FILIAL']||null,
-        nm_local:       r['NM_LOCAL']||null,
-        nm_medico:      r['NM_MEDICO']||null,
-        ds_especialidade: r['DS_ESPECIALIDADE']||null,
-        cidade:         r['CIDADE']||null,
-        base_sigo:      r['BASE_DE_DADOS_SIGO']||null,
-        hr_inicio_min:  xlsTimeToMin(r['HR_INICIO']),
-        hr_fim_min:     xlsTimeToMin(r['HR_FIM']),
-        hr_entrada_min: (r['HR_ENTRADA']===''||r['HR_ENTRADA']==null)?null:xlsTimeToMin(r['HR_ENTRADA']),
-        status:         r['STATUS']||null,
-        atraso:         r['ATRASO']||null,
-        tempo_atraso:   String(r['TEMPO DE ATRASO']||''),
-        qt_consulta:    Number(r['QT_CONSULTA'])||0,
-        qt_encaixe:     Number(r['QT_ENCAIXE'])||0,
-      })
 
       // ── Extrai as datas únicas da planilha para limpar antes de inserir
+      // Garante que cada upload substitui completamente os dados do dia
       const datesToClear=[...new Set(
         json.map(r=>xlsDateStr(r['DT_REGISTRO'])).filter(Boolean)
       )]
@@ -1337,17 +886,6 @@ export default function Home(){
         setStoreMsg(`Espera ${Math.min(i+CHUNKE,json.length)}/${json.length}…`)
         try{
           const res=await fetch('/api/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows:batchE,ts,table:'espera',isFirstBatch:i===0,datesToClear:i===0?datesToClear:[]})})
-          if(!res.ok)console.error(`Esp batch ${i}:`,await res.text())
-        }catch(e){console.error(`Esp batch ${i}:`,e)}
-      }
-
-      // ── Upload espera via route.js — mapEspera filtra linhas sem dados de espera ─
-      const CHUNKE=100
-      for(let i=0;i<json.length;i+=CHUNKE){
-        const batchE=json.slice(i,i+CHUNKE)
-        setStoreMsg(`Espera ${Math.min(i+CHUNKE,json.length)}/${json.length}…`)
-        try{
-          const res=await fetch('/api/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows:batchE,ts,table:'espera'})})
           if(!res.ok)console.error(`Esp batch ${i}:`,await res.text())
         }catch(e){console.error(`Esp batch ${i}:`,e)}
       }
