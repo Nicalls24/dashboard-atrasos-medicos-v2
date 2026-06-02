@@ -7,7 +7,7 @@ const SB_HEADERS = {
   'apikey': SB_KEY,
   'Authorization': `Bearer ${SB_KEY}`,
   'Content-Type': 'application/json',
-  'Prefer': 'return=minimal,resolution=merge-duplicates',
+  'Prefer': 'return=minimal',
 }
 
 function serialToDate(v) {
@@ -98,18 +98,35 @@ function mapEspera(r, ts) {
 
 export async function POST(request) {
   try {
-    const { rows, ts, table } = await request.json()
+    const { rows, ts, table, isFirstBatch, datesToClear } = await request.json()
 
     if (!['agendas', 'espera'].includes(table))
       return NextResponse.json({ ok: false, error: 'Invalid table' }, { status: 400 })
 
+    // ── PASSO 1: Se for o primeiro lote do upload, apaga os dados das datas
+    //            que estão na planilha antes de inserir os novos.
+    //            Isso garante que o banco sempre reflita exatamente a planilha atual.
+    if (isFirstBatch && datesToClear && datesToClear.length > 0) {
+      for (const date of datesToClear) {
+        const delRes = await fetch(
+          `${SB_URL}/rest/v1/${table}?dt_registro=eq.${date}`,
+          { method: 'DELETE', headers: SB_HEADERS }
+        )
+        if (!delRes.ok) {
+          const txt = await delRes.text()
+          console.error(`[save/${table}] delete error for ${date}:`, txt)
+        }
+      }
+    }
+
+    // ── PASSO 2: Mapeia e filtra as linhas do lote
     const mappedRaw = table === 'agendas'
       ? rows.map(r => mapAgenda(r, ts)).filter(Boolean)
       : rows.map(r => mapEspera(r, ts)).filter(Boolean)
 
     if (!mappedRaw.length) return NextResponse.json({ ok: true, saved: 0 })
 
-    // Dedup dentro do lote pela chave correta (inclui hr_inicio_min para agendas)
+    // ── PASSO 3: Dedup dentro do lote pela chave lógica
     const dedup = new Map()
     for (const m of mappedRaw) {
       const key = table === 'agendas'
@@ -119,7 +136,7 @@ export async function POST(request) {
     }
     const mapped = Array.from(dedup.values())
 
-    // Upsert: insere novas linhas e atualiza as existentes pela constraint única
+    // ── PASSO 4: INSERT simples (sem upsert, pois já limpamos antes)
     const res = await fetch(`${SB_URL}/rest/v1/${table}`, {
       method: 'POST',
       headers: SB_HEADERS,
@@ -128,7 +145,7 @@ export async function POST(request) {
 
     if (!res.ok) {
       const txt = await res.text()
-      console.error(`[save/${table}] error:`, txt)
+      console.error(`[save/${table}] insert error:`, txt)
       return NextResponse.json({ ok: false, error: txt }, { status: 500 })
     }
 
